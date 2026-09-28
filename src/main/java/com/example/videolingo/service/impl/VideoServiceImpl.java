@@ -71,6 +71,15 @@ public class VideoServiceImpl implements VideoService {
         conditions.add(filter.isDeleted()
                 ? (root, query, cb) -> cb.isNotNull(root.get("deletedAt"))
                 : (root, query, cb) -> cb.isNull(root.get("deletedAt")));
+        // Archived is its own axis, only meaningful outside the trash (Videos / Archived / Trash tabs).
+        if (!filter.isDeleted()) {
+            conditions.add(filter.isArchived()
+                    ? (root, query, cb) -> cb.isNotNull(root.get("archivedAt"))
+                    : (root, query, cb) -> cb.isNull(root.get("archivedAt")));
+        }
+        if (filter.getVisibility() != null) {
+            conditions.add((root, query, cb) -> cb.equal(root.get("visibility"), filter.getVisibility()));
+        }
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
             String pattern = "%" + filter.getSearch().trim().toLowerCase() + "%";
             conditions.add((root, query, cb) -> cb.or(
@@ -138,6 +147,9 @@ public class VideoServiceImpl implements VideoService {
         }
         video.setLanguage(language);
         video.setThumbnailUrl(blankToNull(request.getThumbnailUrl()));
+        if (request.getVisibility() != null) {
+            video.setVisibility(request.getVisibility());
+        }
         if (request.getCategoryIds() != null) {
             Set<Long> resolved = categoryService.resolveForVideo(request.getCategoryIds(), video.getCategoryIds());
             int maxCategories = settings.video().maxCategoriesPerVideo();
@@ -181,6 +193,68 @@ public class VideoServiceImpl implements VideoService {
         }
         video.setDeletedAt(null);
         return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public VideoResponse archiveVideo(Long id) {
+        Video video = requireLive(findVideo(id), "archive");
+        if (video.isArchived()) {
+            throw new AppException(HttpStatus.CONFLICT, "Video is already archived");
+        }
+        video.setArchivedAt(LocalDateTime.now());
+        return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public VideoResponse unarchiveVideo(Long id) {
+        Video video = findVideo(id);
+        if (!video.isArchived()) {
+            throw new AppException(HttpStatus.CONFLICT, "Video is not archived");
+        }
+        video.setArchivedAt(null);
+        return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public VideoResponse moveOwner(Long id, Long newOwnerId) {
+        Video video = findVideo(id);
+        if (newOwnerId != null && !userRepository.existsById(newOwnerId)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "User not found with id: " + newOwnerId);
+        }
+        video.setOwnerId(newOwnerId);
+        return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public VideoResponse duplicate(Long id, String actingUsername) {
+        Video source = findVideo(id);
+        Long ownerId = userRepository.findByUsername(actingUsername).map(User::getId).orElse(source.getOwnerId());
+        Video copy = Video.builder()
+                .title(source.getTitle() + " (copy)")
+                .description(source.getDescription())
+                .ownerId(ownerId)
+                .language(source.getLanguage())
+                .videoUrl(source.getVideoUrl())
+                .storageKey(source.getStorageKey())
+                .source(source.getSource())
+                .externalId(null)
+                .sourceAuthor(source.getSourceAuthor())
+                .thumbnailUrl(source.getThumbnailUrl())
+                .durationSeconds(source.getDurationSeconds())
+                .width(source.getWidth())
+                .height(source.getHeight())
+                .fileSize(source.getFileSize())
+                .mimeType(source.getMimeType())
+                .visibility(source.getVisibility())
+                .enabled(false)
+                .build();
+        copy.getCategoryIds().addAll(source.getCategoryIds());
+        copy.getTagIds().addAll(source.getTagIds());
+        return toResponse(videoRepository.save(copy));
     }
 
     @Override
@@ -268,6 +342,9 @@ public class VideoServiceImpl implements VideoService {
                 .fileSize(video.getFileSize())
                 .mimeType(video.getMimeType())
                 .enabled(video.isEnabled())
+                .archived(video.isArchived())
+                .archivedAt(video.getArchivedAt())
+                .visibility(video.getVisibility())
                 .deleted(video.isDeleted())
                 .deletedAt(video.getDeletedAt())
                 .createdAt(video.getCreatedAt())

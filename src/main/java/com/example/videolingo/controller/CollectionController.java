@@ -2,11 +2,13 @@ package com.example.videolingo.controller;
 
 import com.example.videolingo.dto.AddCollectionVideosRequest;
 import com.example.videolingo.dto.ApiResponse;
+import com.example.videolingo.dto.CollectionAnalyticsResponse;
 import com.example.videolingo.dto.CollectionFilterRequest;
 import com.example.videolingo.dto.CollectionRequest;
 import com.example.videolingo.dto.CollectionResponse;
 import com.example.videolingo.dto.CollectionVideoResponse;
 import com.example.videolingo.dto.PageResponse;
+import com.example.videolingo.dto.UpdateSectionsRequest;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.CollectionService;
 import jakarta.validation.Valid;
@@ -81,6 +83,26 @@ public class CollectionController {
     @DeleteMapping("/{id}/videos/{videoId}")
     public ResponseEntity<ApiResponse<CollectionResponse>> removeVideo(@PathVariable Long id, @PathVariable Long videoId) {
         return ResponseEntity.ok(ApiResponse.success("Video removed from collection", collectionService.removeVideo(id, videoId)));
+    }
+
+    // Group videos under section labels ("Week 1"); a blank/null label clears one.
+    @PutMapping("/{id}/videos/sections")
+    public ResponseEntity<ApiResponse<Void>> updateSections(@PathVariable Long id, @Valid @RequestBody UpdateSectionsRequest request) {
+        collectionService.updateSections(id, request.getSections());
+        return ResponseEntity.ok(ApiResponse.success("Sections saved", null));
+    }
+
+    // Per-video started/completed/average-progress, and how many learners finished the whole course.
+    @GetMapping("/{id}/analytics")
+    public ResponseEntity<ApiResponse<CollectionAnalyticsResponse>> analytics(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(collectionService.analytics(id)));
+    }
+
+    // A full copy — same videos, sections and visibility — owned by the acting admin.
+    @PostMapping("/{id}/duplicate")
+    public ResponseEntity<ApiResponse<CollectionResponse>> duplicate(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Collection duplicated", collectionService.duplicate(id, requireUsername(authentication))));
     }
 
     private String requireUsername(Authentication authentication) {

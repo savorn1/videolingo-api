@@ -16,5 +16,8 @@ public enum ProcessingJobType {
     DUB,
     // Fetch a link video as an MP4 (optionally with a voice-over as its
     // sound) — as a temporary download, or imported to replace the link.
-    DOWNLOAD
+    DOWNLOAD,
+    // Trim/crop/scale a range of the video, or split it into segments (see
+    // VideoEditService) — produces one or more VideoClip rows to review.
+    EDIT
 }

@@ -17,15 +17,60 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 // Speech-to-text through OpenAI's transcription API (Whisper), with segment
 // timestamps (verbose_json).
+//
+// The API only accepts a `language` hint for the languages it transcribes
+// well (SUPPORTED_HINTS); for any other — Khmer, Lao, Burmese… — it answers
+// 400 "Language 'km' is not supported". Those are sent without the hint, so
+// the model detects the language itself, and with a short prompt written in
+// the language (PRIMING_PROMPTS) that steers it toward the right language
+// and script. The language it actually heard comes back in Result.
 @Component
 @RequiredArgsConstructor
 public class WhisperClient {
 
     public record Segment(long startMs, long endMs, String text) {
+    }
+
+    /** `detectedLanguage` is what the model reports hearing, as a lower-case name ("khmer"), or null. */
+    public record Result(List<Segment> segments, String detectedLanguage) {
+    }
+
+    // ISO 639-1 codes the transcription API accepts as a `language` hint
+    // (OpenAI's speech-to-text "supported languages" list).
+    static final Set<String> SUPPORTED_HINTS = Set.of(
+            "af", "ar", "hy", "az", "be", "bs", "bg", "ca", "zh", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "gl", "de", "el",
+            "he", "hi", "hu", "is", "id", "it", "ja", "kn", "kk", "ko", "lv", "lt", "mk", "ms", "mr", "mi", "ne", "no", "fa", "pl",
+            "pt", "ro", "ru", "sr", "sk", "sl", "es", "sw", "sv", "tl", "ta", "th", "tr", "uk", "ur", "vi", "cy");
+
+    // For languages without a hint: a line in the language, passed as the
+    // `prompt` (text the model treats as coming just before the audio), which
+    // makes it far likelier to transcribe in that language and script.
+    static final Map<String, String> PRIMING_PROMPTS = Map.of(
+            "km", "សូមស្វាគមន៍។ ខាងក្រោមនេះជាការសន្ទនាជាភាសាខ្មែរ។");
+
+    /** The `language` hint to send for this video language, or null when the API wouldn't accept one. */
+    static String languageHint(String language) {
+        if (language == null || language.isBlank()) {
+            return null;
+        }
+        String code = language.split("[-_]")[0].toLowerCase(Locale.ROOT);
+        return SUPPORTED_HINTS.contains(code) ? code : null;
+    }
+
+    /** Whether transcription in this language has to rely on the model detecting it. */
+    public static boolean needsAutoDetect(String language) {
+        return language != null && !language.isBlank() && languageHint(language) == null;
+    }
+
+    static String primingPrompt(String language) {
+        return language == null ? null : PRIMING_PROMPTS.get(language.split("[-_]")[0].toLowerCase(Locale.ROOT));
     }
 
     private final PipelineProperties props;
@@ -38,8 +83,8 @@ public class WhisperClient {
         }
     }
 
-    /** Transcribes one audio file; `language` is an ISO 639-1 hint (may be null). Times are relative to the file. */
-    public List<Segment> transcribe(Path audio, String language) {
+    /** Transcribes one audio file; `language` is the video's language code (may be null). Times are relative to the file. */
+    public Result transcribe(Path audio, String language) {
         requireReady();
         String boundary = "----videolingo" + UUID.randomUUID();
         ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -47,8 +92,11 @@ public class WhisperClient {
             field(body, boundary, "model", props.whisper());
             field(body, boundary, "response_format", "verbose_json");
             field(body, boundary, "timestamp_granularities[]", "segment");
-            if (language != null && !language.isBlank()) {
-                field(body, boundary, "language", language.split("[-_]")[0].toLowerCase());
+            String hint = languageHint(language);
+            if (hint != null) {
+                field(body, boundary, "language", hint);
+            } else if (primingPrompt(language) != null) {
+                field(body, boundary, "prompt", primingPrompt(language));
             }
             body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + audio.getFileName()
                     + "\"\r\nContent-Type: audio/mpeg\r\n\r\n").getBytes(StandardCharsets.UTF_8));
@@ -83,7 +131,8 @@ public class WhisperClient {
                 long end = Math.max(start + 1, Math.round(s.path("end").asDouble() * 1000));
                 out.add(new Segment(start, end, text));
             }
-            return out;
+            String detected = root.path("language").asText("");
+            return new Result(out, detected.isBlank() ? null : detected.toLowerCase(Locale.ROOT));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the speech-to-text response", e);
         }

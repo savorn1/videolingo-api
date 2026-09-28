@@ -110,6 +110,16 @@ public class Video {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    // Put aside, out of the active library — distinct from enabled (a quick
+    // on/off) and deletedAt (the trash). Learners can't watch it either way.
+    @Column(name = "archived_at")
+    private LocalDateTime archivedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private VideoVisibility visibility = VideoVisibility.PUBLIC;
+
     // Categories this video is filed under. Plain ids (like ownerId) in a join
     // table — a category can be deleted without touching the video row.
     // BatchSize loads the sets for a whole list page in a few queries.
@@ -154,5 +164,9 @@ public class Video {
 
     public boolean isDeleted() {
         return deletedAt != null;
+    }
+
+    public boolean isArchived() {
+        return archivedAt != null;
     }
 }

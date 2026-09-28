@@ -110,4 +110,21 @@ public final class VideoIngestDtos {
         // Add even though the same video already exists.
         private boolean allowDuplicate;
     }
+
+    @Data
+    public static class ReplaceRequest {
+        // From an upload ticket, same as CreateVideoRequest.storageKey.
+        @NotBlank
+        @Size(max = 500)
+        private String storageKey;
+        @Min(0)
+        @Max(7 * 24 * 3600)
+        private Integer durationSeconds;
+        @Min(1)
+        @Max(16384)
+        private Integer width;
+        @Min(1)
+        @Max(16384)
+        private Integer height;
+    }
 }

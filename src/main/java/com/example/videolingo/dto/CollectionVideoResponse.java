@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 public class CollectionVideoResponse {
 
     private int position;
+    // Grouping label ("Week 1"); null if this video isn't in a section.
+    private String section;
     private Long videoId;
     // Null only if the video row itself is gone.
     private String title;

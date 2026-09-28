@@ -58,7 +58,7 @@ public class StudyController {
 
     @PostMapping("/cards/from-key-points")
     public ResponseEntity<ApiResponse<Integer>> fromKeyPoints(@RequestBody KeyPointsRequest request, Authentication authentication) {
-        int added = vocabularyService.fromKeyPoints(userId(authentication), request.generationId());
+        int added = vocabularyService.fromKeyPoints(userId(authentication), request.generationId(), currentUser.isAdmin(authentication));
         return ResponseEntity.ok(ApiResponse.success(added == 0 ? "They're all in your cards already" : "Added " + added + " card(s)", added));
     }
 

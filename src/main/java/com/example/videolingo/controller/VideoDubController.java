@@ -38,6 +38,16 @@ public class VideoDubController {
         return ResponseEntity.ok(ApiResponse.success("Voice track deleted", null));
     }
 
+    public record LockRequest(boolean locked) {
+    }
+
+    @PutMapping("/{dubId}/lock")
+    public ResponseEntity<ApiResponse<DubService.DubResponse>> setLocked(@PathVariable Long videoId, @PathVariable Long dubId,
+                                                                          @RequestBody LockRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(request.locked() ? "Track locked" : "Track unlocked",
+                dubService.setLocked(videoId, dubId, request.locked())));
+    }
+
     private String requireUsername(Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Authentication required");

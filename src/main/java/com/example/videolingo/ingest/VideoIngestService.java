@@ -4,6 +4,7 @@ import com.example.videolingo.dto.VideoIngestDtos.CreateVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.Duplicate;
 import com.example.videolingo.dto.VideoIngestDtos.InspectResponse;
 import com.example.videolingo.dto.VideoIngestDtos.LanguageGuess;
+import com.example.videolingo.dto.VideoIngestDtos.ReplaceRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
 import com.example.videolingo.dto.VideoResponse;
@@ -18,6 +19,7 @@ import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.CategoryService;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.VideoService;
+import com.example.videolingo.service.VideoVersionService;
 import com.example.videolingo.settings.SettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -67,6 +69,7 @@ public class VideoIngestService {
     private final VideoService videoService;
     private final UserRepository userRepository;
     private final SettingsService settings;
+    private final VideoVersionService versionService;
     private final S3Client s3;
     private final S3Presigner presigner;
 
@@ -189,6 +192,44 @@ public class VideoIngestService {
         built.getCategoryIds().addAll(resolved);
         Video saved = videoRepository.save(built);
         return videoService.getVideo(saved.getId());
+    }
+
+    // ── replace ───────────────────────────────────────────────────────────
+
+    /** Swaps a video's file for a freshly uploaded one; the old file is kept as a version (VideoVersionService). */
+    @Transactional
+    public VideoResponse replace(Long videoId, ReplaceRequest r, String actingUsername) {
+        requireStorage();
+        Video video = videoRepository.findById(videoId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + videoId));
+        if (video.isDeleted()) {
+            throw new AppException(HttpStatus.CONFLICT, "Restore the video before replacing its file");
+        }
+        String key = r.getStorageKey();
+        if (key == null || !UPLOADED_KEY.matcher(key).matches()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Upload the new video file first");
+        }
+        HeadObjectResponse head = head(key);
+        if (head == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The uploaded file wasn't found — the upload may not have finished");
+        }
+        versionService.snapshot(video, "Replaced by upload", actingUsername);
+        video.setSource(VideoSource.UPLOAD);
+        video.setStorageKey(key);
+        video.setVideoUrl(publicUrl(key));
+        video.setFileSize(head.contentLength());
+        video.setMimeType(head.contentType());
+        if (r.getDurationSeconds() != null) {
+            video.setDurationSeconds(r.getDurationSeconds());
+        }
+        if (r.getWidth() != null) {
+            video.setWidth(r.getWidth());
+        }
+        if (r.getHeight() != null) {
+            video.setHeight(r.getHeight());
+        }
+        videoRepository.save(video);
+        return videoService.getVideo(videoId);
     }
 
     private void fromLink(CreateVideoRequest r, Video.VideoBuilder video) {

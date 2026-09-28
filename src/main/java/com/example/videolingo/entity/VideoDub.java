@@ -61,6 +61,11 @@ public class VideoDub {
     @Column(name = "job_id")
     private Long jobId;
 
+    // Blocks delete/replace — a safety toggle in the timeline editor.
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean locked = false;
+
     @Column(name = "created_by", length = 100)
     private String createdBy;
 

@@ -35,25 +35,44 @@ public class LearnController {
     }
 
     @GetMapping("/videos/{id}")
-    public ResponseEntity<ApiResponse<LearnService.WatchPage>> watch(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(learnService.watch(id)));
+    public ResponseEntity<ApiResponse<LearnService.WatchPage>> watch(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                learnService.watch(id, currentUser.requireUserId(authentication), currentUser.isAdmin(authentication))));
     }
 
     @GetMapping("/videos/{id}/study")
-    public ResponseEntity<ApiResponse<List<LearnService.StudyItem>>> study(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(learnService.study(id)));
+    public ResponseEntity<ApiResponse<List<LearnService.StudyItem>>> study(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                learnService.study(id, currentUser.requireUserId(authentication), currentUser.isAdmin(authentication))));
     }
 
     @GetMapping("/subtitles/{id}/cues")
-    public ResponseEntity<ApiResponse<List<LearnService.Cue>>> cues(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(learnService.cues(id)));
+    public ResponseEntity<ApiResponse<List<LearnService.Cue>>> cues(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                learnService.cues(id, currentUser.requireUserId(authentication), currentUser.isAdmin(authentication))));
+    }
+
+    // Glossary terms to highlight in captions (source = the caption's language).
+    @GetMapping("/glossary")
+    public ResponseEntity<ApiResponse<List<LearnService.GlossaryTerm>>> glossary(@RequestParam String source, @RequestParam String target) {
+        return ResponseEntity.ok(ApiResponse.success(learnService.glossary(source, target)));
+    }
+
+    // "Report a subtitle problem" — becomes a review comment on the track.
+    @PostMapping("/subtitles/{id}/report")
+    public ResponseEntity<ApiResponse<Void>> report(@PathVariable Long id, @Valid @RequestBody LearnService.ProblemReport report,
+                                                    Authentication authentication) {
+        learnService.report(id, report, StudyController.requireUsername(authentication),
+                currentUser.requireUserId(authentication), currentUser.isAdmin(authentication));
+        return ResponseEntity.ok(ApiResponse.success("Thanks — the team will take a look", null));
     }
 
     @GetMapping("/collections")
     public ResponseEntity<PageResponse<CollectionResponse>> collections(@RequestParam(required = false) String search,
+                                                                        @RequestParam(required = false) Long videoId,
                                                                         @RequestParam(defaultValue = "1") int page,
                                                                         @RequestParam(defaultValue = "12") int size) {
-        return ResponseEntity.ok(learnService.collections(search, page, size));
+        return ResponseEntity.ok(learnService.collections(search, videoId, page, size));
     }
 
     @GetMapping("/collections/{id}")
@@ -65,7 +84,8 @@ public class LearnController {
     public ResponseEntity<ApiResponse<QuizService.AttemptResult>> submitQuiz(@PathVariable Long generationId,
                                                                              @Valid @RequestBody QuizService.Submission submission,
                                                                              Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(quizService.submit(currentUser.requireUserId(authentication), generationId, submission)));
+        return ResponseEntity.ok(ApiResponse.success(
+                quizService.submit(currentUser.requireUserId(authentication), generationId, submission, currentUser.isAdmin(authentication))));
     }
 
     // "What does this word mean?" — from a subtitle cue.

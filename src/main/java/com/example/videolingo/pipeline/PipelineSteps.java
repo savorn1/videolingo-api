@@ -6,6 +6,7 @@ import com.example.videolingo.entity.Subtitle;
 import com.example.videolingo.entity.Transcript;
 import com.example.videolingo.entity.TranscriptSegment;
 import com.example.videolingo.entity.Video;
+import com.example.videolingo.entity.VideoClip;
 import com.example.videolingo.entity.VideoDub;
 import com.example.videolingo.entity.VideoExport;
 import com.example.videolingo.entity.VideoSource;
@@ -13,6 +14,7 @@ import com.example.videolingo.repository.SubtitleCueRepository;
 import com.example.videolingo.repository.SubtitleRepository;
 import com.example.videolingo.repository.TranscriptRepository;
 import com.example.videolingo.repository.TranscriptSegmentRepository;
+import com.example.videolingo.repository.VideoClipRepository;
 import com.example.videolingo.repository.VideoDubRepository;
 import com.example.videolingo.repository.VideoExportRepository;
 import com.example.videolingo.repository.VideoRepository;
@@ -38,7 +40,10 @@ import java.net.URLEncoder;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 // What each job type does. Steps take a JobContext for progress, so they can
 // be chained: a DUB job transcribes and translates first when needed.
@@ -57,6 +62,7 @@ public class PipelineSteps {
     private final TranscriptService transcriptService;
     private final VideoDubRepository dubRepository;
     private final VideoExportRepository exportRepository;
+    private final VideoClipRepository clipRepository;
     private final SubtitleRepository subtitleRepository;
     private final SubtitleCueRepository cueRepository;
     private final SettingsService settings;
@@ -291,6 +297,125 @@ public class PipelineSteps {
         }
     }
 
+    /** How long an unpromoted clip stays available for review. */
+    static final int CLIP_HOURS = 72;
+
+    // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540}}
+    // {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":9000}]}
+    public void editJob(ProcessingJob job, JobContext ctx) {
+        Video video = video(job);
+        JsonNode p = params(job);
+        String operation = text(p, "operation", null);
+        if (operation == null) {
+            throw new JobFailure("The job is missing its operation");
+        }
+        requireBucket();
+
+        String input;
+        if (video.getStorageKey() != null) {
+            ctx.progress(5, "Fetching the video file");
+            input = fetch(video.getStorageKey(), "source-video", ctx).toString();
+        } else if (isLink(video.getSource())) {
+            throw new JobFailure("Import this video into storage first — link videos can't be edited directly");
+        } else {
+            input = video.getVideoUrl();
+        }
+
+        if ("SPLIT".equals(operation)) {
+            splitJob(video, job, p, input, ctx);
+        } else {
+            trimJob(video, job, p, input, ctx);
+        }
+    }
+
+    private void trimJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        long startMs = p.path("startMs").asLong(0);
+        Long endMs = p.hasNonNull("endMs") ? p.get("endMs").asLong() : null;
+        MediaTools.CropRect crop = crop(p.get("crop"));
+        MediaTools.ScaleSize scale = scale(p.get("scale"));
+
+        ctx.progress(20, "Trimming");
+        Path out = media.trim(input, startMs, endMs, crop, scale, ctx.slice(20, 90));
+        ctx.progress(92, "Saving the clip");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+
+        // Boxed on every branch on purpose: mixing a primitive int (crop.w()/scale.w())
+        // with an Integer (video.getWidth()) in a ternary makes Java auto-unbox the
+        // Integer branch, which NPEs when the video has no recorded width/height.
+        Integer width = crop != null ? Integer.valueOf(crop.w()) : scale != null ? Integer.valueOf(scale.w()) : video.getWidth();
+        Integer height = crop != null ? Integer.valueOf(crop.h()) : scale != null ? Integer.valueOf(scale.h()) : video.getHeight();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.TRIM)
+                .startMs(startMs).endMs(endMs)
+                .cropX(crop != null ? crop.x() : null).cropY(crop != null ? crop.y() : null)
+                .cropW(crop != null ? crop.w() : null).cropH(crop != null ? crop.h() : null)
+                .scaleW(scale != null ? scale.w() : null).scaleH(scale != null ? scale.h() : null)
+                .durationSeconds(clipSeconds(startMs, endMs, video))
+                .width(width).height(height)
+                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Trim ready — review it, then replace the original video or discard it");
+    }
+
+    private void splitJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        List<JsonNode> segments = new ArrayList<>();
+        p.path("segments").forEach(segments::add);
+        if (segments.isEmpty()) {
+            throw new JobFailure("The job has no segments");
+        }
+        int n = segments.size();
+        for (int i = 0; i < n; i++) {
+            JsonNode seg = segments.get(i);
+            long startMs = seg.path("startMs").asLong(0);
+            Long endMs = seg.hasNonNull("endMs") ? seg.get("endMs").asLong() : null;
+            JobContext slice = ctx.slice(i * 100 / n, (i + 1) * 100 / n);
+            slice.progress(5, "Cutting segment " + (i + 1) + " of " + n);
+            Path out = media.trim(input, startMs, endMs, null, null, slice.slice(5, 90));
+            String key = "edits/" + video.getId() + "/" + job.getId() + "-" + i + ".mp4";
+            upload(key, out, "video/mp4", null);
+            ctx.checkpoint();
+            clipRepository.save(VideoClip.builder()
+                    .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.SPLIT).segmentIndex(i)
+                    .startMs(startMs).endMs(endMs)
+                    .durationSeconds(clipSeconds(startMs, endMs, video))
+                    .width(video.getWidth()).height(video.getHeight())
+                    .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                    .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                    .build());
+        }
+        ctx.info("Split into " + n + " segment(s) — review them, then add any as a new video or discard them");
+    }
+
+    private static Integer clipSeconds(long startMs, Long endMs, Video video) {
+        Long end = endMs != null ? endMs : (video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null);
+        return end == null ? null : (int) Math.max(0, (end - startMs) / 1000);
+    }
+
+    private static MediaTools.CropRect crop(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        return new MediaTools.CropRect(node.path("x").asInt(0), node.path("y").asInt(0), node.path("w").asInt(), node.path("h").asInt());
+    }
+
+    private static MediaTools.ScaleSize scale(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        return new MediaTools.ScaleSize(node.path("w").asInt(), node.path("h").asInt());
+    }
+
+    private static long size(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't read the clip file: " + e.getMessage(), e);
+        }
+    }
+
     private void importInto(Long videoId, String key, long size) {
         Video video = videoRepository.findById(videoId).orElseThrow(() -> new JobFailure("The video no longer exists"));
         String oldKey = video.getStorageKey();
@@ -342,12 +467,21 @@ public class PipelineSteps {
         Path audio = media.extractAudio(video, ctx.slice(0, 30));
         List<Path> chunks = media.split(audio, ctx);
         List<TranscriptSegmentDto> segments = new ArrayList<>();
+        String languageName = translator.name(language);
+        if (WhisperClient.needsAutoDetect(language)) {
+            ctx.info("OpenAI speech-to-text can't be told to expect " + languageName + ", so it detects the language itself");
+        }
+        Set<String> heard = new LinkedHashSet<>();
         for (int i = 0; i < chunks.size(); i++) {
             ctx.progress(30 + i * 65 / chunks.size(), chunks.size() > 1
                     ? "Transcribing (part " + (i + 1) + " of " + chunks.size() + ")"
                     : "Transcribing");
             long offset = (long) i * MediaTools.CHUNK_SECONDS * 1000;
-            for (WhisperClient.Segment s : whisper.transcribe(chunks.get(i), language)) {
+            WhisperClient.Result result = whisper.transcribe(chunks.get(i), language);
+            if (result.detectedLanguage() != null) {
+                heard.add(result.detectedLanguage());
+            }
+            for (WhisperClient.Segment s : result.segments()) {
                 segments.add(TranscriptSegmentDto.builder()
                         .startMs(offset + s.startMs())
                         .endMs(offset + s.endMs())
@@ -357,6 +491,13 @@ public class PipelineSteps {
         }
         if (segments.isEmpty()) {
             throw new JobFailure("No speech was found in the audio");
+        }
+        // The model names what it heard ("khmer"); say so if that isn't the video's language.
+        String expected = languageName.toLowerCase(Locale.ROOT);
+        List<String> other = heard.stream().filter(h -> !expected.contains(h) && !h.contains(expected)).toList();
+        if (!other.isEmpty()) {
+            ctx.warn("Speech-to-text heard " + String.join(", ", other) + " rather than " + languageName
+                    + " — check the transcript, and the video's spoken language");
         }
         ctx.progress(97, "Saving " + segments.size() + " segments");
         Long id = transcriptService.saveGenerated(video.getId(), language, segments, jobId, ACTOR);

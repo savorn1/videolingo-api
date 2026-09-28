@@ -1,5 +1,6 @@
 package com.example.videolingo.dto;
 
+import com.example.videolingo.entity.VideoVisibility;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -8,7 +9,7 @@ import java.util.List;
 
 // Admin-editable fields only. Technical metadata (duration, resolution, size,
 // format) and the file itself aren't editable — they describe the upload.
-// Enabled/deleted have their own endpoints.
+// Enabled/deleted/archived/owner have their own endpoints.
 @Data
 public class UpdateVideoRequest {
 
@@ -24,6 +25,9 @@ public class UpdateVideoRequest {
 
     @Size(max = 1000)
     private String thumbnailUrl;
+
+    // null = leave unchanged.
+    private VideoVisibility visibility;
 
     // Replaces the video's categories. null = leave them unchanged (so older
     // clients that don't send it don't wipe categories); [] = remove all.

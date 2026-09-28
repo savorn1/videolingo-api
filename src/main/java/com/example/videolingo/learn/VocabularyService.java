@@ -224,11 +224,11 @@ public class VocabularyService {
 
     /** Turns a video's AI key points into cards (point → explanation). Returns how many were new. */
     @Transactional
-    public int fromKeyPoints(Long userId, Long generationId) {
+    public int fromKeyPoints(Long userId, Long generationId, boolean isAdmin) {
         AiGeneration g = generationRepository.findById(generationId)
                 .filter(x -> x.getType() == AiFeature.KEY_POINTS)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Key points not found"));
-        learnService.requireWatchable(g.getVideoId());
+        learnService.requireWatchable(g.getVideoId(), userId, isAdmin);
         Map<String, Object> content;
         try {
             content = objectMapper.readValue(g.getContentJson(), new TypeReference<>() {

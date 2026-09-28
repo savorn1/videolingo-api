@@ -16,6 +16,9 @@ public interface WatchProgressRepository extends JpaRepository<WatchProgress, Lo
 
     List<WatchProgress> findByUserIdAndVideoIdIn(Long userId, Collection<Long> videoIds);
 
+    // Every learner's progress on these videos, any user — for collection analytics.
+    List<WatchProgress> findByVideoIdIn(Collection<Long> videoIds);
+
     // Started but not finished, on videos that still exist and aren't trashed — newest first.
     @Query("""
             select p from WatchProgress p, Video v

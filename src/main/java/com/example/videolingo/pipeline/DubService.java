@@ -31,7 +31,7 @@ public class DubService {
 
     public record DubResponse(Long id, Long videoId, String language, String languageName, String voice, String voiceName,
                               String audioUrl, String mimeType, long durationMs, long sizeBytes, Long jobId, Long transcriptId,
-                              String createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
+                              boolean locked, String createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 
     public record VoiceOption(String id, String name, String gender) {
@@ -109,11 +109,25 @@ public class DubService {
 
     @Transactional
     public void delete(Long videoId, Long dubId) {
-        VideoDub dub = dubRepository.findById(dubId)
-                .filter(d -> d.getVideoId().equals(videoId))
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Voice track not found"));
+        VideoDub dub = findDub(videoId, dubId);
+        if (dub.isLocked()) {
+            throw new AppException(HttpStatus.CONFLICT, "Unlock this track first");
+        }
         dubRepository.delete(dub);
         steps.deleteObject(dub.getStorageKey());
+    }
+
+    @Transactional
+    public DubResponse setLocked(Long videoId, Long dubId, boolean locked) {
+        VideoDub dub = findDub(videoId, dubId);
+        dub.setLocked(locked);
+        return toResponse(dubRepository.save(dub));
+    }
+
+    private VideoDub findDub(Long videoId, Long dubId) {
+        return dubRepository.findById(dubId)
+                .filter(d -> d.getVideoId().equals(videoId))
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Voice track not found"));
     }
 
     private Video findVideo(Long videoId) {
@@ -126,6 +140,6 @@ public class DubService {
                 .filter(v -> v.id().equals(d.getVoice())).map(TextToSpeechClient.Voice::name).findFirst().orElse(d.getVoice());
         return new DubResponse(d.getId(), d.getVideoId(), d.getLanguage(), translator.name(d.getLanguage()), d.getVoice(), voiceName,
                 d.getAudioUrl(), d.getMimeType(), d.getDurationMs(), d.getSizeBytes(), d.getJobId(), d.getTranscriptId(),
-                d.getCreatedBy(), d.getCreatedAt(), d.getUpdatedAt());
+                d.isLocked(), d.getCreatedBy(), d.getCreatedAt(), d.getUpdatedAt());
     }
 }

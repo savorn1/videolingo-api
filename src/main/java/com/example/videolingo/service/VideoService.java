@@ -30,4 +30,15 @@ public interface VideoService {
     VideoResponse assignTags(Long id, List<Long> tagIds);
 
     VideoResponse removeTag(Long id, Long tagId);
+
+    // Put aside, out of the active library — reversible, distinct from enabled and the trash.
+    VideoResponse archiveVideo(Long id);
+
+    VideoResponse unarchiveVideo(Long id);
+
+    // Reassign to another user.
+    VideoResponse moveOwner(Long id, Long newOwnerId);
+
+    // A full copy — same file, metadata, categories and tags — owned by the acting admin, disabled until reviewed.
+    VideoResponse duplicate(Long id, String actingUsername);
 }

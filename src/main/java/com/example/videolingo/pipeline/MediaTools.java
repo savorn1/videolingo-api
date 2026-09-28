@@ -126,6 +126,48 @@ public class MediaTools {
         return path.toString().replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'");
     }
 
+    public record CropRect(int x, int y, int w, int h) {
+    }
+
+    public record ScaleSize(int w, int h) {
+    }
+
+    /**
+     * A [startMs, endMs) range of `video` (endMs null = to the end), optionally
+     * cropped and/or scaled. Always re-encoded, not stream-copied, so the cut
+     * lands exactly on the requested millisecond instead of the nearest keyframe.
+     */
+    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, JobContext ctx) {
+        Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
+        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+                "-i", video, "-ss", millis(startMs)));
+        if (endMs != null) {
+            command.addAll(List.of("-to", millis(endMs)));
+        }
+        List<String> filters = new ArrayList<>();
+        if (crop != null) {
+            filters.add("crop=" + crop.w() + ":" + crop.h() + ":" + crop.x() + ":" + crop.y());
+        }
+        if (scale != null) {
+            filters.add("scale=" + scale.w() + ":" + scale.h());
+        }
+        if (!filters.isEmpty()) {
+            command.addAll(List.of("-vf", String.join(",", filters)));
+        }
+        command.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
+    // ffmpeg's -ss/-to want HH:MM:SS.mmm.
+    private static String millis(long ms) {
+        long h = ms / 3_600_000;
+        long m = (ms % 3_600_000) / 60_000;
+        double s = (ms % 60_000) / 1000.0;
+        return String.format(java.util.Locale.ROOT, "%02d:%02d:%06.3f", h, m, s);
+    }
+
     public Path replaceAudio(String video, Path audio, JobContext ctx) {
         Path out = ctx.workDir().resolve("with-voice.mp4");
         run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video, "-i", audio.toString(),

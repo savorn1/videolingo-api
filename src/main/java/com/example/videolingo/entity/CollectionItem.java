@@ -46,6 +46,10 @@ public class CollectionItem {
     @Column(nullable = false)
     private int position;
 
+    // Optional grouping label ("Week 1") shown as a heading above this video.
+    @Column(length = 200)
+    private String section;
+
     @Column(name = "added_by", length = 100)
     private String addedBy;
 

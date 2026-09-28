@@ -1,5 +1,6 @@
 package com.example.videolingo.service;
 
+import com.example.videolingo.dto.CollectionAnalyticsResponse;
 import com.example.videolingo.dto.CollectionFilterRequest;
 import com.example.videolingo.dto.CollectionRequest;
 import com.example.videolingo.dto.CollectionResponse;
@@ -7,6 +8,7 @@ import com.example.videolingo.dto.CollectionVideoResponse;
 import com.example.videolingo.dto.PageResponse;
 
 import java.util.List;
+import java.util.Map;
 
 public interface CollectionService {
 
@@ -30,4 +32,13 @@ public interface CollectionService {
 
     // Puts the videos in this order; must list exactly the collection's videos.
     void reorder(Long id, List<Long> videoIds);
+
+    // Sets (or clears, with a blank/null value) each listed video's section label.
+    void updateSections(Long id, Map<Long, String> sections);
+
+    // Per-video started/completed/average-progress, and how many learners finished the whole thing.
+    CollectionAnalyticsResponse analytics(Long id);
+
+    // A full copy — same videos, sections and visibility — owned by the acting admin.
+    CollectionResponse duplicate(Long id, String actingUsername);
 }

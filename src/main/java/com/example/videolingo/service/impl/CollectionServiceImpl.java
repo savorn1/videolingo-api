@@ -1,5 +1,6 @@
 package com.example.videolingo.service.impl;
 
+import com.example.videolingo.dto.CollectionAnalyticsResponse;
 import com.example.videolingo.dto.CollectionFilterRequest;
 import com.example.videolingo.dto.CollectionRequest;
 import com.example.videolingo.dto.CollectionResponse;
@@ -9,11 +10,14 @@ import com.example.videolingo.entity.CollectionItem;
 import com.example.videolingo.entity.User;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoCollection;
+import com.example.videolingo.entity.WatchProgress;
 import com.example.videolingo.exception.AppException;
+import com.example.videolingo.progress.ProgressRules;
 import com.example.videolingo.repository.CollectionItemRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.repository.VideoCollectionRepository;
 import com.example.videolingo.repository.VideoRepository;
+import com.example.videolingo.repository.WatchProgressRepository;
 import com.example.videolingo.service.CollectionService;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Subquery;
@@ -26,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -46,6 +51,7 @@ public class CollectionServiceImpl implements CollectionService {
     private final CollectionItemRepository itemRepository;
     private final VideoRepository videoRepository;
     private final UserRepository userRepository;
+    private final WatchProgressRepository progressRepository;
 
     // ── Read ──────────────────────────────────────────────────────────────
 
@@ -106,6 +112,7 @@ public class CollectionServiceImpl implements CollectionService {
             Video v = videos.get(i.getVideoId());
             return CollectionVideoResponse.builder()
                     .position(i.getPosition())
+                    .section(i.getSection())
                     .videoId(i.getVideoId())
                     .title(v != null ? v.getTitle() : null)
                     .thumbnailUrl(v != null ? v.getThumbnailUrl() : null)
@@ -204,6 +211,90 @@ public class CollectionServiceImpl implements CollectionService {
             byVideo.get(videoIds.get(i)).setPosition(i);
         }
         itemRepository.saveAll(items);
+    }
+
+    @Override
+    @Transactional
+    public void updateSections(Long id, Map<Long, String> sections) {
+        find(id);
+        Map<Long, CollectionItem> byVideo = itemRepository.findByCollectionIdOrderByPositionAsc(id).stream()
+                .collect(Collectors.toMap(CollectionItem::getVideoId, Function.identity()));
+        List<String> missing = sections.keySet().stream().filter(v -> !byVideo.containsKey(v)).map(v -> "#" + v).toList();
+        if (!missing.isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Not in this collection: " + String.join(", ", missing));
+        }
+        sections.forEach((videoId, section) -> byVideo.get(videoId).setSection(blankToNull(section)));
+        itemRepository.saveAll(byVideo.values());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CollectionAnalyticsResponse analytics(Long id) {
+        find(id);
+        List<Long> videoIds = itemRepository.findVideoIds(id);
+        if (videoIds.isEmpty()) {
+            return CollectionAnalyticsResponse.builder().uniqueLearners(0).finishedCourse(0).videos(List.of()).build();
+        }
+        Map<Long, Video> videos = videoRepository.findAllById(videoIds).stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        List<WatchProgress> rows = progressRepository.findByVideoIdIn(videoIds);
+        Map<Long, List<WatchProgress>> byVideo = rows.stream().collect(Collectors.groupingBy(WatchProgress::getVideoId));
+
+        Set<Long> learners = new HashSet<>();
+        Map<Long, Set<Long>> completedByUser = new HashMap<>();
+        for (WatchProgress p : rows) {
+            learners.add(p.getUserId());
+            if (p.isCompleted()) {
+                completedByUser.computeIfAbsent(p.getUserId(), k -> new HashSet<>()).add(p.getVideoId());
+            }
+        }
+        Set<Long> allVideoIds = new HashSet<>(videoIds);
+        long finishedCourse = completedByUser.values().stream().filter(done -> done.containsAll(allVideoIds)).count();
+
+        List<CollectionAnalyticsResponse.VideoStat> stats = videoIds.stream().map(videoId -> {
+            Video v = videos.get(videoId);
+            List<WatchProgress> progress = byVideo.getOrDefault(videoId, List.of());
+            long completed = progress.stream().filter(WatchProgress::isCompleted).count();
+            Integer avgPercent = progress.isEmpty() ? null : (int) Math.round(progress.stream()
+                    .mapToInt(p -> Objects.requireNonNullElse(ProgressRules.percent(p.getPositionSeconds(), p.getDurationSeconds(), p.isCompleted()), 0))
+                    .average().orElse(0));
+            return CollectionAnalyticsResponse.VideoStat.builder()
+                    .videoId(videoId)
+                    .title(v != null ? v.getTitle() : null)
+                    .started(progress.size())
+                    .completed(completed)
+                    .avgPercent(avgPercent)
+                    .build();
+        }).toList();
+
+        return CollectionAnalyticsResponse.builder().uniqueLearners(learners.size()).finishedCourse(finishedCourse).videos(stats).build();
+    }
+
+    @Override
+    @Transactional
+    public CollectionResponse duplicate(Long id, String actingUsername) {
+        VideoCollection source = find(id);
+        Long ownerId = userRepository.findByUsername(actingUsername).map(User::getId).orElse(null);
+        String title = source.getTitle() + " (copy)";
+        VideoCollection copy = collectionRepository.save(VideoCollection.builder()
+                .title(title)
+                .slug(chooseSlug(null, title, null))
+                .description(source.getDescription())
+                .coverUrl(source.getCoverUrl())
+                .visibility(source.getVisibility())
+                .ownerId(ownerId)
+                .build());
+        List<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(id);
+        List<CollectionItem> copies = items.stream().map(i -> CollectionItem.builder()
+                .collectionId(copy.getId())
+                .videoId(i.getVideoId())
+                .position(i.getPosition())
+                .section(i.getSection())
+                .addedBy(actingUsername)
+                .build()).toList();
+        itemRepository.saveAll(copies);
+        copy.setVideoCount(copies.size());
+        collectionRepository.save(copy);
+        return get(copy.getId());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────

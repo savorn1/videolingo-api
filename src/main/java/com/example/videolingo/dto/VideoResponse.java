@@ -1,6 +1,7 @@
 package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.VideoSource;
+import com.example.videolingo.entity.VideoVisibility;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,6 +40,9 @@ public class VideoResponse {
     private Long fileSize;
     private String mimeType;
     private boolean enabled;
+    private boolean archived;
+    private LocalDateTime archivedAt;
+    private VideoVisibility visibility;
     private boolean deleted;
     private LocalDateTime deletedAt;
     private LocalDateTime createdAt;

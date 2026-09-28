@@ -32,7 +32,7 @@ import java.util.stream.Stream;
 public class JobWorker {
 
     static final Set<ProcessingJobType> HANDLED = EnumSet.of(ProcessingJobType.TRANSCRIBE, ProcessingJobType.TRANSLATE, ProcessingJobType.DUB,
-            ProcessingJobType.DOWNLOAD);
+            ProcessingJobType.DOWNLOAD, ProcessingJobType.EDIT);
 
     private final JobStore store;
     private final PipelineProperties props;
@@ -92,6 +92,7 @@ public class JobWorker {
                 case TRANSLATE -> steps.translateJob(job, ctx);
                 case DUB -> steps.dubJob(job, ctx);
                 case DOWNLOAD -> steps.downloadJob(job, ctx);
+                case EDIT -> steps.editJob(job, ctx);
                 default -> throw new JobFailure("This worker doesn't handle " + job.getType() + " jobs");
             }
             store.finish(job.getId(), ProcessingJobStatus.SUCCEEDED, null);

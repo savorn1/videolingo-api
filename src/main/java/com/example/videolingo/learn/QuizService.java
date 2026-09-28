@@ -47,11 +47,11 @@ public class QuizService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public AttemptResult submit(Long userId, Long generationId, Submission submission) {
+    public AttemptResult submit(Long userId, Long generationId, Submission submission, boolean isAdmin) {
         AiGeneration g = generationRepository.findById(generationId)
                 .filter(x -> x.getType() == AiFeature.QUIZ)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Quiz not found"));
-        learnService.requireWatchable(g.getVideoId());
+        learnService.requireWatchable(g.getVideoId(), userId, isAdmin);
         QuizOutput quiz = parse(g.getContentJson());
         List<Integer> correct = quiz.questions().stream().map(QuizOutput.QuizQuestion::correctOptionIndex).toList();
         List<Integer> answers = submission.answers();
