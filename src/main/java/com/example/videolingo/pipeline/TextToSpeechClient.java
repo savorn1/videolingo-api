@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
@@ -56,7 +55,7 @@ public class TextToSpeechClient {
 
     private final PipelineProperties props;
     private final ObjectMapper objectMapper;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private final OpenAiHttpClient http;
 
     public void requireReady() {
         if (!props.textToSpeechReady()) {
@@ -85,29 +84,21 @@ public class TextToSpeechClient {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
-        for (int attempt = 0; attempt < 4; attempt++) {
-            try {
-                HttpResponse<byte[]> r = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                if (r.statusCode() == 200) {
-                    return wav(r.body());
-                }
-                if (r.statusCode() == 401) {
-                    throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
-                }
-                if (r.statusCode() != 429 && r.statusCode() < 500) {
-                    throw new JobFailure("Text-to-speech failed (HTTP " + r.statusCode() + ") for voice " + voiceId);
-                }
-            } catch (IOException e) {
-                if (attempt == 3) {
-                    throw new JobFailure("Couldn't reach OpenAI text-to-speech: " + e.getMessage(), e);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new JobFailure("Interrupted", e);
-            }
-            sleep(1500L * (attempt + 1));
+        HttpResponse<byte[]> r;
+        try {
+            r = http.sendForBytes(request);
+        } catch (TransientApiException e) {
+            throw e.statusCode() != null
+                    ? new JobFailure("OpenAI kept rate-limiting the text-to-speech requests — try again later")
+                    : new JobFailure("Couldn't reach OpenAI text-to-speech: " + e.getMessage(), e);
         }
-        throw new JobFailure("OpenAI kept rate-limiting the text-to-speech requests — try again later");
+        if (r.statusCode() == 200) {
+            return wav(r.body());
+        }
+        if (r.statusCode() == 401) {
+            throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
+        }
+        throw new JobFailure("Text-to-speech failed (HTTP " + r.statusCode() + ") for voice " + voiceId);
     }
 
     // Raw 16-bit little-endian mono PCM → a minimal WAV file.
@@ -118,14 +109,5 @@ public class TextToSpeechClient {
                 .putInt(SAMPLE_RATE).putInt(SAMPLE_RATE * 2).putShort((short) 2).putShort((short) 16);
         b.put("data".getBytes()).putInt(pcm.length).put(pcm);
         return b.array();
-    }
-
-    private static void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new JobFailure("Interrupted", e);
-        }
     }
 }

@@ -55,7 +55,7 @@ public final class VideoIngestDtos {
     @Data
     public static class UploadRequest {
         @NotNull
-        @Pattern(regexp = "VIDEO|THUMBNAIL")
+        @Pattern(regexp = "VIDEO|THUMBNAIL|AUDIO|OVERLAY")
         private String kind;
         @NotBlank
         @Size(max = 255)

@@ -1,6 +1,9 @@
 package com.example.videolingo.webhook;
 
 import com.example.videolingo.entity.ProcessingJobStatus;
+import com.example.videolingo.entity.ProcessingJobType;
+import com.example.videolingo.repository.ProcessingJobRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.pipeline.JobFinishedEvent;
 import com.example.videolingo.repository.VideoRepository;
@@ -26,6 +29,16 @@ public class WebhookDispatcher {
 
     private final WebhookService webhookService;
     private final VideoRepository videoRepository;
+    private final ProcessingJobRepository jobRepository;
+    private final ObjectMapper objectMapper;
+
+    private String operation(String parameters) {
+        try {
+            return parameters == null ? null : objectMapper.readTree(parameters).path("operation").asText(null);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -33,6 +46,10 @@ public class WebhookDispatcher {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("jobId", e.jobId());
         data.put("type", e.type().name());
+        if (e.type() == ProcessingJobType.EDIT) {
+            // Which edit: TRIM, SPLIT, AUDIO, EXTRACT or OVERLAY.
+            data.put("operation", jobRepository.findById(e.jobId()).map(j -> operation(j.getParameters())).orElse(null));
+        }
         data.put("status", e.status().name());
         data.put("videoId", e.videoId());
         data.put("videoTitle", videoRepository.findById(e.videoId()).map(Video::getTitle).orElse(null));

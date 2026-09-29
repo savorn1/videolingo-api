@@ -7,6 +7,8 @@ import com.example.videolingo.dto.VideoIngestDtos.LanguageGuess;
 import com.example.videolingo.dto.VideoIngestDtos.ReplaceRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
+import com.example.videolingo.pipeline.AudioEditRules;
+import com.example.videolingo.pipeline.OverlayRules;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.entity.Language;
 import com.example.videolingo.entity.User;
@@ -56,6 +58,9 @@ public class VideoIngestService {
             "mp4", "video/mp4", "m4v", "video/x-m4v", "webm", "video/webm", "mov", "video/quicktime",
             "ogv", "video/ogg", "mkv", "video/x-matroska");
     static final Map<String, String> IMAGE_TYPES = Map.of("jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png", "webp", "image/webp");
+    // Replacement sound and background music for audio edits (AudioEditRules.UPLOAD_PREFIX).
+    static final Map<String, String> AUDIO_TYPES = Map.of("mp3", "audio/mpeg", "m4a", "audio/mp4", "aac", "audio/aac", "wav", "audio/wav",
+            "ogg", "audio/ogg", "oga", "audio/ogg", "opus", "audio/opus", "flac", "audio/flac", "weba", "audio/webm");
     private static final long MAX_THUMBNAIL_BYTES = 5L * 1024 * 1024;
     private static final Duration TICKET_TTL = Duration.ofHours(2);
     private static final Pattern UPLOADED_KEY = Pattern.compile("^videos/[0-9a-f-]{36}\\.[a-z0-9]{2,4}$");
@@ -132,23 +137,35 @@ public class VideoIngestService {
     public UploadTicket presignUpload(UploadRequest r) {
         requireStorage();
         boolean video = r.getKind().equals("VIDEO");
+        boolean audio = r.getKind().equals("AUDIO");
+        boolean overlay = r.getKind().equals("OVERLAY");
         String ext = extension(r.getFileName());
-        Map<String, String> types = video ? VIDEO_TYPES : IMAGE_TYPES;
+        Map<String, String> types = video ? VIDEO_TYPES : audio ? AUDIO_TYPES : IMAGE_TYPES;
         String declared = r.getContentType() == null ? "" : r.getContentType().split(";")[0].strip().toLowerCase(Locale.ROOT);
+        // Browsers label WAV as audio/x-wav or audio/wave, and MP3 sometimes as audio/mp3.
+        declared = switch (declared) {
+            case "audio/x-wav", "audio/wave", "audio/vnd.wave" -> "audio/wav";
+            case "audio/mp3", "audio/x-mpeg" -> "audio/mpeg";
+            case "audio/x-m4a" -> "audio/mp4";
+            case "audio/x-flac" -> "audio/flac";
+            default -> declared;
+        };
         String contentType = types.containsValue(declared) ? declared : types.get(ext);
         if (contentType == null) {
             throw new AppException(HttpStatus.BAD_REQUEST, video
                     ? "That file type isn't supported — upload MP4, WebM, MOV, M4V, OGV or MKV"
-                    : "Thumbnails must be JPEG, PNG or WebP images");
+                    : audio ? "That audio type isn't supported — upload MP3, M4A, AAC, WAV, OGG, Opus or FLAC"
+                    : overlay ? "Overlay images must be PNG, JPEG or WebP" : "Thumbnails must be JPEG, PNG or WebP images");
         }
-        long max = video ? settings.video().maxVideoUploadMb() * 1024L * 1024L : MAX_THUMBNAIL_BYTES;
+        long max = video || audio ? settings.video().maxVideoUploadMb() * 1024L * 1024L : MAX_THUMBNAIL_BYTES;
         if (r.getSize() > max) {
-            throw new AppException(HttpStatus.BAD_REQUEST, (video ? "Videos" : "Thumbnails") + " can be at most " + (max / (1024 * 1024)) + " MB"
-                    + (video ? " (Settings › Video)" : ""));
+            throw new AppException(HttpStatus.BAD_REQUEST, (video ? "Videos" : audio ? "Audio files" : "Thumbnails") + " can be at most "
+                    + (max / (1024 * 1024)) + " MB" + (video || audio ? " (Settings › Video)" : ""));
         }
         String fileExt = types.entrySet().stream().filter(e -> e.getValue().equals(contentType) && e.getKey().equals(ext)).map(Map.Entry::getKey)
                 .findFirst().orElseGet(() -> types.entrySet().stream().filter(e -> e.getValue().equals(contentType)).map(Map.Entry::getKey).sorted().findFirst().orElseThrow());
-        String key = (video ? "videos/" : "thumbnails/") + UUID.randomUUID() + "." + fileExt;
+        String key = (video ? "videos/" : audio ? AudioEditRules.UPLOAD_PREFIX : overlay ? OverlayRules.UPLOAD_PREFIX : "thumbnails/")
+                + UUID.randomUUID() + "." + fileExt;
         PresignedPutObjectRequest signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(TICKET_TTL)
                 .putObjectRequest(PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).contentLength(r.getSize()).build())

@@ -38,5 +38,7 @@ public class ProcessingJobResponse {
     // duplicate the state machine.
     private boolean canRetry;
     private boolean canCancel;
+    // How many queued jobs (of the types the worker handles) are ahead of this one; null unless QUEUED.
+    private Integer queuePosition;
     private boolean canDelete;
 }

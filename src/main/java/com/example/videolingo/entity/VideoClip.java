@@ -9,9 +9,11 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-// A clip produced by an EDIT job — a trim/crop of the whole video, or one
-// segment of a split — kept for review until an admin promotes it (TRIM:
-// replaces the video's file; SPLIT: becomes a new Video) or discards it.
+// A clip produced by an EDIT job — a trim/crop of the whole video, one
+// segment of a split, the video with re-rendered sound (AUDIO), or its sound
+// as a standalone file (EXTRACT) — kept for review until an admin promotes it
+// (TRIM/AUDIO: replaces the video's file; SPLIT: becomes a new Video),
+// downloads it (EXTRACT) or discards it.
 // Promoting deletes this row (ownership of the file moves to the Video row),
 // so there's never a clip pointing at a file something else now owns.
 @Entity
@@ -23,7 +25,14 @@ import java.time.LocalDateTime;
 @Builder
 public class VideoClip {
 
-    public enum Operation { TRIM, SPLIT }
+    public enum Operation {
+        TRIM, SPLIT, AUDIO, EXTRACT, OVERLAY;
+
+        /** Promoting it swaps the video's own file. */
+        public boolean replacesVideo() {
+            return this == TRIM || this == AUDIO || this == OVERLAY;
+        }
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -76,6 +85,10 @@ public class VideoClip {
 
     @Column(nullable = false, length = 1000)
     private String url;
+
+    // What an AUDIO edit changed ("Volume 150%, fade in 0.5 s…"); EXTRACT: the format.
+    @Column(length = 300)
+    private String summary;
 
     @Builder.Default
     @Column(name = "size_bytes", nullable = false)

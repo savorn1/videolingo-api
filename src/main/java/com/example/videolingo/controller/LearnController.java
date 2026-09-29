@@ -6,14 +6,17 @@ import com.example.videolingo.dto.PageResponse;
 import com.example.videolingo.dto.VideoFilterRequest;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.learn.LearnService;
+import com.example.videolingo.learn.PronunciationService;
 import com.example.videolingo.learn.QuizService;
 import com.example.videolingo.learn.VocabularyService;
 import com.example.videolingo.security.CurrentUserResolver;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -28,6 +31,14 @@ public class LearnController {
     private final QuizService quizService;
     private final VocabularyService vocabularyService;
     private final CurrentUserResolver currentUser;
+    private final PronunciationService pronunciationService;
+
+    // Shadowing: what speech-to-text heard in the learner's recording of a line.
+    @PostMapping(value = "/pronunciation", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<PronunciationService.Heard>> pronunciation(@RequestPart("file") MultipartFile file,
+                                                                                 @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(ApiResponse.success(pronunciationService.transcribe(file, language)));
+    }
 
     @GetMapping("/videos")
     public ResponseEntity<PageResponse<VideoResponse>> videos(@ModelAttribute VideoFilterRequest filter) {

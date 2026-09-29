@@ -24,4 +24,6 @@ public class ProcessingJobProgressResponse {
     private LocalDateTime updatedAt;
     // Highest log id so far — a client can tell whether to fetch new lines.
     private Long lastLogId;
+    // How many queued jobs (of the types the worker handles) are ahead of this one; null unless QUEUED.
+    private Integer queuePosition;
 }

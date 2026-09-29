@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -75,7 +74,7 @@ public class WhisperClient {
 
     private final PipelineProperties props;
     private final ObjectMapper objectMapper;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private final OpenAiHttpClient http;
 
     public void requireReady() {
         if (!props.speechToTextReady()) {
@@ -112,7 +111,14 @@ public class WhisperClient {
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()))
                 .build();
-        HttpResponse<String> response = send(request);
+        HttpResponse<String> response;
+        try {
+            response = http.sendForText(request);
+        } catch (TransientApiException e) {
+            throw e.statusCode() != null
+                    ? new JobFailure("OpenAI kept rate-limiting the speech-to-text requests — try again later")
+                    : new JobFailure("Couldn't reach the speech-to-text service: " + e.getMessage(), e);
+        }
         if (response.statusCode() == 401) {
             throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
         }
@@ -135,27 +141,6 @@ public class WhisperClient {
             return new Result(out, detected.isBlank() ? null : detected.toLowerCase(Locale.ROOT));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the speech-to-text response", e);
-        }
-    }
-
-    private HttpResponse<String> send(HttpRequest request) {
-        // One retry for rate limits / transient server errors.
-        for (int attempt = 0; ; attempt++) {
-            try {
-                HttpResponse<String> r = http.send(request, HttpResponse.BodyHandlers.ofString());
-                if ((r.statusCode() == 429 || r.statusCode() >= 500) && attempt == 0) {
-                    Thread.sleep(5000);
-                    continue;
-                }
-                return r;
-            } catch (IOException e) {
-                if (attempt > 0) {
-                    throw new JobFailure("Couldn't reach the speech-to-text service: " + e.getMessage(), e);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new JobFailure("Interrupted", e);
-            }
         }
     }
 

@@ -127,6 +127,9 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .durationSeconds(durationOf(job))
                 .updatedAt(job.getUpdatedAt())
                 .lastLogId(lastLogId(id))
+                .queuePosition(job.getStatus() == ProcessingJobStatus.QUEUED
+                        ? (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, com.example.videolingo.pipeline.JobWorker.HANDLED, job.getId()) + 1
+                        : null)
                 .build();
     }
 
@@ -280,6 +283,9 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .canRetry(canRetry(status))
                 .canCancel(status.isActive())
                 .canDelete(status != ProcessingJobStatus.RUNNING)
+                .queuePosition(status == ProcessingJobStatus.QUEUED
+                        ? (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, com.example.videolingo.pipeline.JobWorker.HANDLED, job.getId()) + 1
+                        : null)
                 .build();
     }
 }

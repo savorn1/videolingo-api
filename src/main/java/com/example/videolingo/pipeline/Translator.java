@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -57,7 +56,7 @@ public class Translator {
     private final ObjectMapper objectMapper;
     private final LanguageRepository languageRepository;
     private final GlossaryService glossaryService;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private final OpenAiHttpClient http;
 
     public void requireReady() {
         if (!props.translationReady()) {
@@ -147,38 +146,37 @@ public class Translator {
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
-        for (int attempt = 0; attempt < 4; attempt++) {
-            try {
-                HttpResponse<String> r = http.send(request, HttpResponse.BodyHandlers.ofString());
-                if (r.statusCode() == 200) {
-                    JsonNode message = objectMapper.readTree(r.body()).path("choices").path(0).path("message");
-                    if (message.hasNonNull("refusal")) {
-                        throw new JobFailure("Translation was refused: " + message.path("refusal").asText());
-                    }
-                    return objectMapper.readValue(message.path("content").asText(), TranslationOutput.class);
-                }
-                if (r.statusCode() == 401) {
-                    throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
-                }
-                if (r.statusCode() != 429 && r.statusCode() < 500) {
-                    throw new JobFailure("Translation failed (HTTP " + r.statusCode() + "): " + errorText(r.body()));
-                }
-            } catch (IOException e) {
-                if (attempt == 3) {
-                    throw new JobFailure("Couldn't reach OpenAI for translation: " + e.getMessage(), e);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new JobFailure("Interrupted", e);
+        HttpResponse<String> r;
+        try {
+            r = http.sendForText(request);
+        } catch (TransientApiException e) {
+            throw e.statusCode() != null
+                    ? new JobFailure("OpenAI kept rate-limiting the translation requests — try again later")
+                    : new JobFailure("Couldn't reach OpenAI for translation: " + e.getMessage(), e);
+        }
+        if (r.statusCode() == 200) {
+            JsonNode message = readMessage(r.body());
+            if (message.hasNonNull("refusal")) {
+                throw new JobFailure("Translation was refused: " + message.path("refusal").asText());
             }
             try {
-                Thread.sleep(2000L * (attempt + 1));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new JobFailure("Interrupted", e);
+                return objectMapper.readValue(message.path("content").asText(), TranslationOutput.class);
+            } catch (IOException e) {
+                throw new JobFailure("Couldn't read the translation response", e);
             }
         }
-        throw new JobFailure("OpenAI kept rate-limiting the translation requests — try again later");
+        if (r.statusCode() == 401) {
+            throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
+        }
+        throw new JobFailure("Translation failed (HTTP " + r.statusCode() + "): " + errorText(r.body()));
+    }
+
+    private JsonNode readMessage(String body) {
+        try {
+            return objectMapper.readTree(body).path("choices").path(0).path("message");
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't read the translation response", e);
+        }
     }
 
     private String errorText(String body) {

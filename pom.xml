@@ -83,6 +83,19 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- @Retryable, for the OpenAI HTTP clients (pipeline.OpenAiHttpClient).
+		     Not managed by spring-boot-dependencies, so pinned explicitly. -->
+		<dependency>
+			<groupId>org.springframework.retry</groupId>
+			<artifactId>spring-retry</artifactId>
+			<version>2.0.12</version>
+		</dependency>
+		<!-- @EnableRetry proxies methods via Spring AOP; Boot 4 renamed the old
+		     "-aop" starter (CGLIB-only) to this one, which also covers AspectJ. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aspectj</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

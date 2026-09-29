@@ -31,7 +31,8 @@ import java.util.stream.Stream;
 @Slf4j
 public class JobWorker {
 
-    static final Set<ProcessingJobType> HANDLED = EnumSet.of(ProcessingJobType.TRANSCRIBE, ProcessingJobType.TRANSLATE, ProcessingJobType.DUB,
+    // public: ProcessingJobServiceImpl reuses it to compute a queued job's position.
+    public static final Set<ProcessingJobType> HANDLED = EnumSet.of(ProcessingJobType.TRANSCRIBE, ProcessingJobType.TRANSLATE, ProcessingJobType.DUB,
             ProcessingJobType.DOWNLOAD, ProcessingJobType.EDIT);
 
     private final JobStore store;

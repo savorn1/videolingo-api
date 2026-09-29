@@ -31,6 +31,8 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
@@ -302,6 +304,9 @@ public class PipelineSteps {
 
     // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540}}
     // {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":9000}]}
+    // {"operation":"AUDIO","audio":{…AudioEditRules.Spec…},"summary":"Volume 150%, fade out 2 s"}
+    // {"operation":"EXTRACT","format":"MP3" | "WAV"}
+    // {"operation":"OVERLAY","overlay":{"layers":[…OverlayRules.Layer…]},"summary":"Text “Hello”, 1 image"}
     public void editJob(ProcessingJob job, JobContext ctx) {
         Video video = video(job);
         JsonNode p = params(job);
@@ -321,11 +326,144 @@ public class PipelineSteps {
             input = video.getVideoUrl();
         }
 
-        if ("SPLIT".equals(operation)) {
-            splitJob(video, job, p, input, ctx);
-        } else {
-            trimJob(video, job, p, input, ctx);
+        switch (operation) {
+            case "SPLIT" -> splitJob(video, job, p, input, ctx);
+            case "AUDIO" -> audioJob(video, job, p, input, ctx);
+            case "EXTRACT" -> extractJob(video, job, p, input, ctx);
+            case "OVERLAY" -> overlayJob(video, job, p, input, ctx);
+            default -> trimJob(video, job, p, input, ctx);
         }
+    }
+
+    private void audioJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        AudioEditRules.Spec spec;
+        try {
+            spec = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
+        } catch (Exception e) {
+            throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
+        }
+        if (spec == null) {
+            throw new JobFailure("The job has no audio settings");
+        }
+        ctx.progress(10, "Reading the video");
+        MediaTools.Probe source = media.probe(input, ctx.workDir());
+        if (source.durationMs() == null || source.durationMs() <= 0) {
+            throw new JobFailure("Couldn't read how long the video is");
+        }
+
+        Path replacement = null;
+        MediaTools.Probe replacementProbe = null;
+        if (spec.replaceKey() != null) {
+            ctx.progress(15, "Fetching the replacement audio");
+            replacement = fetch(spec.replaceKey(), "replacement-audio", ctx);
+            replacementProbe = media.probe(replacement.toString(), ctx.workDir());
+            if (!replacementProbe.hasAudio()) {
+                throw new JobFailure("The replacement file has no audio in it");
+            }
+        }
+        Path music = null;
+        if (spec.music() != null) {
+            ctx.progress(20, "Fetching the background music");
+            music = fetch(spec.music().key(), "music", ctx);
+            if (!media.probe(music.toString(), ctx.workDir()).hasAudio()) {
+                throw new JobFailure("The background music file has no audio in it");
+            }
+        }
+
+        boolean mono = replacementProbe != null ? replacementProbe.mono() : source.mono();
+        AudioEditRules.Inputs inputs = new AudioEditRules.Inputs(source.durationMs(), source.hasAudio(), mono,
+                replacementProbe != null ? replacementProbe.durationMs() : source.durationMs());
+        AudioEditRules.Graph graph = AudioEditRules.build(spec, inputs);
+        long outMs = Math.round(source.durationMs() / spec.speed());
+
+        ctx.progress(25, graph.picture() ? "Rendering the sound and re-timing the picture" : "Rendering the sound");
+        Path out = media.editAudio(input, replacement, music, spec.music() != null && spec.music().loop(), graph, outMs, ctx.slice(25, 90));
+        ctx.progress(92, "Saving the result");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.AUDIO)
+                .startMs(0).endMs(null)
+                .durationSeconds((int) (outMs / 1000))
+                .width(video.getWidth()).height(video.getHeight())
+                .summary(text(p, "summary", AudioEditRules.describe(spec)))
+                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Audio edit ready — listen to it, then replace the original video or discard it");
+    }
+
+    private void overlayJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        OverlayRules.Spec spec;
+        try {
+            spec = objectMapper.treeToValue(p.get("overlay"), OverlayRules.Spec.class);
+        } catch (Exception e) {
+            throw new JobFailure("The job's layers aren't valid: " + e.getMessage());
+        }
+        if (spec == null || spec.layers().isEmpty()) {
+            throw new JobFailure("The job has no layers");
+        }
+        ctx.progress(5, "Reading the video");
+        MediaTools.Probe probe = media.probe(input, ctx.workDir());
+        if (!probe.hasVideo() || probe.width() == null || probe.height() == null) {
+            throw new JobFailure("Couldn't read the video's picture size");
+        }
+        if (probe.durationMs() == null || probe.durationMs() <= 0) {
+            throw new JobFailure("Couldn't read how long the video is");
+        }
+
+        ctx.progress(10, "Preparing the layers");
+        List<Path> files = new ArrayList<>();
+        for (int i = 0; i < spec.layers().size(); i++) {
+            OverlayRules.Layer layer = spec.layers().get(i);
+            if (layer.textual()) {
+                Path png = ctx.workDir().resolve("layer-" + i + ".png");
+                TextRenderer.write(TextRenderer.render(layer, probe.height()), png);
+                files.add(png);
+            } else {
+                files.add(fetch(layer.imageKey(), "layer-" + i, ctx));
+            }
+        }
+        OverlayRules.Graph graph = OverlayRules.build(spec, probe.width(), probe.durationMs());
+
+        ctx.progress(20, "Drawing the layers onto the video");
+        Path out = media.overlay(input, files, graph, probe.durationMs(), ctx.slice(20, 92));
+        ctx.progress(93, "Saving the result");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.OVERLAY)
+                .startMs(0).endMs(null)
+                .durationSeconds((int) (probe.durationMs() / 1000))
+                .width(probe.width()).height(probe.height())
+                .summary(text(p, "summary", OverlayRules.describe(spec)))
+                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Text & overlay ready — preview it, then replace the original video or discard it");
+    }
+
+    private void extractJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        boolean wav = "WAV".equals(text(p, "format", "MP3"));
+        ctx.progress(20, "Extracting the audio");
+        Path out = media.exportAudio(input, wav ? "WAV" : "MP3", ctx.slice(20, 90));
+        ctx.progress(92, "Saving the audio file");
+        String ext = wav ? "wav" : "mp3";
+        String key = "edits/" + video.getId() + "/" + job.getId() + "-audio." + ext;
+        String downloadName = fileName(video.getTitle(), null).replaceAll("\\.mp4$", "." + ext);
+        upload(key, out, wav ? "audio/wav" : "audio/mpeg", downloadName);
+        ctx.checkpoint();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.EXTRACT)
+                .startMs(0).endMs(null)
+                .durationSeconds(video.getDurationSeconds())
+                .summary(wav ? "WAV · 16-bit PCM" : "MP3 · 192 kbps")
+                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Audio extracted as " + downloadName);
     }
 
     private void trimJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
@@ -600,6 +738,43 @@ public class PipelineSteps {
             throw new JobFailure("Couldn't read " + key + " from storage: " + e.getMessage(), e);
         }
         return out;
+    }
+
+    /** One of our objects copied into `dir` (outside any job). */
+    public Path download(String key, Path dir, String name) {
+        requireBucket();
+        String ext = key.contains(".") ? key.substring(key.lastIndexOf('.')) : "";
+        Path out = dir.resolve(name + ext);
+        try {
+            s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), out);
+        } catch (RuntimeException e) {
+            throw new JobFailure("Couldn't read " + key + " from storage: " + e.getMessage(), e);
+        }
+        return out;
+    }
+
+    /**
+     * Deletes files under `prefix` last changed before `cutoff` — uploads made
+     * only for an edit (replacement sound, music, overlay images), once no
+     * job is likely to still need them. Returns how many went.
+     */
+    public int deleteStale(String prefix, java.time.Instant cutoff) {
+        if (bucket == null || bucket.isBlank()) {
+            return 0;
+        }
+        int deleted = 0;
+        try {
+            for (S3Object o : s3.listObjectsV2Paginator(ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build()).contents()) {
+                if (o.lastModified() != null && o.lastModified().isBefore(cutoff)) {
+                    deleteObject(o.key());
+                    deleted++;
+                }
+            }
+        } catch (RuntimeException e) {
+            // Storage unreachable: try again next time.
+            return deleted;
+        }
+        return deleted;
     }
 
     void deleteObject(String key) {

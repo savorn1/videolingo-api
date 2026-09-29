@@ -27,4 +27,10 @@ public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, Lo
     List<ProcessingJob> findByStatusAndTypeIn(ProcessingJobStatus status, Collection<ProcessingJobType> types);
 
     List<ProcessingJob> findTop10ByVideoIdAndTypeOrderByIdDesc(Long videoId, ProcessingJobType type);
+
+    long countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus status, java.util.Collection<ProcessingJobType> types, Long id);
+
+    /** Active (queued or running) jobs of these types for one video, oldest first — how many an admin already has in flight. */
+    List<ProcessingJob> findByVideoIdAndTypeInAndStatusInOrderByIdAsc(Long videoId, java.util.Collection<ProcessingJobType> types,
+            java.util.Collection<ProcessingJobStatus> statuses);
 }
