@@ -84,6 +84,22 @@ public class VideoController {
         return ResponseEntity.ok(ApiResponse.success("Video restored", videoService.restoreVideo(id)));
     }
 
+    // Permanently deletes one trashed video — for deleting a chosen few
+    // rather than the whole trash. Must already be in the trash.
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<ApiResponse<Void>> purge(@PathVariable Long id) {
+        videoService.purgeVideo(id);
+        return ResponseEntity.ok(ApiResponse.success("Video permanently deleted", null));
+    }
+
+    // Permanently empties the trash. A literal path segment, matched ahead of
+    // "/{id}" for exact matches — nothing is ever named "trash".
+    @DeleteMapping("/trash")
+    public ResponseEntity<ApiResponse<Void>> clearTrash() {
+        int purged = videoService.purgeTrash();
+        return ResponseEntity.ok(ApiResponse.success(purged == 0 ? "Trash was already empty" : "Trash cleared — " + purged + " video(s) permanently deleted", null));
+    }
+
     @PostMapping("/{id}/archive")
     public ResponseEntity<ApiResponse<VideoResponse>> archive(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Video archived", videoService.archiveVideo(id)));

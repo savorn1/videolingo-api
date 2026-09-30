@@ -24,6 +24,14 @@ public interface VideoService {
 
     VideoResponse restoreVideo(Long id);
 
+    // Permanently deletes one trashed video and frees its storage (file,
+    // versions, dubs). Must already be in the trash. Cannot be undone.
+    void purgeVideo(Long id);
+
+    // Permanently deletes every trashed video and frees its storage (file,
+    // versions, dubs). Returns how many were purged. Cannot be undone.
+    int purgeTrash();
+
     VideoStatisticsResponse getStatistics(Long id, int days);
 
     // Adds tags (existing ones are ignored). At most Settings › Video maxTagsPerVideo per video.

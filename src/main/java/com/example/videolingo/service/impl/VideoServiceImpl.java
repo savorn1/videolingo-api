@@ -22,8 +22,12 @@ import com.example.videolingo.service.CategoryService;
 import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.ingest.VideoLinks;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.service.FileStorageService;
 import com.example.videolingo.service.LanguageService;
+import com.example.videolingo.service.VideoMarkerService;
 import com.example.videolingo.service.VideoService;
+import com.example.videolingo.service.VideoVersionService;
+import com.example.videolingo.pipeline.DubService;
 import com.example.videolingo.util.PageableUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -62,6 +66,10 @@ public class VideoServiceImpl implements VideoService {
     private final CategoryRepository categoryRepository;
     private final TagRepository tagRepository;
     private final SettingsService settings;
+    private final VideoVersionService videoVersionService;
+    private final VideoMarkerService videoMarkerService;
+    private final DubService dubService;
+    private final FileStorageService fileStorageService;
 
     @Override
     @Transactional(readOnly = true)
@@ -193,6 +201,47 @@ public class VideoServiceImpl implements VideoService {
         }
         video.setDeletedAt(null);
         return toResponse(videoRepository.save(video));
+    }
+
+    // Permanently deletes one trashed video: its file, version history and
+    // dub tracks. See purgeTrash for what's deliberately left behind.
+    @Override
+    @Transactional
+    public void purgeVideo(Long id) {
+        Video video = findVideo(id);
+        if (!video.isDeleted()) {
+            throw new AppException(HttpStatus.CONFLICT, "Move the video to the trash before deleting it permanently");
+        }
+        purgeFiles(video);
+        videoRepository.delete(video);
+    }
+
+    // Permanently deletes every trashed video: its file, version history and
+    // dub tracks. Rows in unrelated tables (AI usage, watch progress, old
+    // processing jobs…) that reference the video id are left as harmless
+    // orphaned history — cleaning those up is a separate, larger undertaking.
+    // A failure partway through (e.g. a bad S3 key) doesn't abort the rest;
+    // S3 deletes are already best-effort in the services below.
+    @Override
+    @Transactional
+    public int purgeTrash() {
+        List<Video> trashed = videoRepository.findByDeletedAtIsNotNull();
+        trashed.forEach(this::purgeFiles);
+        videoRepository.deleteAll(trashed);
+        return trashed.size();
+    }
+
+    private void purgeFiles(Video video) {
+        dubService.purgeAllForVideo(video.getId());
+        videoMarkerService.purgeAllForVideo(video.getId());
+        videoVersionService.purgeAll(video.getId());
+        if (video.getStorageKey() != null) {
+            try {
+                fileStorageService.delete(video.getStorageKey());
+            } catch (RuntimeException ignored) {
+                // An orphaned file costs a little storage; not worth failing the purge.
+            }
+        }
     }
 
     @Override

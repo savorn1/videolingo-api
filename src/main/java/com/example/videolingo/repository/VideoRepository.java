@@ -20,6 +20,9 @@ public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecific
                                          @org.springframework.data.repository.query.Param("externalId") String externalId,
                                          @org.springframework.data.repository.query.Param("url") String url);
 
+    /** Everything currently in the trash — used to clear it out. */
+    List<Video> findByDeletedAtIsNotNull();
+
     interface LanguageUsage {
         String getLanguage();
         long getCount();

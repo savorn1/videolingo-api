@@ -32,6 +32,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
@@ -316,6 +317,28 @@ public class PipelineSteps {
         }
         requireBucket();
 
+        // Joins other videos into this one; there is no source video of its own to fetch.
+        if ("MERGE".equals(operation)) {
+            try {
+                mergeJob(video, job, p, ctx);
+            } catch (RuntimeException e) {
+                discardUnfinished(video, ctx);
+                throw e;
+            }
+            return;
+        }
+
+        // Makes the video's file from an uploaded sound; there is no source video to fetch.
+        if ("AUDIO_TO_VIDEO".equals(operation)) {
+            try {
+                audioToVideoJob(video, job, p, ctx);
+            } catch (RuntimeException e) {
+                discardUnfinished(video, ctx);
+                throw e;
+            }
+            return;
+        }
+
         String input;
         if (video.getStorageKey() != null) {
             ctx.progress(5, "Fetching the video file");
@@ -332,6 +355,180 @@ public class PipelineSteps {
             case "EXTRACT" -> extractJob(video, job, p, input, ctx);
             case "OVERLAY" -> overlayJob(video, job, p, input, ctx);
             default -> trimJob(video, job, p, input, ctx);
+        }
+    }
+
+    // An uploaded sound (and optional cover picture) becomes the video's file.
+    // The video row was created, disabled, when the request came in; this fills
+    // it in, so the admin reviews it like any new upload before enabling it.
+    private void audioToVideoJob(Video video, ProcessingJob job, JsonNode p, JobContext ctx) {
+        List<AudioToVideoRules.Slide> requested = new ArrayList<>();
+        p.path("slides").forEach(n -> requested.add(new AudioToVideoRules.Slide(n.path("key").asText(""), n.path("startMs").asLong(0))));
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(text(p, "audioKey", null), text(p, "coverKey", null), text(p, "background", null),
+                text(p, "resolution", null), text(p, "waveform", null), text(p, "waveColor", null), p.path("titleCard").asBoolean(false),
+                text(p, "titleText", null), p.path("normalize").asBoolean(false), p.path("denoise").asBoolean(false), requested);
+        String problem = AudioToVideoRules.validate(spec);
+        if (problem != null) {
+            throw new JobFailure(problem);
+        }
+        ctx.progress(5, "Fetching the audio file");
+        Path audio = fetch(spec.audioKey(), "source-audio", ctx);
+        MediaTools.Probe probe = media.probe(audio.toString(), ctx.workDir());
+        if (!probe.hasAudio()) {
+            throw new JobFailure("That file has no audio in it");
+        }
+        if (probe.durationMs() == null || probe.durationMs() <= 0) {
+            throw new JobFailure("Couldn't read how long the audio is");
+        }
+        // Only pictures that appear before the sound ends are fetched (the same choice the command makes).
+        List<AudioToVideoRules.Slide> shown = spec.slides().isEmpty() ? List.of() : AudioToVideoRules.usableSlides(spec.slides(), probe.durationMs());
+        if (shown.size() < spec.slides().size()) {
+            ctx.info((spec.slides().size() - shown.size()) + " picture(s) start after the sound ends and are left out");
+        }
+        List<Path> covers = new ArrayList<>();
+        for (int i = 0; i < shown.size(); i++) {
+            ctx.progress(6 + i * 6 / shown.size(), shown.size() > 1 ? "Fetching picture " + (i + 1) + " of " + shown.size() : "Fetching the cover picture");
+            covers.add(fetch(shown.get(i).key(), "cover-" + i, ctx));
+        }
+        Path cover = covers.isEmpty() ? null : covers.get(0);
+        AudioToVideoRules.Size frame = AudioToVideoRules.size(spec.resolution());
+
+        // The title, drawn like a text layer of the editor, wrapped to fit the frame.
+        Path titlePng = null;
+        if (spec.drawsTitle()) {
+            ctx.progress(12, "Drawing the title");
+            int fontPx = Math.max(6, (int) Math.round(frame.h() * 0.07));
+            int maxChars = Math.max(8, (int) (frame.w() * 0.8 / (fontPx * 0.55)));
+            String wrapped = String.join("\n", AudioToVideoRules.wrapTitle(spec.titleText(), maxChars, 4));
+            OverlayRules.Layer layer = new OverlayRules.Layer("TEXT", wrapped, "SansSerif", 700, 7.0, AudioToVideoRules.contrastColor(spec.background()),
+                    null, 0.0, "CENTER", null, 0.0, 0.5, 0.5, 1.0, 0L, null, "NONE");
+            titlePng = ctx.workDir().resolve("title.png");
+            TextRenderer.write(TextRenderer.render(layer, frame.h()), titlePng);
+        }
+
+        ctx.progress(15, "Making the video");
+        Path out = media.audioToVideo(spec, audio, covers, titlePng, frame, probe.durationMs(), ctx.slice(15, 92));
+        ctx.progress(93, "Saving the video");
+        String key = "videos/" + java.util.UUID.randomUUID() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+
+        // The cover doubles as the thumbnail, kept under its own name because the edit upload is temporary.
+        if (cover != null) {
+            String name = cover.getFileName().toString().toLowerCase(Locale.ROOT);
+            String ext = name.endsWith(".png") ? "png" : name.endsWith(".webp") ? "webp" : "jpg";
+            String thumbKey = "thumbnails/" + java.util.UUID.randomUUID() + "." + ext;
+            upload(thumbKey, cover, ext.equals("jpg") ? "image/jpeg" : "image/" + ext, null);
+            video.setThumbnailUrl(publicUrl(thumbKey));
+        }
+        video.setStorageKey(key);
+        video.setVideoUrl(publicUrl(key));
+        video.setSource(VideoSource.UPLOAD);
+        video.setMimeType("video/mp4");
+        video.setFileSize(size(out));
+        video.setDurationSeconds((int) Math.max(1, Math.round(probe.durationMs() / 1000.0)));
+        video.setWidth(frame.w());
+        video.setHeight(frame.h());
+        videoRepository.save(video);
+        ctx.info("Video ready — review it, then enable it for learners");
+
+        // The video is already made, so a transcript that can't be made must not fail the job.
+        if (p.path("transcribe").asBoolean(false)) {
+            if (video.getLanguage() == null) {
+                ctx.warn("No spoken language is set, so no transcript was made. Set it and transcribe from the video's page.");
+            } else {
+                try {
+                    transcribe(video, video.getLanguage(), job.getId(), ctx.slice(94, 100));
+                } catch (JobFailure e) {
+                    ctx.warn("The video is ready, but its transcript could not be made: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    // Several stored videos become one. The video row was created, hidden, when the request
+    // came in; this fills it in, and the originals are left as they are.
+    private void mergeJob(Video video, ProcessingJob job, JsonNode p, JobContext ctx) {
+        List<Long> ids = new ArrayList<>();
+        p.path("videoIds").forEach(n -> ids.add(n.asLong()));
+        String resolution = text(p, "resolution", null);
+        String transition = text(p, "transition", null);
+        String problem = MergeRules.validate(ids, resolution, transition);
+        if (problem != null) {
+            throw new JobFailure(problem);
+        }
+
+        List<Path> files = new ArrayList<>();
+        List<MergeRules.Part> parts = new ArrayList<>();
+        for (int i = 0; i < ids.size(); i++) {
+            Video source = videoRepository.findById(ids.get(i)).orElseThrow(() -> new JobFailure("A video to join no longer exists"));
+            if (source.isDeleted()) {
+                throw new JobFailure("\"" + source.getTitle() + "\" is in the trash — restore it or leave it out");
+            }
+            if (source.getStorageKey() == null) {
+                throw new JobFailure("\"" + source.getTitle() + "\" is a link, not a stored file — import it first");
+            }
+            ctx.progress(3 + i * 20 / ids.size(), "Fetching video " + (i + 1) + " of " + ids.size());
+            Path file = fetch(source.getStorageKey(), "part-" + i, ctx);
+            MediaTools.Probe probe = media.probe(file.toString(), ctx.workDir());
+            if (!probe.hasVideo()) {
+                throw new JobFailure("\"" + source.getTitle() + "\" has no picture to join");
+            }
+            files.add(file);
+            parts.add(new MergeRules.Part(probe.durationMs() == null ? 0 : probe.durationMs(), probe.hasAudio()));
+        }
+        problem = MergeRules.validateParts(parts);
+        if (problem != null) {
+            throw new JobFailure(problem);
+        }
+        AudioToVideoRules.Size frame = AudioToVideoRules.size(resolution);
+        long totalMs = MergeRules.totalMs(parts);
+        long silent = parts.stream().filter(x -> !x.hasAudio()).count();
+        if (silent > 0) {
+            ctx.info(silent + " of the videos have no sound; silence is used for them");
+        }
+
+        ctx.progress(25, "Joining the videos");
+        Path out = media.merge(files, parts, frame, transition, ctx.slice(25, 90));
+        ctx.progress(92, "Saving the video");
+        String key = "videos/" + java.util.UUID.randomUUID() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+
+        // A frame from the start makes the thumbnail; the video is fine without one if it can't be taken.
+        try {
+            Path frameFile = media.frame(out, Math.min(1000, totalMs / 2), ctx);
+            String thumbKey = "thumbnails/" + java.util.UUID.randomUUID() + ".jpg";
+            upload(thumbKey, frameFile, "image/jpeg", null);
+            video.setThumbnailUrl(publicUrl(thumbKey));
+        } catch (JobFailure e) {
+            ctx.warn("The thumbnail could not be made: " + e.getMessage());
+        }
+        video.setStorageKey(key);
+        video.setVideoUrl(publicUrl(key));
+        video.setSource(VideoSource.UPLOAD);
+        video.setMimeType("video/mp4");
+        video.setFileSize(size(out));
+        video.setDurationSeconds((int) Math.max(1, Math.round(totalMs / 1000.0)));
+        video.setWidth(frame.w());
+        video.setHeight(frame.h());
+        videoRepository.save(video);
+        ctx.info("Video ready — review it, then enable it for learners");
+    }
+
+    // A video made from audio starts as a hidden placeholder; when the job fails or is cancelled
+    // before it has a file of its own, that placeholder would only point at a temporary upload.
+    // Move it to the trash (it can be restored) rather than leave it lying around.
+    private void discardUnfinished(Video video, JobContext ctx) {
+        if (video.getStorageKey() != null || video.isDeleted()) {
+            return;
+        }
+        try {
+            video.setDeletedAt(LocalDateTime.now());
+            videoRepository.save(video);
+            ctx.warn("The unfinished video was moved to the trash. Restore it to try again.");
+        } catch (RuntimeException e) {
+            // Best effort: the job's own failure is what matters.
         }
     }
 
@@ -734,10 +931,22 @@ public class PipelineSteps {
         Path out = ctx.workDir().resolve(name + ext);
         try {
             s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), out);
+        } catch (NoSuchKeyException e) {
+            // Files uploaded only for one edit are removed after a while, so a retry can find them gone.
+            if (isEditUpload(key)) {
+                throw new JobFailure("An uploaded file for this job (" + key.substring(key.lastIndexOf('/') + 1) + ") is no longer in storage — files uploaded for an edit "
+                        + "are kept for " + CLIP_HOURS + " hours. Start the job again with a fresh upload.", e);
+            }
+            throw new JobFailure("Couldn't read " + key + " from storage: it is missing", e);
         } catch (RuntimeException e) {
             throw new JobFailure("Couldn't read " + key + " from storage: " + e.getMessage(), e);
         }
         return out;
+    }
+
+    /** Whether this key is one of the temporary uploads made for an edit (audio, music or pictures). */
+    static boolean isEditUpload(String key) {
+        return key != null && (key.startsWith(AudioEditRules.UPLOAD_PREFIX) || key.startsWith(OverlayRules.UPLOAD_PREFIX));
     }
 
     /** One of our objects copied into `dir` (outside any job). */

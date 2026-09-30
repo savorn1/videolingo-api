@@ -454,6 +454,34 @@ public class MediaTools {
         return out;
     }
 
+    /**
+     * A video made of pictures and a sound: the `covers` (none = the colour alone) fitted onto the
+     * background colour, or `titlePng` written over it, with the sound as `audio`
+     * and an optional moving waveform. See AudioToVideoRules.
+     */
+    public Path audioToVideo(AudioToVideoRules.Spec spec, Path audio, List<Path> covers, Path titlePng, AudioToVideoRules.Size frame, long durationMs,
+                             JobContext ctx) {
+        Path out = ctx.workDir().resolve("audio-video.mp4");
+        run(AudioToVideoRules.command(props.ffmpeg(), spec, audio, covers, titlePng, frame, durationMs, out), Duration.ofMinutes(120), ctx, "ffmpeg",
+                durationMs);
+        return out;
+    }
+
+    /** Several videos joined into one, in order. See MergeRules. */
+    public Path merge(List<Path> inputs, List<MergeRules.Part> parts, AudioToVideoRules.Size frame, String transition, JobContext ctx) {
+        Path out = ctx.workDir().resolve("merged.mp4");
+        run(MergeRules.command(props.ffmpeg(), inputs, parts, frame, transition, out), Duration.ofMinutes(180), ctx, "ffmpeg", MergeRules.totalMs(parts));
+        return out;
+    }
+
+    /** One frame of a video as a JPEG, for a thumbnail. */
+    public Path frame(Path video, long atMs, JobContext ctx) {
+        Path out = ctx.workDir().resolve("frame-" + atMs + ".jpg");
+        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-ss", millis(atMs), "-i", video.toString(), "-frames:v", "1", "-q:v", "3",
+                out.toString()), Duration.ofMinutes(2), ctx, "ffmpeg");
+        return out;
+    }
+
     // yt-dlp for YouTube / Vimeo / Facebook: best audio-only stream.
     private Path download(Video video, JobContext ctx) {
         ctx.progress(5, "Downloading audio from " + label(video.getSource()));

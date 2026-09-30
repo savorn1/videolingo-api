@@ -95,6 +95,17 @@ public class VideoVersionService {
         deleteObject(version.getStorageKey());
     }
 
+    // Called when the video itself is being permanently purged — every kept
+    // version's file goes with it, not just the pruned excess.
+    @Transactional
+    public void purgeAll(Long videoId) {
+        List<VideoVersion> versions = versionRepository.findByVideoIdOrderByIdDesc(videoId);
+        for (VideoVersion v : versions) {
+            deleteObject(v.getStorageKey());
+        }
+        versionRepository.deleteAll(versions);
+    }
+
     private void prune(Long videoId) {
         List<VideoVersion> versions = versionRepository.findByVideoIdOrderByIdDesc(videoId);
         if (versions.size() <= MAX_VERSIONS) {

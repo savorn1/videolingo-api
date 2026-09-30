@@ -16,14 +16,16 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
-// Runs queued processing jobs, one at a time, in the background. Only the
+// Runs queued processing jobs in the background, one at a time per lane (see JobLane). Only the
 // types below are handled here; others (TRANSCODE, …) stay queued for
 // whatever handles them.
 @Component
@@ -40,12 +42,20 @@ public class JobWorker {
     private final PipelineSteps steps;
     private final ApplicationEventPublisher events;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "job-worker");
-        t.setDaemon(true);
-        return t;
-    });
-    private final AtomicBoolean busy = new AtomicBoolean(false);
+    // One thread and one "busy" flag per lane, so a slow job in one lane doesn't hold up the other.
+    private final Map<JobLane, ExecutorService> executors = new EnumMap<>(JobLane.class);
+    private final Map<JobLane, AtomicBoolean> busy = new EnumMap<>(JobLane.class);
+
+    {
+        for (JobLane lane : JobLane.values()) {
+            executors.put(lane, Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "job-worker-" + lane.name().toLowerCase());
+                t.setDaemon(true);
+                return t;
+            }));
+            busy.put(lane, new AtomicBoolean(false));
+        }
+    }
 
     @EventListener(ApplicationReadyEvent.class)
     public void recover() {
@@ -59,26 +69,41 @@ public class JobWorker {
         }
     }
 
+    // Looks for work in every lane that is free. This is the safety net: after a job finishes the
+    // lane looks again straight away (see pollLane), so this mostly matters for a job added while idle.
     @Scheduled(fixedDelayString = "${pipeline.poll-ms:5000}", initialDelayString = "${pipeline.poll-ms:5000}")
     public void poll() {
-        if (!props.isEnabled() || !busy.compareAndSet(false, true)) {
+        for (JobLane lane : JobLane.values()) {
+            pollLane(lane);
+        }
+    }
+
+    private void pollLane(JobLane lane) {
+        AtomicBoolean flag = busy.get(lane);
+        if (!props.isEnabled() || !flag.compareAndSet(false, true)) {
             return;
         }
         try {
-            var job = store.claimNext(HANDLED);
+            var job = store.claimNext(lane.types());
             if (job.isEmpty()) {
-                busy.set(false);
+                flag.set(false);
                 return;
             }
-            executor.submit(() -> {
+            executors.get(lane).submit(() -> {
                 try {
                     run(job.get());
                 } finally {
-                    busy.set(false);
+                    flag.set(false);
+                    // The next queued job of this lane starts now instead of at the next poll.
+                    try {
+                        pollLane(lane);
+                    } catch (RuntimeException e) {
+                        log.warn("Couldn't look for the next {} job", lane, e);
+                    }
                 }
             });
         } catch (RuntimeException e) {
-            busy.set(false);
+            flag.set(false);
             log.error("Couldn't claim a processing job", e);
         }
     }

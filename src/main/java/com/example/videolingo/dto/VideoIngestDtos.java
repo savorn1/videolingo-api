@@ -127,4 +127,81 @@ public final class VideoIngestDtos {
         @Max(16384)
         private Integer height;
     }
+
+    /**
+     * A video made from a sound. Both keys come from upload tickets (kind AUDIO
+     * for the sound, OVERLAY for the cover picture).
+     */
+    @Data
+    public static class AudioToVideoRequest {
+        @NotBlank
+        @Size(max = 500)
+        private String audioKey;
+        @Size(max = 500)
+        private String coverKey;
+        // A slideshow: pictures with the time each appears (the first at 0). Takes the place of coverKey.
+        @Size(max = 30)
+        private List<SlideDto> slides;
+        // "#rrggbb"; the picture is fitted onto it, or it is the whole picture.
+        @Size(max = 7)
+        private String background;
+        // 360p, 480p, 720p or 1080p.
+        @Size(max = 10)
+        private String resolution;
+        // NONE, WAVES or BARS: a moving waveform along the bottom.
+        @Size(max = 10)
+        private String waveform;
+        // "#rrggbb"; white or black to suit the background when left out.
+        @Size(max = 7)
+        private String waveColor;
+        // Write text on the background when there is no cover picture. The text is
+        // cardText, or the video's title when that is left out.
+        private boolean titleCard;
+        @Size(max = 200)
+        private String cardText;
+        private boolean normalize;
+        private boolean denoise;
+        // Transcribe the finished video (needs a spoken language).
+        private boolean transcribe;
+        @NotBlank
+        @Size(max = 200)
+        private String title;
+        @Size(max = 10_000)
+        private String description;
+        @Size(max = 10)
+        private String language;
+        private List<Long> categoryIds;
+    }
+
+    public record SlideDto(@NotBlank @Size(max = 500) String key, @Min(0) long startMs) {
+    }
+
+    /** The new (disabled) video and the job that is making its file. */
+    public record AudioToVideoResponse(VideoResponse video, ProcessingJobResponse job) {
+    }
+
+    /** Several stored videos joined into one new (hidden) video, in the order given. */
+    @Data
+    public static class MergeVideosRequest {
+        @NotNull
+        @Size(min = 2, max = 10)
+        private List<Long> videoIds;
+        @NotBlank
+        @Size(max = 200)
+        private String title;
+        @Size(max = 10_000)
+        private String description;
+        // 360p, 480p, 720p or 1080p.
+        @Size(max = 10)
+        private String resolution;
+        // NONE or FADE.
+        @Size(max = 10)
+        private String transition;
+        @Size(max = 10)
+        private String language;
+        private List<Long> categoryIds;
+    }
+
+    public record MergeVideosResponse(VideoResponse video, ProcessingJobResponse job) {
+    }
 }

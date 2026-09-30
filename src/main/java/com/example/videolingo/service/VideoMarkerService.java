@@ -62,6 +62,12 @@ public class VideoMarkerService {
         markerRepository.delete(findMarker(videoId, markerId));
     }
 
+    // Called when the video itself is being permanently purged.
+    @Transactional
+    public void purgeAllForVideo(Long videoId) {
+        markerRepository.deleteAll(markerRepository.findByVideoIdOrderByAtMsAsc(videoId));
+    }
+
     private VideoMarker findMarker(Long videoId, Long markerId) {
         return markerRepository.findById(markerId)
                 .filter(m -> m.getVideoId().equals(videoId))

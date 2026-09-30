@@ -117,6 +117,16 @@ public class DubService {
         steps.deleteObject(dub.getStorageKey());
     }
 
+    // Called when the video itself is being permanently purged — every dub
+    // goes with it regardless of lock, since there's no video left to unlock it on.
+    @Transactional
+    public void purgeAllForVideo(Long videoId) {
+        for (VideoDub dub : dubRepository.findByVideoIdOrderByLanguageAsc(videoId)) {
+            dubRepository.delete(dub);
+            steps.deleteObject(dub.getStorageKey());
+        }
+    }
+
     @Transactional
     public DubResponse setLocked(Long videoId, Long dubId, boolean locked) {
         VideoDub dub = findDub(videoId, dubId);

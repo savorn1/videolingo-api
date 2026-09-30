@@ -128,7 +128,7 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .updatedAt(job.getUpdatedAt())
                 .lastLogId(lastLogId(id))
                 .queuePosition(job.getStatus() == ProcessingJobStatus.QUEUED
-                        ? (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, com.example.videolingo.pipeline.JobWorker.HANDLED, job.getId()) + 1
+                        ? (int) queueAhead(job)
                         : null)
                 .build();
     }
@@ -284,8 +284,15 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .canCancel(status.isActive())
                 .canDelete(status != ProcessingJobStatus.RUNNING)
                 .queuePosition(status == ProcessingJobStatus.QUEUED
-                        ? (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, com.example.videolingo.pipeline.JobWorker.HANDLED, job.getId()) + 1
+                        ? (int) queueAhead(job)
                         : null)
                 .build();
+    }
+
+    /** Queued jobs ahead of this one plus itself: only those in the same lane, since lanes run side by side. */
+    private int queueAhead(ProcessingJob job) {
+        var lane = com.example.videolingo.pipeline.JobLane.of(job.getType());
+        var types = lane == null ? com.example.videolingo.pipeline.JobWorker.HANDLED : lane.types();
+        return (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, types, job.getId()) + 1;
     }
 }

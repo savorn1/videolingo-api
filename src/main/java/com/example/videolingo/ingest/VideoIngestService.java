@@ -1,13 +1,23 @@
 package com.example.videolingo.ingest;
 
+import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoRequest;
+import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoResponse;
 import com.example.videolingo.dto.VideoIngestDtos.CreateVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.Duplicate;
 import com.example.videolingo.dto.VideoIngestDtos.InspectResponse;
 import com.example.videolingo.dto.VideoIngestDtos.LanguageGuess;
+import com.example.videolingo.dto.VideoIngestDtos.MergeVideosRequest;
+import com.example.videolingo.dto.VideoIngestDtos.MergeVideosResponse;
 import com.example.videolingo.dto.VideoIngestDtos.ReplaceRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
+import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.pipeline.AudioEditRules;
+import com.example.videolingo.pipeline.AudioToVideoRules;
+import com.example.videolingo.pipeline.MergeRules;
+import com.example.videolingo.service.ProcessingJobService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.videolingo.pipeline.OverlayRules;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.entity.Language;
@@ -75,6 +85,8 @@ public class VideoIngestService {
     private final UserRepository userRepository;
     private final SettingsService settings;
     private final VideoVersionService versionService;
+    private final ProcessingJobService jobService;
+    private final ObjectMapper objectMapper;
     private final S3Client s3;
     private final S3Presigner presigner;
 
@@ -209,6 +221,186 @@ public class VideoIngestService {
         built.getCategoryIds().addAll(resolved);
         Video saved = videoRepository.save(built);
         return videoService.getVideo(saved.getId());
+    }
+
+    // ── from audio ────────────────────────────────────────────────────────
+
+    /**
+     * Makes a video from an uploaded sound. The video row is created right away
+     * — disabled, so learners can't see it — and a job renders its file (a still
+     * picture with the sound) and fills the row in, the same way an upload is
+     * reviewed before it is enabled.
+     */
+    @Transactional
+    public AudioToVideoResponse createFromAudio(AudioToVideoRequest r, String actor) {
+        requireStorage();
+        String cardText = blankToNull(r.getCardText());
+        List<AudioToVideoRules.Slide> slides = r.getSlides() == null ? List.of()
+                : r.getSlides().stream().map(x -> new AudioToVideoRules.Slide(x.key(), x.startMs())).toList();
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(r.getAudioKey(), blankToNull(r.getCoverKey()), blankToNull(r.getBackground()),
+                blankToNull(r.getResolution()), blankToNull(r.getWaveform()), blankToNull(r.getWaveColor()), r.isTitleCard(),
+                r.isTitleCard() && slides.isEmpty() && blankToNull(r.getCoverKey()) == null ? (cardText != null ? cardText : r.getTitle().strip()) : null,
+                r.isNormalize(), r.isDenoise(), slides);
+        String problem = AudioToVideoRules.validate(spec);
+        if (problem != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+        if (head(spec.audioKey()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
+        }
+        for (AudioToVideoRules.Slide slide : spec.slides()) {
+            if (head(slide.key()) == null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "A picture wasn't found — the upload may not have finished");
+            }
+        }
+
+        String language = blankToNull(r.getLanguage());
+        Set<Long> categories = categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
+        int maxCategories = settings.video().maxCategoriesPerVideo();
+        if (categories.size() > maxCategories) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+        }
+        if (categories.isEmpty() && settings.video().requireCategory()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+        }
+
+        // Until the job finishes the row points at the sound, which is what there is to play.
+        Video built = Video.builder()
+                .title(r.getTitle().strip())
+                .description(blankToNull(r.getDescription()))
+                .ownerId(userRepository.findByUsername(actor).map(User::getId).orElse(null))
+                .language(language == null ? null : languageService.resolve(language, true))
+                .source(VideoSource.UPLOAD)
+                .videoUrl(publicUrl(spec.audioKey()))
+                .enabled(false)
+                .build();
+        built.getCategoryIds().addAll(categories);
+        Video saved = videoRepository.save(built);
+
+        Map<String, Object> params = new java.util.LinkedHashMap<>();
+        params.put("operation", "AUDIO_TO_VIDEO");
+        params.put("audioKey", spec.audioKey());
+        if (spec.coverKey() != null) {
+            params.put("coverKey", spec.coverKey());
+        }
+        if (spec.slides().size() > 1) {
+            params.put("slides", spec.slides().stream().map(x -> Map.of("key", x.key(), "startMs", x.startMs())).toList());
+        }
+        if (spec.background() != null) {
+            params.put("background", spec.background());
+        }
+        params.put("resolution", spec.resolution() == null ? AudioToVideoRules.DEFAULT_RESOLUTION : spec.resolution());
+        if (spec.hasWaveform()) {
+            params.put("waveform", spec.waveform());
+            if (spec.waveColor() != null) {
+                params.put("waveColor", spec.waveColor());
+            }
+        }
+        if (spec.drawsTitle()) {
+            params.put("titleCard", true);
+            params.put("titleText", spec.titleText());
+        }
+        if (spec.normalize()) {
+            params.put("normalize", true);
+        }
+        if (spec.denoise()) {
+            params.put("denoise", true);
+        }
+        if (r.isTranscribe()) {
+            if (language == null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Choose the spoken language to transcribe the video");
+            }
+            params.put("transcribe", true);
+        }
+        params.put("summary", AudioToVideoRules.describe(spec));
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(params);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+        var job = jobService.enqueue(saved.getId(), ProcessingJobType.EDIT, json, AudioToVideoRules.describe(spec) + " requested by " + actor);
+        return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
+    }
+
+    // ── merge ─────────────────────────────────────────────────────────────
+
+    /**
+     * Joins stored videos into one. The new video row is created right away —
+     * hidden, so learners can't see it — and a job renders its file from the
+     * originals, which are left as they are.
+     */
+    @Transactional
+    public MergeVideosResponse mergeVideos(MergeVideosRequest r, String actor) {
+        requireStorage();
+        String resolution = blankToNull(r.getResolution());
+        String transition = blankToNull(r.getTransition());
+        String problem = MergeRules.validate(r.getVideoIds(), resolution, transition);
+        if (problem != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+
+        // Each one must exist, be a stored file (a link has no file to join), and not be in the trash.
+        List<Video> sources = new java.util.ArrayList<>();
+        for (Long id : r.getVideoIds()) {
+            Video v = videoRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + id));
+            if (v.isDeleted()) {
+                throw new AppException(HttpStatus.CONFLICT, "\"" + v.getTitle() + "\" is in the trash — restore it or leave it out");
+            }
+            if (v.getStorageKey() == null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "\"" + v.getTitle() + "\" is a link, not a stored file — import it first");
+            }
+            sources.add(v);
+        }
+        // Lengths known up front save queueing a job that would only fail on the limit.
+        long knownMs = sources.stream().mapToLong(v -> v.getDurationSeconds() == null ? 0 : v.getDurationSeconds() * 1000L).sum();
+        if (knownMs > MergeRules.MAX_TOTAL_MS) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The joined video would be longer than " + (MergeRules.MAX_TOTAL_MS / 3_600_000) + " hours");
+        }
+
+        String language = blankToNull(r.getLanguage());
+        if (language == null && sources.stream().map(Video::getLanguage).distinct().count() == 1) {
+            language = sources.get(0).getLanguage(); // all the same language: the joined video is too
+        }
+        Set<Long> categories = categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
+        int maxCategories = settings.video().maxCategoriesPerVideo();
+        if (categories.size() > maxCategories) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+        }
+        if (categories.isEmpty() && settings.video().requireCategory()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+        }
+
+        // Until the job finishes the row points at the first video, so it has something to play.
+        Video built = Video.builder()
+                .title(r.getTitle().strip())
+                .description(blankToNull(r.getDescription()))
+                .ownerId(userRepository.findByUsername(actor).map(User::getId).orElse(null))
+                .language(language == null ? null : languageService.resolve(language, true))
+                .source(VideoSource.UPLOAD)
+                .videoUrl(sources.get(0).getVideoUrl())
+                .enabled(false)
+                .build();
+        built.getCategoryIds().addAll(categories);
+        Video saved = videoRepository.save(built);
+
+        Map<String, Object> params = new java.util.LinkedHashMap<>();
+        params.put("operation", "MERGE");
+        params.put("videoIds", r.getVideoIds());
+        params.put("resolution", resolution == null ? AudioToVideoRules.DEFAULT_RESOLUTION : resolution);
+        if (transition != null) {
+            params.put("transition", transition);
+        }
+        String summary = MergeRules.describe(r.getVideoIds().size(), resolution, transition);
+        params.put("summary", summary);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(params);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+        var job = jobService.enqueue(saved.getId(), ProcessingJobType.EDIT, json, summary + " requested by " + actor);
+        return new MergeVideosResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
     }
 
     // ── replace ───────────────────────────────────────────────────────────
