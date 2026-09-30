@@ -82,10 +82,17 @@ public class VideoEditController {
         return ResponseEntity.ok(ApiResponse.success(editService.waveform(videoId, key, points)));
     }
 
+    // Optional body: asNew makes a separate video from a trim/audio/overlay result instead of replacing the original; title names it.
+    public record PromoteRequest(Boolean asNew, String title) {
+    }
+
     @PostMapping("/{clipId}/promote")
     public ResponseEntity<ApiResponse<VideoEditService.PromoteResult>> promote(@PathVariable Long videoId, @PathVariable Long clipId,
+                                                                                @RequestBody(required = false) PromoteRequest request,
                                                                                 Authentication authentication) {
-        VideoEditService.PromoteResult result = editService.promote(videoId, clipId, requireUsername(authentication));
+        boolean asNew = request != null && Boolean.TRUE.equals(request.asNew());
+        VideoEditService.PromoteResult result = editService.promote(videoId, clipId, requireUsername(authentication), asNew,
+                request == null ? null : request.title());
         String message = "REPLACED".equals(result.kind()) ? "Video replaced" : "New video created";
         return ResponseEntity.ok(ApiResponse.success(message, result));
     }

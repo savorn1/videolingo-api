@@ -2,8 +2,10 @@ package com.example.videolingo.pipeline;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 // Joining several videos into one, in order. Clips rarely match — different
 // sizes, frame rates, sound layouts, and some have no sound at all — so every
@@ -129,6 +131,52 @@ public final class MergeRules {
                 "-crf", "23", "-r", String.valueOf(FPS), "-c:a", "aac", "-b:a", "160k", "-ar", String.valueOf(SAMPLE_RATE), "-movflags", "+faststart",
                 out.toString()));
         return cmd;
+    }
+
+    // ── carrying transcripts over ─────────────────────────────────────────
+
+    /** One transcript segment, as far as joining is concerned. */
+    public record Seg(long startMs, long endMs, String text, String speaker) {
+    }
+
+    /** Where each clip starts in the joined video: the total length of the clips before it. */
+    public static List<Long> offsets(List<Part> parts) {
+        List<Long> out = new ArrayList<>();
+        long at = 0;
+        for (Part part : parts) {
+            out.add(at);
+            at += part.durationMs();
+        }
+        return out;
+    }
+
+    /**
+     * A clip's segments moved to where the clip sits in the joined video. A segment that
+     * starts after the clip ends is dropped, and one that runs past the end is cut at it,
+     * so text never spills into the next clip.
+     */
+    public static List<Seg> shift(List<Seg> segments, long offsetMs, long clipMs) {
+        List<Seg> out = new ArrayList<>();
+        for (Seg s : segments) {
+            if (s.startMs() >= clipMs) {
+                continue;
+            }
+            long end = Math.min(s.endMs(), clipMs);
+            out.add(new Seg(offsetMs + s.startMs(), offsetMs + Math.max(end, s.startMs() + 1), s.text(), s.speaker()));
+        }
+        return out;
+    }
+
+    /** The languages every video has a transcript in, in the order the first video lists them; a gap in one video would leave a hole, so those are left out. */
+    public static List<String> commonLanguages(List<Set<String>> perVideo) {
+        if (perVideo.isEmpty()) {
+            return List.of();
+        }
+        Set<String> common = new LinkedHashSet<>(perVideo.get(0));
+        for (Set<String> languages : perVideo) {
+            common.retainAll(languages);
+        }
+        return new ArrayList<>(common);
     }
 
     /** A short line for the job log and the job list. */

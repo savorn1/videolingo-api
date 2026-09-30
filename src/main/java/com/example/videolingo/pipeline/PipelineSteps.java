@@ -460,8 +460,10 @@ public class PipelineSteps {
 
         List<Path> files = new ArrayList<>();
         List<MergeRules.Part> parts = new ArrayList<>();
+        List<Video> sources = new ArrayList<>();
         for (int i = 0; i < ids.size(); i++) {
             Video source = videoRepository.findById(ids.get(i)).orElseThrow(() -> new JobFailure("A video to join no longer exists"));
+            sources.add(source);
             if (source.isDeleted()) {
                 throw new JobFailure("\"" + source.getTitle() + "\" is in the trash — restore it or leave it out");
             }
@@ -514,6 +516,46 @@ public class PipelineSteps {
         video.setHeight(frame.h());
         videoRepository.save(video);
         ctx.info("Video ready — review it, then enable it for learners");
+        carryTranscripts(video, sources, parts, job, ctx);
+    }
+
+    // Transcripts the joined videos all have come along, each clip's text moved to where the clip now sits.
+    // Only languages every video has: a video without one would leave a hole. The video is already made,
+    // so nothing here may fail the job.
+    private void carryTranscripts(Video video, List<Video> sources, List<MergeRules.Part> parts, ProcessingJob job, JobContext ctx) {
+        try {
+            List<java.util.Map<String, Transcript>> perVideo = new ArrayList<>();
+            for (Video source : sources) {
+                java.util.Map<String, Transcript> byLanguage = new java.util.LinkedHashMap<>();
+                for (Transcript t : transcriptRepository.findByVideoId(source.getId())) {
+                    if (t.getSegmentCount() > 0) {
+                        byLanguage.put(t.getLanguage(), t);
+                    }
+                }
+                perVideo.add(byLanguage);
+            }
+            List<String> languages = MergeRules.commonLanguages(perVideo.stream().map(m -> (Set<String>) m.keySet()).toList());
+            if (languages.isEmpty()) {
+                return;
+            }
+            List<Long> offsets = MergeRules.offsets(parts);
+            for (String language : languages) {
+                List<TranscriptSegmentDto> merged = new ArrayList<>();
+                for (int i = 0; i < sources.size(); i++) {
+                    List<MergeRules.Seg> segs = segmentRepository.findByTranscriptIdOrderByPositionAsc(perVideo.get(i).get(language).getId()).stream()
+                            .map(x -> new MergeRules.Seg(x.getStartMs(), x.getEndMs(), x.getText(), x.getSpeaker())).toList();
+                    for (MergeRules.Seg s : MergeRules.shift(segs, offsets.get(i), parts.get(i).durationMs())) {
+                        merged.add(TranscriptSegmentDto.builder().startMs(s.startMs()).endMs(s.endMs()).text(s.text()).speaker(s.speaker()).build());
+                    }
+                }
+                if (!merged.isEmpty()) {
+                    transcriptService.saveGenerated(video.getId(), language, merged, job.getId(), ACTOR);
+                }
+            }
+            ctx.info("Carried over the " + String.join(", ", languages) + " transcript" + (languages.size() == 1 ? "" : "s") + " of the joined videos");
+        } catch (RuntimeException e) {
+            ctx.warn("The transcripts could not be carried over: " + e.getMessage());
+        }
     }
 
     // A video made from audio starts as a hidden placeholder; when the job fails or is cancelled

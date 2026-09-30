@@ -124,4 +124,47 @@ class MergeRulesTest {
         assertEquals("Join 3 videos (1280×720)", MergeRules.describe(3, null, "NONE"));
         assertEquals("Join 2 videos (1920×1080, fades)", MergeRules.describe(2, "1080p", "FADE"));
     }
+
+    // ── carrying transcripts over ─────────────────────────────────────────
+
+    @Test
+    void eachClipStartsWhereTheOnesBeforeItEnd() {
+        assertEquals(List.of(0L, 5_000L, 12_000L), MergeRules.offsets(List.of(new Part(5_000, true), new Part(7_000, true), new Part(3_000, false))));
+        assertEquals(List.of(), MergeRules.offsets(List.of()));
+    }
+
+    @Test
+    void segmentsAreMovedToWhereTheirClipSits() {
+        List<MergeRules.Seg> shifted = MergeRules.shift(List.of(new MergeRules.Seg(0, 1_000, "a", "Ann"), new MergeRules.Seg(1_000, 2_500, "b", null)), 5_000, 10_000);
+        assertEquals(List.of(new MergeRules.Seg(5_000, 6_000, "a", "Ann"), new MergeRules.Seg(6_000, 7_500, "b", null)), shifted);
+    }
+
+    @Test
+    void textNeverSpillsIntoTheNextClip() {
+        List<MergeRules.Seg> shifted = MergeRules.shift(List.of(
+                new MergeRules.Seg(8_000, 12_000, "runs past the end", null),
+                new MergeRules.Seg(10_000, 11_000, "starts at the end", null),
+                new MergeRules.Seg(15_000, 16_000, "after the end", null)), 20_000, 10_000);
+        assertEquals(1, shifted.size());
+        assertEquals(new MergeRules.Seg(28_000, 30_000, "runs past the end", null), shifted.get(0));
+    }
+
+    @Test
+    void aSegmentKeepsAtLeastAMillisecond() {
+        List<MergeRules.Seg> shifted = MergeRules.shift(List.of(new MergeRules.Seg(4_000, 4_000, "blip", null)), 0, 10_000);
+        assertEquals(1, shifted.get(0).endMs() - shifted.get(0).startMs());
+    }
+
+    @Test
+    void onlyLanguagesEveryVideoHasAreCarried() {
+        assertEquals(List.of("en"), MergeRules.commonLanguages(List.of(java.util.Set.of("en", "km"), java.util.Set.of("en"), java.util.Set.of("en", "fr"))));
+        assertEquals(List.of(), MergeRules.commonLanguages(List.of(java.util.Set.of("en"), java.util.Set.of("km"))));
+        assertEquals(List.of(), MergeRules.commonLanguages(List.of()));
+        assertEquals(List.of("en"), MergeRules.commonLanguages(List.of(java.util.Set.of("en"))));
+    }
+
+    @Test
+    void theOrderOfTheFirstVideoIsKept() {
+        assertEquals(List.of("km", "en"), MergeRules.commonLanguages(List.of(new java.util.LinkedHashSet<>(List.of("km", "en")), java.util.Set.of("en", "km"))));
+    }
 }

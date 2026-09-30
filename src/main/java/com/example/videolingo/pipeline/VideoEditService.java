@@ -353,13 +353,22 @@ public class VideoEditService {
                 r.channels() == null ? "KEEP" : r.channels(), music);
     }
 
-    @Transactional
     public PromoteResult promote(Long videoId, Long clipId, String username) {
+        return promote(videoId, clipId, username, false, null);
+    }
+
+    /**
+     * Applies a result. A trim, audio edit or text & overlay result replaces the video's file, unless
+     * `asNew` asks for a separate video instead (the original is then left as it is). Split segments
+     * always become new videos. `title` names the new video; left out, one is made from the original's.
+     */
+    @Transactional
+    public PromoteResult promote(Long videoId, Long clipId, String username, boolean asNew, String title) {
         VideoClip clip = findClip(videoId, clipId);
         if (clip.getOperation() == VideoClip.Operation.EXTRACT) {
             throw new AppException(HttpStatus.BAD_REQUEST, "An extracted audio file can't replace the video — download it instead");
         }
-        if (clip.getOperation().replacesVideo()) {
+        if (clip.getOperation().replacesVideo() && !asNew) {
             Video video = findVideo(videoId);
             // The superseded file becomes a version instead of being deleted.
             versionService.snapshot(video, clip.getOperation() == VideoClip.Operation.AUDIO ? "Replaced by an audio edit" : "Replaced by a trim/crop edit",
@@ -384,9 +393,9 @@ public class VideoEditService {
         }
 
         Video source = findVideo(videoId);
-        String title = source.getTitle() + " — Part " + ((clip.getSegmentIndex() == null ? 0 : clip.getSegmentIndex()) + 1);
+        String newTitle = promotedTitle(source.getTitle(), clip.getOperation(), clip.getSegmentIndex(), title);
         Video created = videoRepository.save(Video.builder()
-                .title(title)
+                .title(newTitle)
                 .ownerId(source.getOwnerId())
                 .language(source.getLanguage())
                 .videoUrl(clip.getUrl())
@@ -400,8 +409,33 @@ public class VideoEditService {
                 .enabled(false)
                 .build());
         clipRepository.delete(clip);
-        log.info("Video #{} created from a split segment of video #{} by {}", created.getId(), videoId, username);
+        log.info("Video #{} created from a {} result of video #{} by {}", created.getId(), clip.getOperation(), videoId, username);
         return new PromoteResult("NEW_VIDEO", created.getId());
+    }
+
+    /** The longest a video title may be (the column's length). */
+    static final int MAX_TITLE = 200;
+
+    /**
+     * The title of a video made from a result: `custom` if one was given, otherwise the original's with
+     * what was done to it ("… — Part 2", "… (trimmed)"). Always within the title limit.
+     */
+    static String promotedTitle(String sourceTitle, VideoClip.Operation operation, Integer segmentIndex, String custom) {
+        if (custom != null && !custom.isBlank()) {
+            String t = custom.strip();
+            return t.length() > MAX_TITLE ? t.substring(0, MAX_TITLE) : t;
+        }
+        String suffix = switch (operation) {
+            case SPLIT -> " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
+            case TRIM -> " (trimmed)";
+            case AUDIO -> " (edited audio)";
+            case OVERLAY -> " (with text & overlays)";
+            case EXTRACT -> " (audio)";
+        };
+        String base = sourceTitle == null ? "Video" : sourceTitle.strip();
+        // The end of the title is the part that says what this is, so the original's is what gets shortened.
+        int room = MAX_TITLE - suffix.length();
+        return (base.length() > room ? base.substring(0, Math.max(0, room - 1)) + "…" : base) + suffix;
     }
 
     @Transactional
