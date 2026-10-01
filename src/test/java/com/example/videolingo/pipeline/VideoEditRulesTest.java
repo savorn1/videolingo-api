@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,5 +61,42 @@ class VideoEditRulesTest {
         String error = VideoEditRules.validateSegments(segments, null);
         assertNotNull(error);
         assertTrue(error.contains("Segment 2"));
+    }
+
+    @Test
+    void rotationIsAQuarterTurn() {
+        assertNull(VideoEditRules.validateRotation(null));
+        for (int d : new int[]{0, 90, 180, 270}) {
+            assertNull(VideoEditRules.validateRotation(d));
+        }
+        assertNotNull(VideoEditRules.validateRotation(45));
+        assertNotNull(VideoEditRules.validateRotation(-90));
+        assertNotNull(VideoEditRules.validateRotation(360));
+    }
+
+    @Test
+    void orientationIsOnlyAskedForWhenSomethingChanges() {
+        assertFalse(VideoEditRules.hasOrientation(null, null, null));
+        assertFalse(VideoEditRules.hasOrientation(0, false, false));
+        assertTrue(VideoEditRules.hasOrientation(90, null, null));
+        assertTrue(VideoEditRules.hasOrientation(null, true, null));
+        assertTrue(VideoEditRules.hasOrientation(0, false, true));
+        assertNull(VideoEditRules.describeOrientation(0, false, false));
+    }
+
+    @Test
+    void quarterTurnsSwapTheSides() {
+        assertTrue(VideoEditRules.swapsSides(90));
+        assertTrue(VideoEditRules.swapsSides(270));
+        assertFalse(VideoEditRules.swapsSides(180));
+        assertFalse(VideoEditRules.swapsSides(0));
+        assertFalse(VideoEditRules.swapsSides(null));
+    }
+
+    @Test
+    void orientationIsDescribedInWords() {
+        assertEquals("Turned 90° clockwise", VideoEditRules.describeOrientation(90, false, false));
+        assertEquals("Flipped left–right", VideoEditRules.describeOrientation(null, true, false));
+        assertEquals("Turned 180° clockwise, flipped left–right, flipped top–bottom", VideoEditRules.describeOrientation(180, true, true));
     }
 }

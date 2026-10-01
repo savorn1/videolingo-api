@@ -23,7 +23,7 @@ class MediaToolsStallTest {
     void aStuckFfmpegIsStoppedInsteadOfRunningToTheTimeout(@TempDir Path dir) throws Exception {
         assumeTrue(new ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0, "ffmpeg isn't installed here");
         MediaTools.stall = Duration.ofSeconds(3);
-        MediaTools media = new MediaTools(new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null));
+        MediaTools media = new MediaTools(new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null));
         JobContext ctx = new JobContext(mock(JobStore.class), 1, dir);
         long started = System.nanoTime();
         // Reads its input from a pipe nobody writes to: no output, no progress.

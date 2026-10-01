@@ -140,19 +140,21 @@ public class MediaTools {
      * lands exactly on the requested millisecond instead of the nearest keyframe.
      */
     public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, JobContext ctx) {
+        return trim(video, startMs, endMs, crop, scale, null, false, false, ctx);
+    }
+
+    /**
+     * Same, and the picture can be turned (clockwise, in 90° steps) and flipped. The crop is on the original
+     * picture, then the turn and flips, then the resize — so a resize is the size of the finished picture.
+     */
+    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, JobContext ctx) {
         Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
         List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
                 "-i", video, "-ss", millis(startMs)));
         if (endMs != null) {
             command.addAll(List.of("-to", millis(endMs)));
         }
-        List<String> filters = new ArrayList<>();
-        if (crop != null) {
-            filters.add("crop=" + crop.w() + ":" + crop.h() + ":" + crop.x() + ":" + crop.y());
-        }
-        if (scale != null) {
-            filters.add("scale=" + scale.w() + ":" + scale.h());
-        }
+        List<String> filters = videoFilters(crop, rotate, flipH, flipV, scale);
         if (!filters.isEmpty()) {
             command.addAll(List.of("-vf", String.join(",", filters)));
         }
@@ -160,6 +162,33 @@ public class MediaTools {
                 "-movflags", "+faststart", out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", endMs == null ? null : endMs - startMs);
         return out;
+    }
+
+    /** The -vf filters for a crop, a turn and flips, then a resize — in that order. Empty when none is asked for. */
+    static List<String> videoFilters(CropRect crop, Integer rotate, boolean flipH, boolean flipV, ScaleSize scale) {
+        List<String> filters = new ArrayList<>();
+        if (crop != null) {
+            filters.add("crop=" + crop.w() + ":" + crop.h() + ":" + crop.x() + ":" + crop.y());
+        }
+        if (rotate != null) {
+            switch (rotate) {
+                case 90 -> filters.add("transpose=1");
+                case 180 -> filters.add("hflip,vflip");
+                case 270 -> filters.add("transpose=2");
+                default -> {
+                }
+            }
+        }
+        if (flipH) {
+            filters.add("hflip");
+        }
+        if (flipV) {
+            filters.add("vflip");
+        }
+        if (scale != null) {
+            filters.add("scale=" + scale.w() + ":" + scale.h());
+        }
+        return filters;
     }
 
     // ffmpeg's -ss/-to want HH:MM:SS.mmm.
@@ -465,6 +494,39 @@ public class MediaTools {
         run(AudioToVideoRules.command(props.ffmpeg(), spec, audio, covers, titlePng, frame, durationMs, out), Duration.ofMinutes(120), ctx, "ffmpeg",
                 durationMs);
         return out;
+    }
+
+    /**
+     * A short test render of a look: the sound and the background colour only (no pictures or title), at 360p, for the
+     * page's "test render". Runs on the spot, not as a job, so it has no progress or cancelling — only a time limit.
+     */
+    public Path audioToVideoQuick(AudioToVideoRules.Spec spec, Path audio, long durationMs, Path workDir) {
+        Path out = workDir.resolve("preview.mp4");
+        runQuick(AudioToVideoRules.command(props.ffmpeg(), spec, audio, List.of(), null, AudioToVideoRules.size("360p"), durationMs, out), Duration.ofSeconds(90), workDir);
+        return out;
+    }
+
+    private void runQuick(List<String> command, Duration timeout, Path workDir) {
+        Path logFile = workDir.resolve("quick.log");
+        Process process;
+        try {
+            process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(logFile.toFile()).start();
+        } catch (IOException e) {
+            throw new JobFailure("ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+        }
+        try {
+            if (!process.waitFor(timeout.toSeconds(), TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new JobFailure("The test render took longer than " + timeout.toSeconds() + " seconds and was stopped");
+            }
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new JobFailure("The test render was interrupted", e);
+        }
+        if (process.exitValue() != 0) {
+            throw new JobFailure("The test render failed: " + tailOf(logFile));
+        }
     }
 
     /** Several videos joined into one, in order. See MergeRules. */

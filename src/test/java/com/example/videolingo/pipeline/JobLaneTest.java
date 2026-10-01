@@ -45,4 +45,17 @@ class JobLaneTest {
         org.junit.jupiter.api.Assertions.assertFalse(PipelineSteps.isEditUpload("videos/x.mp4"));
         org.junit.jupiter.api.Assertions.assertFalse(PipelineSteps.isEditUpload(null));
     }
+
+    @Test
+    void concurrencyDefaultsToOneAndIsCapped() {
+        PipelineProperties none = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null);
+        assertEquals(1, none.concurrency(JobLane.MEDIA));
+        assertEquals(1, none.concurrency(JobLane.AI));
+        PipelineProperties set = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 2, 99);
+        assertEquals(2, set.concurrency(JobLane.MEDIA));
+        assertEquals(PipelineProperties.MAX_CONCURRENCY, set.concurrency(JobLane.AI));
+        PipelineProperties bad = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 0, -3);
+        assertEquals(1, bad.concurrency(JobLane.MEDIA));
+        assertEquals(1, bad.concurrency(JobLane.AI));
+    }
 }

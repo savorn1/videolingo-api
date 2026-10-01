@@ -26,8 +26,20 @@ public record PipelineProperties(
         // Translation (OpenAI chat model, same key as Whisper).
         String translationModel,
         // Text-to-speech (OpenAI speech API, same key as Whisper).
-        String ttsModel
+        String ttsModel,
+        // How many jobs of a lane may run at once (default 1; see JobLane). ffmpeg is heavy on CPU and memory, so raise the media lane with care.
+        Integer mediaConcurrency,
+        Integer aiConcurrency
 ) {
+
+    /** The most jobs of one lane that run at the same time: 1 unless configured, never more than {@link #MAX_CONCURRENCY}. */
+    public static final int MAX_CONCURRENCY = 4;
+
+    public int concurrency(JobLane lane) {
+        Integer configured = lane == JobLane.MEDIA ? mediaConcurrency : aiConcurrency;
+        return configured == null || configured < 1 ? 1 : Math.min(configured, MAX_CONCURRENCY);
+    }
+
 
     public boolean isEnabled() {
         return enabled == null || enabled;

@@ -47,7 +47,8 @@ public class VideoEditService {
     public record SegmentRange(long startMs, Long endMs) {
     }
 
-    public record TrimRequest(long startMs, Long endMs, CropRect crop, ScaleSize scale) {
+    /** rotate = clockwise quarter turns in degrees (0/90/180/270); flips are applied after the turn. Crop is on the original picture, then turn/flip, then resize. */
+    public record TrimRequest(long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, Boolean flipH, Boolean flipV) {
     }
 
     public record SplitRequest(List<SegmentRange> segments) {
@@ -127,6 +128,7 @@ public class VideoEditService {
         if (request.scale() != null) {
             require(VideoEditRules.validateScale(request.scale().w(), request.scale().h()));
         }
+        require(VideoEditRules.validateRotation(request.rotate()));
         requireNoActiveJob(videoId);
 
         Map<String, Object> params = new LinkedHashMap<>();
@@ -140,6 +142,15 @@ public class VideoEditService {
         }
         if (request.scale() != null) {
             params.put("scale", Map.of("w", request.scale().w(), "h", request.scale().h()));
+        }
+        if (request.rotate() != null && request.rotate() != 0) {
+            params.put("rotate", request.rotate());
+        }
+        if (Boolean.TRUE.equals(request.flipH())) {
+            params.put("flipH", true);
+        }
+        if (Boolean.TRUE.equals(request.flipV())) {
+            params.put("flipV", true);
         }
         ProcessingJob job = jobService.enqueue(videoId, ProcessingJobType.EDIT, toJson(params), "Trim/crop requested by " + username);
         return jobService.getJob(job.getId());

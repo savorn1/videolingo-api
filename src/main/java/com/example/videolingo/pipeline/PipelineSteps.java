@@ -303,7 +303,7 @@ public class PipelineSteps {
     /** How long an unpromoted clip stays available for review. */
     static final int CLIP_HOURS = 72;
 
-    // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540}}
+    // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540},"rotate":90,"flipH":true}  (rotate/flips optional)
     // {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":9000}]}
     // {"operation":"AUDIO","audio":{…AudioEditRules.Spec…},"summary":"Volume 150%, fade out 2 s"}
     // {"operation":"EXTRACT","format":"MP3" | "WAV"}
@@ -361,6 +361,67 @@ public class PipelineSteps {
     // An uploaded sound (and optional cover picture) becomes the video's file.
     // The video row was created, disabled, when the request came in; this fills
     // it in, so the admin reviews it like any new upload before enabling it.
+    /** How much of the sound a test render covers. */
+    static final long PREVIEW_MS = 5_000;
+    /** At most this many test renders at once: they run in the request, so they must not crowd out the real jobs. */
+    private final java.util.concurrent.Semaphore previewSlots = new java.util.concurrent.Semaphore(2);
+
+    /**
+     * A test render of a look (waveform style, colours, clean-up) with the real sound — the first few seconds, at
+     * a small size, on the background colour — so it can be judged before the real video is made. Made on the spot;
+     * the file is kept with the other temporary edit uploads and removed with them.
+     */
+    public String previewAudioToVideo(AudioToVideoRules.Spec spec) {
+        String problem = AudioToVideoRules.validate(spec);
+        if (problem != null) {
+            throw new JobFailure(problem);
+        }
+        if (!spec.hasWaveform()) {
+            throw new JobFailure("Choose a waveform to test");
+        }
+        if (!previewSlots.tryAcquire()) {
+            throw new JobFailure("Other test renders are running — try again in a moment");
+        }
+        Path dir = null;
+        try {
+            dir = Files.createTempDirectory(Path.of(props.workDirectory()), "preview-");
+            JobContext ctx = new JobContext(null, 0, dir);
+            Path audio = fetch(spec.audioKey(), "source-audio", ctx);
+            MediaTools.Probe probe = media.probe(audio.toString(), dir);
+            if (!probe.hasAudio() || probe.durationMs() == null || probe.durationMs() <= 0) {
+                throw new JobFailure("That file has no audio in it, or its length can't be read");
+            }
+            AudioToVideoRules.Spec shown = new AudioToVideoRules.Spec(spec.audioKey(), null, spec.background(), "360p", spec.waveform(), spec.waveColor(), false, null,
+                    spec.normalize(), spec.denoise(), List.of());
+            Path out = media.audioToVideoQuick(shown, audio, Math.min(PREVIEW_MS, probe.durationMs()), dir);
+            String key = OverlayRules.UPLOAD_PREFIX + "preview-" + java.util.UUID.randomUUID() + ".mp4";
+            upload(key, out, "video/mp4", null);
+            return publicUrl(key);
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't prepare the test render: " + e.getMessage(), e);
+        } finally {
+            previewSlots.release();
+            deleteDirQuietly(dir);
+        }
+    }
+
+    private static void deleteDirQuietly(Path dir) {
+        if (dir == null) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> paths = Files.walk(dir)) {
+            paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                    // Temp space.
+                }
+            });
+        } catch (IOException ignored) {
+            // As above.
+        }
+    }
+
     private void audioToVideoJob(Video video, ProcessingJob job, JsonNode p, JobContext ctx) {
         List<AudioToVideoRules.Slide> requested = new ArrayList<>();
         p.path("slides").forEach(n -> requested.add(new AudioToVideoRules.Slide(n.path("key").asText(""), n.path("startMs").asLong(0))));
@@ -710,9 +771,12 @@ public class PipelineSteps {
         Long endMs = p.hasNonNull("endMs") ? p.get("endMs").asLong() : null;
         MediaTools.CropRect crop = crop(p.get("crop"));
         MediaTools.ScaleSize scale = scale(p.get("scale"));
+        Integer rotate = p.hasNonNull("rotate") ? p.get("rotate").asInt() : null;
+        boolean flipH = p.path("flipH").asBoolean(false);
+        boolean flipV = p.path("flipV").asBoolean(false);
 
         ctx.progress(20, "Trimming");
-        Path out = media.trim(input, startMs, endMs, crop, scale, ctx.slice(20, 90));
+        Path out = media.trim(input, startMs, endMs, crop, scale, rotate, flipH, flipV, ctx.slice(20, 90));
         ctx.progress(92, "Saving the clip");
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -721,8 +785,12 @@ public class PipelineSteps {
         // Boxed on every branch on purpose: mixing a primitive int (crop.w()/scale.w())
         // with an Integer (video.getWidth()) in a ternary makes Java auto-unbox the
         // Integer branch, which NPEs when the video has no recorded width/height.
-        Integer width = crop != null ? Integer.valueOf(crop.w()) : scale != null ? Integer.valueOf(scale.w()) : video.getWidth();
-        Integer height = crop != null ? Integer.valueOf(crop.h()) : scale != null ? Integer.valueOf(scale.h()) : video.getHeight();
+        // A quarter turn swaps the sides of the picture that was cropped (or the whole one); a resize is already the final size.
+        boolean swap = VideoEditRules.swapsSides(rotate);
+        Integer baseW = crop != null ? Integer.valueOf(crop.w()) : video.getWidth();
+        Integer baseH = crop != null ? Integer.valueOf(crop.h()) : video.getHeight();
+        Integer width = scale != null ? Integer.valueOf(scale.w()) : swap ? baseH : baseW;
+        Integer height = scale != null ? Integer.valueOf(scale.h()) : swap ? baseW : baseH;
         clipRepository.save(VideoClip.builder()
                 .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.TRIM)
                 .startMs(startMs).endMs(endMs)
@@ -731,6 +799,7 @@ public class PipelineSteps {
                 .scaleW(scale != null ? scale.w() : null).scaleH(scale != null ? scale.h() : null)
                 .durationSeconds(clipSeconds(startMs, endMs, video))
                 .width(width).height(height)
+                .summary(VideoEditRules.describeOrientation(rotate, flipH, flipV))
                 .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());

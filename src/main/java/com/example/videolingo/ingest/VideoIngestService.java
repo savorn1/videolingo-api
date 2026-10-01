@@ -1,5 +1,7 @@
 package com.example.videolingo.ingest;
 
+import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewRequest;
+import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewResponse;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoResponse;
 import com.example.videolingo.dto.VideoIngestDtos.CreateVideoRequest;
@@ -14,6 +16,8 @@ import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
 import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.pipeline.AudioEditRules;
 import com.example.videolingo.pipeline.AudioToVideoRules;
+import com.example.videolingo.pipeline.JobFailure;
+import com.example.videolingo.pipeline.PipelineSteps;
 import com.example.videolingo.pipeline.MergeRules;
 import com.example.videolingo.service.ProcessingJobService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -88,6 +92,7 @@ public class VideoIngestService {
     private final ProcessingJobService jobService;
     private final ObjectMapper objectMapper;
     private final S3Client s3;
+    private final PipelineSteps steps;
     private final S3Presigner presigner;
 
     @Value("${s3.bucket:}")
@@ -321,6 +326,25 @@ public class VideoIngestService {
         }
         var job = jobService.enqueue(saved.getId(), ProcessingJobType.EDIT, json, AudioToVideoRules.describe(spec) + " requested by " + actor);
         return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
+    }
+
+    /** A short test render of a waveform look with the real sound, for the page's preview. See PipelineSteps.previewAudioToVideo. */
+    public AudioPreviewResponse previewFromAudio(AudioPreviewRequest r) {
+        requireStorage();
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(r.getAudioKey(), null, blankToNull(r.getBackground()), "360p", blankToNull(r.getWaveform()),
+                blankToNull(r.getWaveColor()), false, null, r.isNormalize(), r.isDenoise(), List.of());
+        String problem = AudioToVideoRules.validate(spec);
+        if (problem != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+        if (head(spec.audioKey()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
+        }
+        try {
+            return new AudioPreviewResponse(steps.previewAudioToVideo(spec), PipelineSteps.PREVIEW_MS / 1000);
+        } catch (JobFailure e) {
+            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        }
     }
 
     // ── merge ─────────────────────────────────────────────────────────────

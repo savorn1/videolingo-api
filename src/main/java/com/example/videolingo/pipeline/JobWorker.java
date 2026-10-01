@@ -19,13 +19,15 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
-// Runs queued processing jobs in the background, one at a time per lane (see JobLane). Only the
+// Runs queued processing jobs in the background, per lane (see JobLane) — one at a time unless configured otherwise. Only the
 // types below are handled here; others (TRANSCODE, …) stay queued for
 // whatever handles them.
 @Component
@@ -42,19 +44,28 @@ public class JobWorker {
     private final PipelineSteps steps;
     private final ApplicationEventPublisher events;
 
-    // One thread and one "busy" flag per lane, so a slow job in one lane doesn't hold up the other.
-    private final Map<JobLane, ExecutorService> executors = new EnumMap<>(JobLane.class);
-    private final Map<JobLane, AtomicBoolean> busy = new EnumMap<>(JobLane.class);
+    // A pool and a counter of running jobs per lane, so a slow job in one lane doesn't hold up the other. A lane
+    // runs one job at a time unless pipeline.media-concurrency / ai-concurrency say otherwise; jobs still start in order.
+    private final Map<JobLane, ExecutorService> executors = new ConcurrentHashMap<>();
+    private final Map<JobLane, LaneSlots> slots = new EnumMap<>(JobLane.class);
 
     {
         for (JobLane lane : JobLane.values()) {
-            executors.put(lane, Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "job-worker-" + lane.name().toLowerCase());
+            slots.put(lane, new LaneSlots());
+        }
+    }
+
+    // Created on first use: the pool size comes from the settings, which aren't available when the fields are set up.
+    private ExecutorService executor(JobLane lane) {
+        return executors.computeIfAbsent(lane, l -> {
+            int size = props.concurrency(l);
+            AtomicInteger n = new AtomicInteger();
+            return Executors.newFixedThreadPool(size, r -> {
+                Thread t = new Thread(r, "job-worker-" + l.name().toLowerCase() + "-" + n.incrementAndGet());
                 t.setDaemon(true);
                 return t;
-            }));
-            busy.put(lane, new AtomicBoolean(false));
-        }
+            });
+        });
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -78,22 +89,31 @@ public class JobWorker {
         }
     }
 
+    // Starts jobs for as long as the lane has a free place and something is queued.
     private void pollLane(JobLane lane) {
-        AtomicBoolean flag = busy.get(lane);
-        if (!props.isEnabled() || !flag.compareAndSet(false, true)) {
+        if (!props.isEnabled()) {
             return;
         }
-        try {
-            var job = store.claimNext(lane.types());
-            if (job.isEmpty()) {
-                flag.set(false);
+        LaneSlots lanes = slots.get(lane);
+        int max = props.concurrency(lane);
+        while (lanes.tryAcquire(max)) {
+            Optional<ProcessingJob> job;
+            try {
+                job = store.claimNext(lane.types());
+            } catch (RuntimeException e) {
+                lanes.release();
+                log.error("Couldn't claim a processing job", e);
                 return;
             }
-            executors.get(lane).submit(() -> {
+            if (job.isEmpty()) {
+                lanes.release();
+                return;
+            }
+            executor(lane).submit(() -> {
                 try {
                     run(job.get());
                 } finally {
-                    flag.set(false);
+                    lanes.release();
                     // The next queued job of this lane starts now instead of at the next poll.
                     try {
                         pollLane(lane);
@@ -102,9 +122,6 @@ public class JobWorker {
                     }
                 }
             });
-        } catch (RuntimeException e) {
-            flag.set(false);
-            log.error("Couldn't claim a processing job", e);
         }
     }
 

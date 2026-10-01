@@ -1,6 +1,8 @@
 package com.example.videolingo.controller;
 
 import com.example.videolingo.dto.ApiResponse;
+import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewRequest;
+import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewResponse;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoResponse;
 import com.example.videolingo.dto.VideoIngestDtos.CreateVideoRequest;
@@ -65,6 +67,13 @@ public class VideoIngestController {
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success("Video from audio queued", ingest.createFromAudio(request, auth.getName())));
+    }
+
+    // A few seconds of a waveform look drawn from the real sound, so it can be judged before the video is made.
+    // Rendered on the spot (a few seconds), not queued.
+    @PostMapping("/from-audio/preview")
+    public ResponseEntity<ApiResponse<AudioPreviewResponse>> previewFromAudio(@Valid @RequestBody AudioPreviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.previewFromAudio(request)));
     }
 
     // Joins stored videos into one new video, in the order given. Queues a job; the video

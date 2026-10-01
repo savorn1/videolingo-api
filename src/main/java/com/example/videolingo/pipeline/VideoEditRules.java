@@ -10,6 +10,9 @@ public final class VideoEditRules {
 
     public static final int MAX_SEGMENTS = 20;
 
+    /** Quarter turns clockwise, in degrees. */
+    public static final List<Integer> ROTATIONS = List.of(0, 90, 180, 270);
+
     public record Segment(long startMs, Long endMs) {
     }
 
@@ -55,6 +58,40 @@ public final class VideoEditRules {
     /** Only called once a resize is actually requested — w/h are both given. */
     public static String validateScale(int w, int h) {
         return w <= 0 || h <= 0 ? "The resized width and height must be positive" : null;
+    }
+
+    /** Only called once a rotation is requested. Null = valid. */
+    public static String validateRotation(Integer degrees) {
+        return degrees == null || ROTATIONS.contains(degrees) ? null : "The picture can be turned 90, 180 or 270 degrees";
+    }
+
+    /** Whether a rotation or flip was asked for at all (a null or 0 turn with no flips is "leave it alone"). */
+    public static boolean hasOrientation(Integer rotate, Boolean flipH, Boolean flipV) {
+        return (rotate != null && rotate != 0) || Boolean.TRUE.equals(flipH) || Boolean.TRUE.equals(flipV);
+    }
+
+    /** True when the turn swaps the picture's width and height (90 or 270). */
+    public static boolean swapsSides(Integer rotate) {
+        return rotate != null && (rotate == 90 || rotate == 270);
+    }
+
+    /** "Turned 90° clockwise, flipped horizontally"; null when nothing is asked for. */
+    public static String describeOrientation(Integer rotate, Boolean flipH, Boolean flipV) {
+        if (!hasOrientation(rotate, flipH, flipV)) {
+            return null;
+        }
+        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        if (rotate != null && rotate != 0) {
+            parts.add("Turned " + rotate + "° clockwise");
+        }
+        if (Boolean.TRUE.equals(flipH)) {
+            parts.add("flipped left–right");
+        }
+        if (Boolean.TRUE.equals(flipV)) {
+            parts.add("flipped top–bottom");
+        }
+        String text = String.join(", ", parts);
+        return Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
 
     public static String validateSegments(List<Segment> segments, Long durationMs) {

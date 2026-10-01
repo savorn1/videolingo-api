@@ -173,6 +173,26 @@ public final class VideoIngestDtos {
         private List<Long> categoryIds;
     }
 
+    /** A short test render of a look with the real sound: just what shows in the picture. */
+    @Data
+    public static class AudioPreviewRequest {
+        @NotBlank
+        @Size(max = 500)
+        private String audioKey;
+        @Size(max = 7)
+        private String background;
+        @NotBlank
+        @Size(max = 10)
+        private String waveform;
+        @Size(max = 7)
+        private String waveColor;
+        private boolean normalize;
+        private boolean denoise;
+    }
+
+    public record AudioPreviewResponse(String url, long seconds) {
+    }
+
     public record SlideDto(@NotBlank @Size(max = 500) String key, @Min(0) long startMs) {
     }
 

@@ -337,4 +337,71 @@ class AudioToVideoRulesTest {
     void theDescriptionCountsPictures() {
         assertEquals("Audio to video (1280×720, 3 pictures)", AudioToVideoRules.describe(slideshow(0, 4_000, 9_000)));
     }
+
+    @Test
+    void everyWaveformStyleIsAcceptedAndDrawnItsOwnWay() {
+        for (String style : AudioToVideoRules.WAVEFORMS) {
+            assertNull(AudioToVideoRules.validate(styled(null, style, false, false, false)), style);
+        }
+        String spikes = AudioToVideoRules.filterGraph(styled(null, "SPIKES", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(spikes.contains("showwaves=s=1280x180:mode=line"));
+        String dots = AudioToVideoRules.filterGraph(styled(null, "DOTS", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(dots.contains("showwaves=s=1280x180:mode=point"));
+        String spectrum = AudioToVideoRules.filterGraph(styled(null, "SPECTRUM", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(spectrum.contains("showfreqs=s=1280x180:mode=line"));
+        assertTrue(spectrum.contains("colorkey=0x000000"));
+    }
+
+    @Test
+    void theStyleIsNamedInTheJobLog() {
+        assertEquals("waveform", AudioToVideoRules.waveLabel("WAVES"));
+        assertEquals("bars", AudioToVideoRules.waveLabel("BARS"));
+        assertEquals("spikes", AudioToVideoRules.waveLabel("SPIKES"));
+        assertEquals("dots", AudioToVideoRules.waveLabel("DOTS"));
+        assertEquals("spectrum", AudioToVideoRules.waveLabel("SPECTRUM"));
+    }
+
+    @Test
+    void pulseAndBlocksAreDrawnInTheMiddleAsSeparateBars() {
+        String pulse = AudioToVideoRules.filterGraph(styled(null, "PULSE", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(pulse.contains("mode=cline:scale=sqrt"));
+        assertTrue(pulse.contains("flags=neighbor"));
+        assertTrue(pulse.contains("geq=r='r(X,Y)'"));
+        assertTrue(pulse.contains("overlay=(W-w)/2:(H-h)/2"));
+        String blocks = AudioToVideoRules.filterGraph(styled(null, "BLOCKS", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(blocks.contains("overlay=(W-w)/2:(H-h)/2"));
+        // The other styles stay along the bottom.
+        String waves = AudioToVideoRules.filterGraph(styled(null, "WAVES", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(waves.contains("overlay=0:H-h-36"));
+    }
+
+    @Test
+    void barLayoutsUseWholePixelsAndStayInsideTheFrame() {
+        for (Size size : new Size[]{new Size(640, 360), new Size(854, 480), new Size(1280, 720), new Size(1920, 1080)}) {
+            for (String style : AudioToVideoRules.BAR_STYLES) {
+                AudioToVideoRules.BarLayout l = AudioToVideoRules.barLayout(style, size);
+                assertTrue(l.bar() >= 2 && l.bar() < l.pitch(), style + " " + size);
+                assertTrue(l.width() <= size.w() * 0.85 && l.width() >= size.w() * 0.7, style + " " + size + " width " + l.width());
+                assertEquals(0, l.width() % 2);
+                assertEquals(0, l.height() % 2);
+                assertTrue(l.height() <= size.h() / 2);
+                assertTrue(l.bars() >= 8);
+            }
+        }
+        AudioToVideoRules.BarLayout thin = AudioToVideoRules.barLayout("PULSE", new Size(1280, 720));
+        AudioToVideoRules.BarLayout thick = AudioToVideoRules.barLayout("BLOCKS", new Size(1280, 720));
+        assertTrue(thick.bar() > thin.bar() && thick.bars() < thin.bars());
+    }
+
+    @Test
+    void barStylesDifferInCountAndThickness() {
+        Size hd = new Size(1280, 720);
+        AudioToVideoRules.BarLayout fine = AudioToVideoRules.barLayout("FINE", hd);
+        AudioToVideoRules.BarLayout pulse = AudioToVideoRules.barLayout("PULSE", hd);
+        AudioToVideoRules.BarLayout stripes = AudioToVideoRules.barLayout("STRIPES", hd);
+        AudioToVideoRules.BarLayout blocks = AudioToVideoRules.barLayout("BLOCKS", hd);
+        assertTrue(fine.bars() > pulse.bars() && pulse.bars() > stripes.bars() && stripes.bars() > blocks.bars());
+        assertTrue(AudioToVideoRules.isCentered("FINE") && AudioToVideoRules.isCentered("STRIPES"));
+        assertFalse(AudioToVideoRules.isCentered("BARS"));
+    }
 }

@@ -66,7 +66,11 @@ public final class AudioToVideoRules {
     public static final List<String> RESOLUTIONS = List.of("360p", "480p", "720p", "1080p");
     public static final String DEFAULT_RESOLUTION = "720p";
     public static final String DEFAULT_BACKGROUND = "#111827";
-    public static final List<String> WAVEFORMS = List.of("NONE", "WAVES", "BARS");
+    /**
+     * WAVES = a centred line, SPIKES = vertical sticks, DOTS = a trail of points, BARS = frequency bars, SPECTRUM = a thin frequency line,
+     * PULSE = thin evenly spaced bars, BLOCKS = thick ones, FINE = hair-thin dense ones and STRIPES = medium ones, all drawn mirrored around the middle of the picture.
+     */
+    public static final List<String> WAVEFORMS = List.of("NONE", "WAVES", "BARS", "SPIKES", "DOTS", "SPECTRUM", "PULSE", "BLOCKS", "FINE", "STRIPES");
     public static final int MAX_TITLE = 200;
     public static final int MAX_SLIDES = 30;
     /** Pictures closer together than this would flash by. */
@@ -150,6 +154,42 @@ public final class AudioToVideoRules {
 
     static int fps(Spec spec) {
         return spec.hasWaveform() ? WAVE_FPS : STILL_FPS;
+    }
+
+    /** The styles of separate mirrored bars, drawn in the middle of the picture rather than along the bottom. */
+    public static final List<String> BAR_STYLES = List.of("PULSE", "BLOCKS", "FINE", "STRIPES");
+
+    public static boolean isCentered(String waveform) {
+        return BAR_STYLES.contains(waveform);
+    }
+
+    /**
+     * How the centred bar styles are laid out: `bars` columns, each `pitch` pixels apart and `bar` pixels wide, across `width`
+     * pixels, `height` tall. Whole pixels, so every bar is as crisp as the next.
+     */
+    public record BarLayout(int bars, int pitch, int bar, int width, int height) {
+    }
+
+    public static BarLayout barLayout(String waveform, Size size) {
+        // How many bars span the picture, and how much of each bar's slot is filled.
+        double count = switch (waveform) {
+            case "BLOCKS" -> 36.0;
+            case "STRIPES" -> 60.0;
+            case "FINE" -> 150.0;
+            default -> 90.0;
+        };
+        double fill = switch (waveform) {
+            case "BLOCKS" -> 0.6;
+            case "STRIPES" -> 0.5;
+            case "FINE" -> 0.35;
+            default -> 0.4;
+        };
+        int target = (int) Math.round(size.w() * 0.8);
+        int pitch = Math.max("BLOCKS".equals(waveform) ? 12 : 4, (int) Math.round(target / count));
+        int bars = Math.max(8, target / pitch);
+        int bar = Math.max(2, (int) Math.round(pitch * fill));
+        int height = (int) Math.round(size.h() * 0.4) / 2 * 2;
+        return new BarLayout(bars, pitch, bar, bars * pitch / 2 * 2, height);
     }
 
     /** Height of the waveform band: a quarter of the frame, kept even. */
@@ -270,16 +310,27 @@ public final class AudioToVideoRules {
         if (spec.hasWaveform()) {
             parts.add("[" + audioIn + ":a]" + chain + ",asplit=2[a][aw]");
             String band = size.w() + "x" + waveHeight(size);
+            boolean centered = isCentered(spec.waveform());
             String wave = spec.waveColor() != null ? spec.waveColor() : contrastColor(spec.background());
             String col = "0x" + wave.substring(1).toLowerCase(Locale.ROOT);
-            if (spec.waveform().equals("BARS")) {
-                // Frequency bars come on an opaque black field; key the black out so only the bars are drawn.
-                parts.add("[aw]showfreqs=s=" + band + ":mode=bar:fscale=log:ascale=sqrt:colors=" + col + ":rate=" + fps(spec)
+            switch (spec.waveform()) {
+                // Frequency drawings come on an opaque black field; key the black out so only the drawing is kept.
+                case "BARS" -> parts.add("[aw]showfreqs=s=" + band + ":mode=bar:fscale=log:ascale=sqrt:colors=" + col + ":rate=" + fps(spec)
                         + ",format=rgba,colorkey=0x000000:0.1:0.2[wv]");
-            } else {
-                parts.add("[aw]showwaves=s=" + band + ":mode=cline:colors=" + col + ":rate=" + fps(spec) + ",format=rgba[wv]");
+                case "SPECTRUM" -> parts.add("[aw]showfreqs=s=" + band + ":mode=line:fscale=log:ascale=sqrt:colors=" + col + ":rate=" + fps(spec)
+                        + ",format=rgba,colorkey=0x000000:0.1:0.2[wv]");
+                case "SPIKES" -> parts.add("[aw]showwaves=s=" + band + ":mode=line:colors=" + col + ":rate=" + fps(spec) + ",format=rgba[wv]");
+                case "PULSE", "BLOCKS", "FINE", "STRIPES" -> {
+                    // One column per bar from showwaves, widened (not smoothed) and cut into bars with gaps by an alpha mask.
+                    BarLayout lay = barLayout(spec.waveform(), size);
+                    parts.add("[aw]showwaves=s=" + lay.bars() + "x" + lay.height() + ":mode=cline:scale=sqrt:colors=" + col + ":rate=" + fps(spec)
+                            + ",format=rgba,scale=" + lay.width() + ":" + lay.height() + ":flags=neighbor,"
+                            + "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lt(mod(X," + lay.pitch() + ")," + lay.bar() + "),alpha(X,Y),0)'[wv]");
+                }
+                case "DOTS" -> parts.add("[aw]showwaves=s=" + band + ":mode=point:colors=" + col + ":rate=" + fps(spec) + ",format=rgba[wv]");
+                default -> parts.add("[aw]showwaves=s=" + band + ":mode=cline:colors=" + col + ":rate=" + fps(spec) + ",format=rgba[wv]");
             }
-            parts.add("[" + current + "][wv]overlay=0:H-h-" + Math.round(size.h() * 0.05) + ":format=auto,format=yuv420p[v]");
+            parts.add("[" + current + "][wv]overlay=" + (centered ? "(W-w)/2:(H-h)/2" : "0:H-h-" + Math.round(size.h() * 0.05)) + ":format=auto,format=yuv420p[v]");
         } else {
             parts.add("[" + current + "]null[v]");
             parts.add("[" + audioIn + ":a]" + chain + "[a]");
@@ -322,6 +373,21 @@ public final class AudioToVideoRules {
         return cmd;
     }
 
+    /** What a waveform style is called in the job log. */
+    static String waveLabel(String waveform) {
+        return switch (waveform) {
+            case "BARS" -> "bars";
+            case "SPIKES" -> "spikes";
+            case "DOTS" -> "dots";
+            case "SPECTRUM" -> "spectrum";
+            case "PULSE" -> "pulse";
+            case "BLOCKS" -> "blocks";
+            case "FINE" -> "fine bars";
+            case "STRIPES" -> "stripes";
+            default -> "waveform";
+        };
+    }
+
     /** A short line for the job log and the job list. */
     public static String describe(Spec spec) {
         Size size = size(spec.resolution());
@@ -329,7 +395,7 @@ public final class AudioToVideoRules {
         sb.append(spec.slides().size() > 1 ? ", " + spec.slides().size() + " pictures" : !spec.slides().isEmpty() ? ", cover picture"
                 : spec.drawsTitle() ? ", title card" : ", plain background");
         if (spec.hasWaveform()) {
-            sb.append(", ").append(spec.waveform().equals("BARS") ? "bars" : "waveform");
+            sb.append(", ").append(waveLabel(spec.waveform()));
         }
         if (spec.normalize()) {
             sb.append(", normalized");

@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 // Runs the real ffmpeg on the commands AudioToVideoRules builds, so a bad filter
@@ -111,6 +112,43 @@ class AudioToVideoFfmpegTest {
     void barsOverACover(@TempDir Path dir) throws IOException {
         render(new Spec(AUDIO, OverlayRules.UPLOAD_PREFIX + "c.png", "#ffffff", null, "BARS", "#ff0000", false, null, false, false), List.of(picture(dir)), null,
                 new Size(640, 360), dir);
+    }
+
+    @Test
+    void everyWaveformStyleRenders(@TempDir Path dir) throws IOException {
+        for (String style : new String[]{"SPIKES", "DOTS", "SPECTRUM", "PULSE", "BLOCKS", "FINE", "STRIPES"}) {
+            Path sub = Files.createDirectory(dir.resolve(style.toLowerCase()));
+            render(new Spec(AUDIO, null, "#101820", null, style, "#ffcc00", false, null, false, false), List.of(), null, new Size(640, 360), sub);
+        }
+    }
+
+    @Test
+    void aTestRenderIsAShortClipAtASmallSize(@TempDir Path dir) throws IOException {
+        assumeTrue(ffmpeg, "ffmpeg isn't installed");
+        Path audio = tone(dir);
+        MediaTools media = new MediaTools(new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null));
+        Spec spec = new Spec(AUDIO, null, "#0a0a9b", "360p", "PULSE", "#ffffff", false, null, false, false);
+        Path out = media.audioToVideoQuick(spec, audio, 1500, dir);
+        assertTrue(Files.size(out) > 1000, "the clip is empty");
+        Result probe = run(List.of("ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", out.toString()), dir);
+        assertTrue(probe.output.contains("640,360"), probe.output);
+        Result streams = run(List.of("ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", out.toString()), dir);
+        assertTrue(streams.output.contains("audio"), "the test render has no sound: " + streams.output);
+        assertTrue(streams.output.contains("video"), streams.output);
+        // Not just present but audible: the tone must come through, not silence.
+        Result loud = run(List.of("ffmpeg", "-hide_banner", "-i", out.toString(), "-af", "volumedetect", "-vn", "-f", "null", "-"), dir);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("max_volume: (-?[0-9.]+) dB").matcher(loud.output);
+        assertTrue(m.find(), loud.output);
+        assertTrue(Double.parseDouble(m.group(1)) > -40, "the test render is silent: " + m.group(1) + " dB");
+    }
+
+    @Test
+    void aBrokenTestRenderSaysSo(@TempDir Path dir) {
+        assumeTrue(ffmpeg, "ffmpeg isn't installed");
+        MediaTools media = new MediaTools(new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null));
+        Spec spec = new Spec(dir.resolve("missing.mp3").toString(), null, "#0a0a9b", "360p", "PULSE", "#ffffff", false, null, false, false);
+        JobFailure e = assertThrows(JobFailure.class, () -> media.audioToVideoQuick(spec, dir.resolve("missing.mp3"), 1500, dir));
+        assertTrue(e.getMessage().startsWith("The test render failed"), e.getMessage());
     }
 
     @Test
