@@ -1,12 +1,12 @@
 package com.example.videolingo.webhook;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.HexFormat;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 // How webhook messages are signed. The receiver recomputes
 //   HMAC-SHA256(secret, "<timestamp>.<raw body>")
@@ -18,8 +18,7 @@ public final class WebhookSigner {
     public static final String SIGNATURE_HEADER = "X-VideoLingo-Signature";
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private WebhookSigner() {
-    }
+    private WebhookSigner() {}
 
     public static String newSecret() {
         byte[] bytes = new byte[32];
@@ -53,7 +52,9 @@ public final class WebhookSigner {
         if (t == null || v1 == null) {
             return false;
         }
-        return MessageDigest.isEqual(hmac(secret, t + "." + body).getBytes(StandardCharsets.US_ASCII), v1.getBytes(StandardCharsets.US_ASCII));
+        return MessageDigest.isEqual(
+                hmac(secret, t + "." + body).getBytes(StandardCharsets.US_ASCII),
+                v1.getBytes(StandardCharsets.US_ASCII));
     }
 
     private static String hmac(String secret, String data) {

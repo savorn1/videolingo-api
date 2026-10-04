@@ -1,14 +1,13 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class VideoEditRulesTest {
 
@@ -50,8 +49,8 @@ class VideoEditRulesTest {
     void segmentsNeedAtLeastOneAndAtMostTheCap() {
         assertNotNull(VideoEditRules.validateSegments(List.of(), null));
         assertNull(VideoEditRules.validateSegments(List.of(new VideoEditRules.Segment(0, 1000L)), 10000L));
-        List<VideoEditRules.Segment> tooMany = java.util.Collections.nCopies(VideoEditRules.MAX_SEGMENTS + 1,
-                new VideoEditRules.Segment(0, 100L));
+        List<VideoEditRules.Segment> tooMany =
+                java.util.Collections.nCopies(VideoEditRules.MAX_SEGMENTS + 1, new VideoEditRules.Segment(0, 100L));
         assertNotNull(VideoEditRules.validateSegments(tooMany, null));
     }
 
@@ -66,7 +65,7 @@ class VideoEditRulesTest {
     @Test
     void rotationIsAQuarterTurn() {
         assertNull(VideoEditRules.validateRotation(null));
-        for (int d : new int[]{0, 90, 180, 270}) {
+        for (int d : new int[] {0, 90, 180, 270}) {
             assertNull(VideoEditRules.validateRotation(d));
         }
         assertNotNull(VideoEditRules.validateRotation(45));
@@ -97,7 +96,9 @@ class VideoEditRulesTest {
     void orientationIsDescribedInWords() {
         assertEquals("Turned 90° clockwise", VideoEditRules.describeOrientation(90, false, false));
         assertEquals("Flipped left–right", VideoEditRules.describeOrientation(null, true, false));
-        assertEquals("Turned 180° clockwise, flipped left–right, flipped top–bottom", VideoEditRules.describeOrientation(180, true, true));
+        assertEquals(
+                "Turned 180° clockwise, flipped left–right, flipped top–bottom",
+                VideoEditRules.describeOrientation(180, true, true));
     }
 
     @Test
@@ -128,6 +129,8 @@ class VideoEditRulesTest {
         assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(0, 1, 5, 0, false, false, false)));
         assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(0, 1, 1, 50, false, false, false)));
         assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(Double.NaN, 1, 1, 0, false, false, false)));
-        assertEquals("Brighter, black & white, vignette", VideoEditRules.describeLook(new VideoEditRules.Look(0.1, 1, 1, 0, true, false, true)));
+        assertEquals(
+                "Brighter, black & white, vignette",
+                VideoEditRules.describeLook(new VideoEditRules.Look(0.1, 1, 1, 0, true, false, true)));
     }
 }

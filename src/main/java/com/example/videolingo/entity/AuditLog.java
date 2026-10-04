@@ -8,22 +8,23 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One change-making API request: who, what (method + path), and how it went
 // (HTTP status). Written by AuditFilter for every request AuditPolicy says
 // to keep — reads aren't logged. Request bodies are never stored.
 @Entity
-@Table(name = "audit_logs", indexes = {
-        @Index(name = "idx_audit_logs_created_at", columnList = "created_at"),
-        @Index(name = "idx_audit_logs_username", columnList = "username")
-})
+@Table(
+        name = "audit_logs",
+        indexes = {
+            @Index(name = "idx_audit_logs_created_at", columnList = "created_at"),
+            @Index(name = "idx_audit_logs_username", columnList = "username")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

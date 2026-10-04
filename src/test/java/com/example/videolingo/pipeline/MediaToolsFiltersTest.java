@@ -1,11 +1,10 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class MediaToolsFiltersTest {
 
@@ -41,7 +40,8 @@ class MediaToolsFiltersTest {
     @Test
     void aPlainLookAddsNoFilters() {
         assertTrue(MediaTools.lookFilters(null).isEmpty());
-        assertTrue(MediaTools.lookFilters(new VideoEditRules.Look(0, 1, 1, 0, false, false, false)).isEmpty());
+        assertTrue(MediaTools.lookFilters(new VideoEditRules.Look(0, 1, 1, 0, false, false, false))
+                .isEmpty());
     }
 
     @Test
@@ -49,6 +49,10 @@ class MediaToolsFiltersTest {
         assertEquals(
                 List.of("eq=brightness=0.100:contrast=1.200:saturation=0.000", "gblur=sigma=2.00", "vignette=PI/4"),
                 MediaTools.lookFilters(new VideoEditRules.Look(0.1, 1.2, 1.5, 2, true, true, true)));
-        assertEquals(2, MediaTools.lookFilters(new VideoEditRules.Look(0, 1, 1, 0, false, true, false)).size() + 1);
+        assertEquals(
+                2,
+                MediaTools.lookFilters(new VideoEditRules.Look(0, 1, 1, 0, false, true, false))
+                                .size()
+                        + 1);
     }
 }

@@ -16,6 +16,8 @@ import com.example.videolingo.dto.PageResponse;
 import com.example.videolingo.entity.AiFeature;
 import com.example.videolingo.exception.AppException;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -23,9 +25,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
-import java.util.List;
 
 // AI features, gated as module "ai" by PermissionAuthorizationManager: GETs
 // (results, chats, usage) need READ; generating, chatting and deleting need
@@ -49,17 +48,20 @@ public class AiController {
     // ── Generate Summary / Chapters / Key Points / Questions / Quiz ───────
 
     @PostMapping("/videos/{videoId}/generate")
-    public ResponseEntity<ApiResponse<AiGenerationResponse>> generate(@PathVariable Long videoId, @Valid @RequestBody AiGenerateRequest request,
-                                                                      Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Generated", generationService.generate(videoId, request, username(authentication))));
+    public ResponseEntity<ApiResponse<AiGenerationResponse>> generate(
+            @PathVariable Long videoId, @Valid @RequestBody AiGenerateRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Generated", generationService.generate(videoId, request, username(authentication))));
     }
 
     // Newest result per (type, output language) for the video.
     // Expected tokens and cost of a generation, before running it.
     @GetMapping("/videos/{videoId}/estimate")
-    public ResponseEntity<ApiResponse<AiEstimateService.Estimate>> estimate(@PathVariable Long videoId, @RequestParam AiFeature type,
-                                                                           @RequestParam(required = false) Long transcriptId,
-                                                                           @RequestParam(required = false) Integer count) {
+    public ResponseEntity<ApiResponse<AiEstimateService.Estimate>> estimate(
+            @PathVariable Long videoId,
+            @RequestParam AiFeature type,
+            @RequestParam(required = false) Long transcriptId,
+            @RequestParam(required = false) Integer count) {
         return ResponseEntity.ok(ApiResponse.success(estimateService.estimate(videoId, type, transcriptId, count)));
     }
 
@@ -69,9 +71,11 @@ public class AiController {
     }
 
     @GetMapping("/videos/{videoId}/generations/history")
-    public ResponseEntity<PageResponse<AiGenerationResponse>> history(@PathVariable Long videoId, @RequestParam AiFeature type,
-                                                                      @RequestParam(defaultValue = "1") int page,
-                                                                      @RequestParam(defaultValue = "10") int size) {
+    public ResponseEntity<PageResponse<AiGenerationResponse>> history(
+            @PathVariable Long videoId,
+            @RequestParam AiFeature type,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(generationService.history(videoId, type, page, size));
     }
 
@@ -94,10 +98,12 @@ public class AiController {
     }
 
     @PostMapping("/chats")
-    public ResponseEntity<ApiResponse<AiChatDtos.ChatDto>> createChat(@Valid @RequestBody AiChatDtos.CreateChatRequest request,
-                                                                      Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Chat started",
-                chatService.create(request.getVideoId(), request.getTranscriptId(), username(authentication))));
+    public ResponseEntity<ApiResponse<AiChatDtos.ChatDto>> createChat(
+            @Valid @RequestBody AiChatDtos.CreateChatRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "Chat started",
+                        chatService.create(request.getVideoId(), request.getTranscriptId(), username(authentication))));
     }
 
     @GetMapping("/chats/{id}")
@@ -106,9 +112,12 @@ public class AiController {
     }
 
     @PostMapping("/chats/{id}/messages")
-    public ResponseEntity<ApiResponse<AiChatDtos.TurnDto>> send(@PathVariable Long id, @Valid @RequestBody AiChatDtos.SendMessageRequest request,
-                                                                Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(chatService.send(id, request.getContent(), username(authentication))));
+    public ResponseEntity<ApiResponse<AiChatDtos.TurnDto>> send(
+            @PathVariable Long id,
+            @Valid @RequestBody AiChatDtos.SendMessageRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(
+                ApiResponse.success(chatService.send(id, request.getContent(), username(authentication))));
     }
 
     @DeleteMapping("/chats/{id}")

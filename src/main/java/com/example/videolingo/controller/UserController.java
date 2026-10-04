@@ -48,39 +48,35 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<UserResponse>> update(@PathVariable Long id,
-                                                               @Valid @RequestBody UpdateUserRequest request) {
+    public ResponseEntity<ApiResponse<UserResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return ResponseEntity.ok(ApiResponse.success("User updated", userService.updateUser(id, request)));
     }
 
     @PutMapping("/{id}/role")
-    public ResponseEntity<ApiResponse<UserResponse>> updateRole(@PathVariable Long id,
-                                                                  @Valid @RequestBody UpdateRoleRequest request,
-                                                                  Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Role updated",
-                userService.updateRole(id, request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<UserResponse>> updateRole(
+            @PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Role updated", userService.updateRole(id, request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}/custom-role")
-    public ResponseEntity<ApiResponse<UserResponse>> updateCustomRole(@PathVariable Long id,
-                                                                        @Valid @RequestBody UpdateCustomRoleRequest request,
-                                                                        Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Custom role updated",
-                userService.updateCustomRole(id, request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<UserResponse>> updateCustomRole(
+            @PathVariable Long id, @Valid @RequestBody UpdateCustomRoleRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Custom role updated", userService.updateCustomRole(id, request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<UserResponse>> updateStatus(@PathVariable Long id,
-                                                                    @Valid @RequestBody UpdateStatusRequest request,
-                                                                    Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Status updated",
-                userService.updateStatus(id, request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<UserResponse>> updateStatus(
+            @PathVariable Long id, @Valid @RequestBody UpdateStatusRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Status updated", userService.updateStatus(id, request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}/password")
-    public ResponseEntity<ApiResponse<Void>> resetPassword(@PathVariable Long id,
-                                                              @Valid @RequestBody ResetPasswordRequest request,
-                                                              Authentication authentication) {
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @PathVariable Long id, @Valid @RequestBody ResetPasswordRequest request, Authentication authentication) {
         userService.resetPassword(id, request, requireUsername(authentication));
         return ResponseEntity.ok(ApiResponse.success("Password reset", null));
     }

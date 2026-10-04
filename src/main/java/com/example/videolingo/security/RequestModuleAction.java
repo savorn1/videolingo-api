@@ -2,22 +2,30 @@ package com.example.videolingo.security;
 
 import com.example.videolingo.entity.PermissionAction;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpMethod;
-
 import java.util.Set;
+import org.springframework.http.HttpMethod;
 
 // Shared "what module/action does this /api/admin/** request represent"
 // vocabulary used by PermissionAuthorizationManager.
 public final class RequestModuleAction {
 
     private static final Set<String> APPROVAL_KEYWORDS = Set.of(
-            "approve", "reject", "post", "dispose", "cancel", "reverse",
-            "close", "reopen", "ship", "complete", "receive", "void", "checkout"
-    );
+            "approve",
+            "reject",
+            "post",
+            "dispose",
+            "cancel",
+            "reverse",
+            "close",
+            "reopen",
+            "ship",
+            "complete",
+            "receive",
+            "void",
+            "checkout");
     private static final Set<String> APPROVAL_PREFIXES = Set.of("run-", "seed");
 
-    private RequestModuleAction() {
-    }
+    private RequestModuleAction() {}
 
     // "/api/admin/sales-orders/5/approve" -> "sales-orders". Null if the path
     // doesn't have a segment after /api/admin/.
@@ -40,7 +48,8 @@ public final class RequestModuleAction {
         String path = request.getRequestURI();
         int lastSlash = path.lastIndexOf('/');
         String lastSegment = (lastSlash < 0 ? path : path.substring(lastSlash + 1)).toLowerCase();
-        if (APPROVAL_KEYWORDS.contains(lastSegment) || APPROVAL_PREFIXES.stream().anyMatch(lastSegment::startsWith)) {
+        if (APPROVAL_KEYWORDS.contains(lastSegment)
+                || APPROVAL_PREFIXES.stream().anyMatch(lastSegment::startsWith)) {
             return PermissionAction.APPROVE;
         }
         return PermissionAction.WRITE;

@@ -1,6 +1,5 @@
 package com.example.videolingo.service.impl;
 
-import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.dto.AuthResponse;
 import com.example.videolingo.dto.ForgotPasswordRequest;
 import com.example.videolingo.dto.LoginRequest;
@@ -16,18 +15,18 @@ import com.example.videolingo.service.AuthService;
 import com.example.videolingo.service.JwtService;
 import com.example.videolingo.service.PasswordResetMailer;
 import com.example.videolingo.service.PasswordResetTokenStore;
+import com.example.videolingo.settings.SettingsService;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Duration;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -47,7 +46,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
+        User user = userRepository
+                .findByUsername(request.getUsername())
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -65,14 +65,16 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse refresh(RefreshRequest request) {
-        RefreshToken stored = refreshTokenRepository.findByToken(request.getRefreshToken())
+        RefreshToken stored = refreshTokenRepository
+                .findByToken(request.getRefreshToken())
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
         if (stored.isRevoked() || stored.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Refresh token expired or revoked");
         }
 
-        User user = userRepository.findById(stored.getUserId())
+        User user = userRepository
+                .findById(stored.getUserId())
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
         if (!user.isEnabled()) {
@@ -89,33 +91,38 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(LogoutRequest request) {
-        refreshTokenRepository.findByToken(request.getRefreshToken())
-                .ifPresent(stored -> {
-                    stored.setRevoked(true);
-                    refreshTokenRepository.save(stored);
-                });
+        refreshTokenRepository.findByToken(request.getRefreshToken()).ifPresent(stored -> {
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+        });
     }
 
     @Override
     public void forgotPassword(ForgotPasswordRequest request) {
-        userRepository.findByEmail(request.getEmail().trim())
+        userRepository
+                .findByEmail(request.getEmail().trim())
                 .filter(User::isEnabled)
                 .ifPresent(user -> {
                     String token = passwordResetTokenStore.issue(user.getId());
                     String link = settings.publicUrl() + "/reset-password?token="
                             + URLEncoder.encode(token, StandardCharsets.UTF_8);
-                    passwordResetMailer.send(user.getEmail(), user.getUsername(), link, passwordResetTokenStore.getTtlMinutes());
+                    passwordResetMailer.send(
+                            user.getEmail(), user.getUsername(), link, passwordResetTokenStore.getTtlMinutes());
                 });
     }
 
     @Override
     @Transactional
     public void resetPassword(ResetPasswordWithTokenRequest request) {
-        Long userId = passwordResetTokenStore.consume(request.getToken())
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "This reset link is invalid or has expired"));
-        User user = userRepository.findById(userId)
+        Long userId = passwordResetTokenStore
+                .consume(request.getToken())
+                .orElseThrow(
+                        () -> new AppException(HttpStatus.BAD_REQUEST, "This reset link is invalid or has expired"));
+        User user = userRepository
+                .findById(userId)
                 .filter(User::isEnabled)
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "This reset link is invalid or has expired"));
+                .orElseThrow(
+                        () -> new AppException(HttpStatus.BAD_REQUEST, "This reset link is invalid or has expired"));
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -125,7 +132,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AuthResponse buildAuthResponse(User user) {
-        String token = jwtService.generateToken(user.getUsername(), user.getRole().name());
+        String token =
+                jwtService.generateToken(user.getUsername(), user.getRole().name());
         String refreshToken = issueRefreshToken(user);
         return AuthResponse.builder()
                 .accessToken(token)

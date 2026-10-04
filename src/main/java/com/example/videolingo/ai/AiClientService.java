@@ -23,12 +23,6 @@ import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.AiUsageRepository;
 import com.example.videolingo.settings.Settings;
 import com.example.videolingo.settings.SettingsService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -36,6 +30,11 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
 
 // Every Claude call goes through here, so each one — success, refusal,
 // truncation or error — leaves exactly one ai_usage row with its tokens and
@@ -52,24 +51,29 @@ public class AiClientService {
     private final AiUsageRepository usageRepository;
 
     /** Who and what a call is for — copied onto its usage row. */
-    public record Call(AiFeature feature, Long videoId, Long transcriptId, Long chatId, String username) {
-    }
+    public record Call(AiFeature feature, Long videoId, Long transcriptId, Long chatId, String username) {}
 
-    public record Result<T>(T value, AiUsageRecord usage) {
-    }
+    public record Result<T>(T value, AiUsageRecord usage) {}
 
     // What one attempt produced: the raw message (usage, stop reason) and a
     // deferred read of the value (parsing can fail and must be recorded).
-    private record Raw<T>(Message message, Supplier<T> value) {
-    }
+    private record Raw<T>(Message message, Supplier<T> value) {}
 
     /** Structured output: the response is parsed into {@code type}, whose JSON schema is sent with the request. */
-    public <T> Result<T> structured(Call call, List<TextBlockParam> system, String userPrompt, Class<T> type, long maxTokens) {
-        return structured(call, system, userPrompt, type, maxTokens, settings.ai().generationEffort());
+    public <T> Result<T> structured(
+            Call call, List<TextBlockParam> system, String userPrompt, Class<T> type, long maxTokens) {
+        return structured(
+                call, system, userPrompt, type, maxTokens, settings.ai().generationEffort());
     }
 
     /** Same, at a given effort — "low" for quick, simple answers like word lookups. */
-    public <T> Result<T> structured(Call call, List<TextBlockParam> system, String userPrompt, Class<T> type, long maxTokens, String effortLevel) {
+    public <T> Result<T> structured(
+            Call call,
+            List<TextBlockParam> system,
+            String userPrompt,
+            Class<T> type,
+            long maxTokens,
+            String effortLevel) {
         return withFallback(call, model -> {
             StructuredMessageCreateParams<T> schemaOnly = MessageCreateParams.builder()
                     .model(model)
@@ -84,8 +88,8 @@ public class AiClientService {
             OutputConfig withEffort = raw.outputConfig().orElseThrow().toBuilder()
                     .effort(effort(effortLevel))
                     .build();
-            StructuredMessageCreateParams<T> params = new StructuredMessageCreateParams<>(type,
-                    raw.toBuilder().outputConfig(withEffort).build());
+            StructuredMessageCreateParams<T> params = new StructuredMessageCreateParams<>(
+                    type, raw.toBuilder().outputConfig(withEffort).build());
             StructuredMessage<T> response = client().messages().create(params);
             return new Raw<>(response.rawMessage(), () -> response.content().stream()
                     .flatMap(block -> block.text().stream())
@@ -102,7 +106,9 @@ public class AiClientService {
                     .model(model)
                     .maxTokens(4096)
                     .systemOfTextBlockParams(system)
-                    .outputConfig(OutputConfig.builder().effort(effort(settings.ai().chatEffort())).build())
+                    .outputConfig(OutputConfig.builder()
+                            .effort(effort(settings.ai().chatEffort()))
+                            .build())
                     .messages(history)
                     .addUserMessage(userMessage)
                     // Auto-caches the conversation up to the newest turn, so each
@@ -137,14 +143,19 @@ public class AiClientService {
         throw refusedError(first.reason());
     }
 
-    private record Attempt<T>(Result<T> result, boolean refused, String reason) {
-    }
+    private record Attempt<T>(Result<T> result, boolean refused, String reason) {}
 
     private <T> Attempt<T> attempt(Call call, String model, String fallbackFrom, Function<String, Raw<T>> request) {
         long started = System.nanoTime();
         AiUsageRecord row = AiUsageRecord.builder()
-                .feature(call.feature()).videoId(call.videoId()).transcriptId(call.transcriptId()).chatId(call.chatId())
-                .username(call.username()).model(model).fallbackFrom(fallbackFrom).build();
+                .feature(call.feature())
+                .videoId(call.videoId())
+                .transcriptId(call.transcriptId())
+                .chatId(call.chatId())
+                .username(call.username())
+                .model(model)
+                .fallbackFrom(fallbackFrom)
+                .build();
         Raw<T> raw;
         try {
             raw = request.apply(model);
@@ -157,8 +168,8 @@ public class AiClientService {
         } catch (AnthropicIoException e) {
             row.setStatus(AiUsageStatus.ERROR);
             row.setLatencyMs(elapsedMs(started));
-            row.setErrorMessage(truncate("Network error: " + e.getMessage()
-                    + (e.getCause() != null ? " (" + e.getCause() + ")" : "")));
+            row.setErrorMessage(truncate(
+                    "Network error: " + e.getMessage() + (e.getCause() != null ? " (" + e.getCause() + ")" : "")));
             usageRepository.save(row);
             log.warn("AI request for {} failed at the network level", call.feature(), e);
             throw new AppException(HttpStatus.GATEWAY_TIMEOUT, "Couldn't reach the AI service — try again in a moment");
@@ -184,9 +195,11 @@ public class AiClientService {
             row.setStatus(AiUsageStatus.TRUNCATED);
             row.setErrorMessage("Output hit max_tokens before finishing");
             usageRepository.save(row);
-            throw new AppException(HttpStatus.BAD_GATEWAY, call.feature() == AiFeature.CHAT
-                    ? "The answer was too long and got cut off — try a narrower question"
-                    : "The AI response was cut off before it finished — try asking for fewer items");
+            throw new AppException(
+                    HttpStatus.BAD_GATEWAY,
+                    call.feature() == AiFeature.CHAT
+                            ? "The answer was too long and got cut off — try a narrower question"
+                            : "The AI response was cut off before it finished — try asking for fewer items");
         }
         T value;
         try {
@@ -212,14 +225,22 @@ public class AiClientService {
         row.setOutputTokens(u.outputTokens());
         row.setCacheWriteTokens(u.cacheCreationInputTokens().orElse(0L));
         row.setCacheReadTokens(u.cacheReadInputTokens().orElse(0L));
-        row.setCostUsd(CostCalculator.cost(props.pricing(), served, row.getInputTokens(), row.getOutputTokens(),
-                row.getCacheWriteTokens(), row.getCacheReadTokens(), props.cacheWriteMultiplier(), props.cacheReadMultiplier()));
+        row.setCostUsd(CostCalculator.cost(
+                props.pricing(),
+                served,
+                row.getInputTokens(),
+                row.getOutputTokens(),
+                row.getCacheWriteTokens(),
+                row.getCacheReadTokens(),
+                props.cacheWriteMultiplier(),
+                props.cacheReadMultiplier()));
     }
 
     private AnthropicClient client() {
         AnthropicClient client = clientProvider.getIfAvailable();
         if (client == null) {
-            throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, "AI isn't configured — set ANTHROPIC_API_KEY on the server");
+            throw new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "AI isn't configured — set ANTHROPIC_API_KEY on the server");
         }
         return client;
     }
@@ -233,13 +254,17 @@ public class AiClientService {
             throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, "AI features are turned off in Settings");
         }
         if (!featureEnabled(ai, feature)) {
-            throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, AiFeatureNames.label(feature) + " is turned off in Settings");
+            throw new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE, AiFeatureNames.label(feature) + " is turned off in Settings");
         }
         if (ai.budgetEnforced() && ai.monthlyBudgetUsd() != null) {
             BigDecimal spent = monthSpend();
             if (spent.compareTo(ai.monthlyBudgetUsd()) >= 0) {
-                throw new AppException(HttpStatus.PAYMENT_REQUIRED, "This month's AI budget of $" + ai.monthlyBudgetUsd().toPlainString()
-                        + " has been used ($" + spent.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + " spent)");
+                throw new AppException(
+                        HttpStatus.PAYMENT_REQUIRED,
+                        "This month's AI budget of $" + ai.monthlyBudgetUsd().toPlainString() + " has been used ($"
+                                + spent.setScale(2, java.math.RoundingMode.HALF_UP)
+                                        .toPlainString() + " spent)");
             }
         }
     }
@@ -266,19 +291,24 @@ public class AiClientService {
 
     private static AppException mapServiceError(AnthropicServiceException e) {
         if (e instanceof UnauthorizedException || e instanceof PermissionDeniedException) {
-            return new AppException(HttpStatus.SERVICE_UNAVAILABLE, "The AI service rejected the server's API key — check ANTHROPIC_API_KEY");
+            return new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "The AI service rejected the server's API key — check ANTHROPIC_API_KEY");
         }
         if (e instanceof RateLimitException) {
-            return new AppException(HttpStatus.TOO_MANY_REQUESTS, "The AI service is busy (rate limited) — try again in a minute");
+            return new AppException(
+                    HttpStatus.TOO_MANY_REQUESTS, "The AI service is busy (rate limited) — try again in a minute");
         }
         if (e.statusCode() >= 500) {
-            return new AppException(HttpStatus.SERVICE_UNAVAILABLE, "The AI service is temporarily unavailable — try again shortly");
+            return new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "The AI service is temporarily unavailable — try again shortly");
         }
         return new AppException(HttpStatus.BAD_GATEWAY, "The AI service rejected the request: " + e.getMessage());
     }
 
     private static AppException refusedError(String reason) {
-        return new AppException(HttpStatus.UNPROCESSABLE_ENTITY, "The AI declined to answer this request (" + reason + ")");
+        return new AppException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "The AI declined to answer this request (" + reason + ")");
     }
 
     private static OutputConfig.Effort effort(String value) {

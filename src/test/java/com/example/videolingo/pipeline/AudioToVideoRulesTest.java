@@ -1,18 +1,17 @@
 package com.example.videolingo.pipeline;
 
-import com.example.videolingo.pipeline.AudioToVideoRules.Size;
-import com.example.videolingo.pipeline.AudioToVideoRules.Spec;
-import org.junit.jupiter.api.Test;
-
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Locale;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.example.videolingo.pipeline.AudioToVideoRules.Size;
+import com.example.videolingo.pipeline.AudioToVideoRules.Spec;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
+import org.junit.jupiter.api.Test;
 
 class AudioToVideoRulesTest {
 
@@ -24,7 +23,17 @@ class AudioToVideoRulesTest {
     }
 
     private static Spec styled(String cover, String waveform, boolean titleCard, boolean normalize, boolean denoise) {
-        return new Spec(AUDIO, cover, "#102030", "720p", waveform, null, titleCard, titleCard ? "My title" : null, normalize, denoise);
+        return new Spec(
+                AUDIO,
+                cover,
+                "#102030",
+                "720p",
+                waveform,
+                null,
+                titleCard,
+                titleCard ? "My title" : null,
+                normalize,
+                denoise);
     }
 
     private static String line(List<String> cmd) {
@@ -45,7 +54,8 @@ class AudioToVideoRulesTest {
         assertNotNull(AudioToVideoRules.validate(null));
         assertNotNull(AudioToVideoRules.validate(new Spec(null, null, null, null)));
         assertNotNull(AudioToVideoRules.validate(new Spec("videos/x.mp4", null, null, null)));
-        assertNotNull(AudioToVideoRules.validate(new Spec(AudioEditRules.UPLOAD_PREFIX + "../secret.mp3", null, null, null)));
+        assertNotNull(
+                AudioToVideoRules.validate(new Spec(AudioEditRules.UPLOAD_PREFIX + "../secret.mp3", null, null, null)));
     }
 
     @Test
@@ -64,12 +74,18 @@ class AudioToVideoRulesTest {
 
     @Test
     void waveformAndTitleOptionsAreChecked() {
-        assertNotNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, "SPIRAL", null, false, null, false, false)));
-        assertNotNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, "WAVES", "white", false, null, false, false)));
-        assertNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, "NONE", null, false, null, false, false)));
-        assertNotNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, null, null, true, "  ", false, false)));
-        assertNotNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, null, null, true, null, false, false)));
-        assertNotNull(AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, null, null, true, "x".repeat(AudioToVideoRules.MAX_TITLE + 1), false, false)));
+        assertNotNull(AudioToVideoRules.validate(
+                new Spec(AUDIO, null, null, null, "SPIRAL", null, false, null, false, false)));
+        assertNotNull(AudioToVideoRules.validate(
+                new Spec(AUDIO, null, null, null, "WAVES", "white", false, null, false, false)));
+        assertNull(
+                AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, "NONE", null, false, null, false, false)));
+        assertNotNull(
+                AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, null, null, true, "  ", false, false)));
+        assertNotNull(
+                AudioToVideoRules.validate(new Spec(AUDIO, null, null, null, null, null, true, null, false, false)));
+        assertNotNull(AudioToVideoRules.validate(new Spec(
+                AUDIO, null, null, null, null, null, true, "x".repeat(AudioToVideoRules.MAX_TITLE + 1), false, false)));
     }
 
     // ── sizes and colours ─────────────────────────────────────────────────
@@ -107,7 +123,9 @@ class AudioToVideoRulesTest {
 
     @Test
     void aTitleIsWrappedAtSpaces() {
-        assertEquals(List.of("Learning English", "with stories"), AudioToVideoRules.wrapTitle("Learning English with stories", 16, 4));
+        assertEquals(
+                List.of("Learning English", "with stories"),
+                AudioToVideoRules.wrapTitle("Learning English with stories", 16, 4));
         assertEquals(List.of("Short"), AudioToVideoRules.wrapTitle("  Short  ", 20, 4));
         assertEquals(List.of("a b c"), AudioToVideoRules.wrapTitle("a  b   c", 20, 4));
     }
@@ -142,11 +160,19 @@ class AudioToVideoRulesTest {
 
     @Test
     void withACoverThePictureIsFittedOntoTheBackground() {
-        List<String> cmd = AudioToVideoRules.command("ffmpeg", styled(COVER, null, false, false, false), Path.of("a.mp3"), List.of(Path.of("c.png")), null,
-                new Size(1280, 720), 12_345, Path.of("out.mp4"));
+        List<String> cmd = AudioToVideoRules.command(
+                "ffmpeg",
+                styled(COVER, null, false, false, false),
+                Path.of("a.mp3"),
+                List.of(Path.of("c.png")),
+                null,
+                new Size(1280, 720),
+                12_345,
+                Path.of("out.mp4"));
         String line = line(cmd);
         assertTrue(line.contains("-loop 1 -framerate 5 -t 12.345 -i c.png -i a.mp3"));
-        assertTrue(line.contains("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x102030"));
+        assertTrue(line.contains(
+                "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x102030"));
         assertTrue(line.contains("-map [v] -map [a]"));
         assertTrue(line.contains("-tune stillimage"));
         assertTrue(line.contains("-t 12.345"));
@@ -157,7 +183,8 @@ class AudioToVideoRulesTest {
 
     @Test
     void withoutACoverTheBackgroundColourIsTheWholePicture() {
-        String line = line(AudioToVideoRules.command("ffmpeg", plain(), Path.of("a.mp3"), List.of(), null, new Size(640, 360), 5_000, Path.of("out.mp4")));
+        String line = line(AudioToVideoRules.command(
+                "ffmpeg", plain(), Path.of("a.mp3"), List.of(), null, new Size(640, 360), 5_000, Path.of("out.mp4")));
         assertTrue(line.contains("-f lavfi -i color=c=0x000000:s=640x360:r=5"));
         assertTrue(line.contains("[0:v]setsar=1,format=yuv420p[pic]"));
         assertTrue(line.contains("-t 5.000"));
@@ -166,8 +193,15 @@ class AudioToVideoRulesTest {
 
     @Test
     void aTitleImageIsOverlaidInTheMiddle() {
-        String line = line(AudioToVideoRules.command("ffmpeg", styled(null, null, true, false, false), Path.of("a.mp3"), List.of(), Path.of("t.png"),
-                new Size(640, 360), 5_000, Path.of("out.mp4")));
+        String line = line(AudioToVideoRules.command(
+                "ffmpeg",
+                styled(null, null, true, false, false),
+                Path.of("a.mp3"),
+                List.of(),
+                Path.of("t.png"),
+                new Size(640, 360),
+                5_000,
+                Path.of("out.mp4")));
         assertTrue(line.contains("-i t.png"));
         assertTrue(line.contains("[pic][2:v]overlay=(W-w)/2:(H-h)/2:format=auto[titled]"));
         assertTrue(line.contains("[titled]null[v]"));
@@ -175,8 +209,15 @@ class AudioToVideoRulesTest {
 
     @Test
     void aWaveformIsDrawnAlongTheBottomAndRaisesTheFrameRate() {
-        String line = line(AudioToVideoRules.command("ffmpeg", styled(null, "WAVES", false, false, false), Path.of("a.mp3"), List.of(), null,
-                new Size(1280, 720), 5_000, Path.of("out.mp4")));
+        String line = line(AudioToVideoRules.command(
+                "ffmpeg",
+                styled(null, "WAVES", false, false, false),
+                Path.of("a.mp3"),
+                List.of(),
+                null,
+                new Size(1280, 720),
+                5_000,
+                Path.of("out.mp4")));
         assertTrue(line.contains("[1:a]anull,asplit=2[a][aw]"));
         assertTrue(line.contains("showwaves=s=1280x180:mode=cline:colors=0xffffff:rate=15"));
         assertTrue(line.contains("[pic][wv]overlay=0:H-h-36:format=auto,format=yuv420p[v]"));
@@ -186,8 +227,15 @@ class AudioToVideoRulesTest {
 
     @Test
     void barsUseFrequencyBarsWithTheBlackKeyedOut() {
-        String line = line(AudioToVideoRules.command("ffmpeg", styled(null, "BARS", false, false, false), Path.of("a.mp3"), List.of(), null,
-                new Size(1280, 720), 5_000, Path.of("out.mp4")));
+        String line = line(AudioToVideoRules.command(
+                "ffmpeg",
+                styled(null, "BARS", false, false, false),
+                Path.of("a.mp3"),
+                List.of(),
+                null,
+                new Size(1280, 720),
+                5_000,
+                Path.of("out.mp4")));
         assertTrue(line.contains("showfreqs=s=1280x180:mode=bar"));
         assertTrue(line.contains("colorkey=0x000000"));
     }
@@ -195,23 +243,33 @@ class AudioToVideoRulesTest {
     @Test
     void theWaveColourFollowsTheBackgroundUnlessGiven() {
         Spec light = new Spec(AUDIO, null, "#ffffff", null, "WAVES", null, false, null, false, false);
-        assertTrue(line(AudioToVideoRules.command("ffmpeg", light, Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1000, Path.of("o.mp4")))
+        assertTrue(line(AudioToVideoRules.command(
+                        "ffmpeg", light, Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1000, Path.of("o.mp4")))
                 .contains("colors=0x111111"));
         Spec red = new Spec(AUDIO, null, "#ffffff", null, "WAVES", "#FF0000", false, null, false, false);
-        assertTrue(line(AudioToVideoRules.command("ffmpeg", red, Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1000, Path.of("o.mp4")))
+        assertTrue(line(AudioToVideoRules.command(
+                        "ffmpeg", red, Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1000, Path.of("o.mp4")))
                 .contains("colors=0xff0000"));
     }
 
     @Test
     void loudnessAndNoiseFiltersRunBeforeAnythingElseAndTheRateIsRestored() {
-        String line = line(AudioToVideoRules.command("ffmpeg", styled(null, null, false, true, true), Path.of("a.mp3"), List.of(), null,
-                new Size(640, 360), 5_000, Path.of("o.mp4")));
+        String line = line(AudioToVideoRules.command(
+                "ffmpeg",
+                styled(null, null, false, true, true),
+                Path.of("a.mp3"),
+                List.of(),
+                null,
+                new Size(640, 360),
+                5_000,
+                Path.of("o.mp4")));
         assertTrue(line.contains("[1:a]afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[a]"));
     }
 
     @Test
     void theWaveformSeesTheCleanedSound() {
-        String graph = AudioToVideoRules.filterGraph(styled(null, "WAVES", false, true, false), new Size(640, 360), 0, false);
+        String graph =
+                AudioToVideoRules.filterGraph(styled(null, "WAVES", false, true, false), new Size(640, 360), 0, false);
         assertTrue(graph.contains("[1:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100,asplit=2[a][aw]"));
     }
 
@@ -220,7 +278,8 @@ class AudioToVideoRulesTest {
         Locale before = Locale.getDefault();
         try {
             Locale.setDefault(Locale.GERMANY);
-            String line = line(AudioToVideoRules.command("ffmpeg", plain(), Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1_500, Path.of("o.mp4")));
+            String line = line(AudioToVideoRules.command(
+                    "ffmpeg", plain(), Path.of("a.mp3"), List.of(), null, new Size(640, 360), 1_500, Path.of("o.mp4")));
             assertTrue(line.contains("-t 1.500"));
         } finally {
             Locale.setDefault(before);
@@ -229,11 +288,18 @@ class AudioToVideoRulesTest {
 
     @Test
     void theDescriptionSaysWhatWillBeMade() {
-        assertEquals("Audio to video (1280×720, plain background)", AudioToVideoRules.describe(new Spec(AUDIO, null, null, null)));
-        assertEquals("Audio to video (1920×1080, cover picture)", AudioToVideoRules.describe(new Spec(AUDIO, COVER, null, "1080p")));
-        assertEquals("Audio to video (1280×720, title card, waveform, normalized, noise reduced)",
+        assertEquals(
+                "Audio to video (1280×720, plain background)",
+                AudioToVideoRules.describe(new Spec(AUDIO, null, null, null)));
+        assertEquals(
+                "Audio to video (1920×1080, cover picture)",
+                AudioToVideoRules.describe(new Spec(AUDIO, COVER, null, "1080p")));
+        assertEquals(
+                "Audio to video (1280×720, title card, waveform, normalized, noise reduced)",
                 AudioToVideoRules.describe(styled(null, "WAVES", true, true, true)));
-        assertEquals("Audio to video (1280×720, plain background, bars)", AudioToVideoRules.describe(styled(null, "BARS", false, false, false)));
+        assertEquals(
+                "Audio to video (1280×720, plain background, bars)",
+                AudioToVideoRules.describe(styled(null, "BARS", false, false, false)));
     }
 
     // ── the slideshow ─────────────────────────────────────────────────────
@@ -265,8 +331,20 @@ class AudioToVideoRulesTest {
 
     @Test
     void everySlideMustBeAnUploadedImageAndThereIsALimit() {
-        Spec bad = new Spec(AUDIO, null, null, null, null, null, false, null, false, false,
-                List.of(new AudioToVideoRules.Slide(OverlayRules.UPLOAD_PREFIX + "a.png", 0), new AudioToVideoRules.Slide("thumbnails/x.png", 5_000)));
+        Spec bad = new Spec(
+                AUDIO,
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                null,
+                false,
+                false,
+                List.of(
+                        new AudioToVideoRules.Slide(OverlayRules.UPLOAD_PREFIX + "a.png", 0),
+                        new AudioToVideoRules.Slide("thumbnails/x.png", 5_000)));
         assertNotNull(AudioToVideoRules.validate(bad));
         long[] many = new long[AudioToVideoRules.MAX_SLIDES + 1];
         for (int i = 0; i < many.length; i++) {
@@ -278,7 +356,17 @@ class AudioToVideoRulesTest {
 
     @Test
     void aTitleIsNotNeededOnceThereArePictures() {
-        Spec spec = new Spec(AUDIO, null, null, null, null, null, true, null, false, false,
+        Spec spec = new Spec(
+                AUDIO,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                null,
+                false,
+                false,
                 List.of(new AudioToVideoRules.Slide(COVER, 0)));
         assertNull(AudioToVideoRules.validate(spec));
         assertFalse(spec.drawsTitle());
@@ -286,9 +374,15 @@ class AudioToVideoRulesTest {
 
     @Test
     void usableSlidesKeepThoseThatStartBeforeTheLastHalfSecond() {
-        List<AudioToVideoRules.Slide> s = slideshow(0, 5_000, 9_400, 9_600, 12_000).slides();
-        assertEquals(List.of(0L, 5_000L, 9_400L), AudioToVideoRules.usableSlides(s, 10_000).stream().map(AudioToVideoRules.Slide::startMs).toList());
-        assertEquals(1, AudioToVideoRules.usableSlides(slideshow(0).slides(), 100).size());
+        List<AudioToVideoRules.Slide> s =
+                slideshow(0, 5_000, 9_400, 9_600, 12_000).slides();
+        assertEquals(
+                List.of(0L, 5_000L, 9_400L),
+                AudioToVideoRules.usableSlides(s, 10_000).stream()
+                        .map(AudioToVideoRules.Slide::startMs)
+                        .toList());
+        assertEquals(
+                1, AudioToVideoRules.usableSlides(slideshow(0).slides(), 100).size());
     }
 
     @Test
@@ -300,10 +394,19 @@ class AudioToVideoRulesTest {
     @Test
     void theCommandRunsThePicturesOneAfterAnotherThenTheSound() {
         Spec spec = slideshow(0, 4_000, 9_000);
-        List<String> cmd = AudioToVideoRules.command("ffmpeg", spec, Path.of("a.mp3"), List.of(Path.of("p0.png"), Path.of("p1.png"), Path.of("p2.png")), null,
-                new Size(1280, 720), 12_000, Path.of("out.mp4"));
+        List<String> cmd = AudioToVideoRules.command(
+                "ffmpeg",
+                spec,
+                Path.of("a.mp3"),
+                List.of(Path.of("p0.png"), Path.of("p1.png"), Path.of("p2.png")),
+                null,
+                new Size(1280, 720),
+                12_000,
+                Path.of("out.mp4"));
         String line = line(cmd);
-        assertTrue(line.contains("-loop 1 -framerate 5 -t 4.000 -i p0.png -loop 1 -framerate 5 -t 5.000 -i p1.png -loop 1 -framerate 5 -t 3.000 -i p2.png -i a.mp3"));
+        assertTrue(
+                line.contains(
+                        "-loop 1 -framerate 5 -t 4.000 -i p0.png -loop 1 -framerate 5 -t 5.000 -i p1.png -loop 1 -framerate 5 -t 3.000 -i p2.png -i a.mp3"));
         assertTrue(line.contains("[2:v]scale=1280:720"));
         assertTrue(line.contains("[s0][s1][s2]concat=n=3:v=1:a=0[pic]"));
         assertTrue(line.contains("[3:a]anull[a]"));
@@ -311,11 +414,22 @@ class AudioToVideoRulesTest {
 
     @Test
     void theSoundAndTitleInputsMoveUpBehindThePictures() {
-        Spec spec = new Spec(AUDIO, null, "#102030", "720p", "WAVES", null, false, null, false, false,
+        Spec spec = new Spec(
+                AUDIO,
+                null,
+                "#102030",
+                "720p",
+                "WAVES",
+                null,
+                false,
+                null,
+                false,
+                false,
                 slideshow(0, 4_000).slides());
         String graph = AudioToVideoRules.filterGraph(spec, new Size(640, 360), 2, false);
         assertTrue(graph.contains("[2:a]anull,asplit=2[a][aw]"));
-        String withTitle = AudioToVideoRules.filterGraph(styled(null, null, true, false, false), new Size(640, 360), 0, true);
+        String withTitle =
+                AudioToVideoRules.filterGraph(styled(null, null, true, false, false), new Size(640, 360), 0, true);
         assertTrue(withTitle.contains("[pic][1:v]") || withTitle.contains("[2:v]"));
     }
 
@@ -329,8 +443,17 @@ class AudioToVideoRulesTest {
     @Test
     void thePictureFilesMustMatchThePicturesShown() {
         Spec spec = slideshow(0, 4_000);
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
-                AudioToVideoRules.command("ffmpeg", spec, Path.of("a.mp3"), List.of(Path.of("p0.png")), null, new Size(640, 360), 10_000, Path.of("o.mp4")));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> AudioToVideoRules.command(
+                        "ffmpeg",
+                        spec,
+                        Path.of("a.mp3"),
+                        List.of(Path.of("p0.png")),
+                        null,
+                        new Size(640, 360),
+                        10_000,
+                        Path.of("o.mp4")));
     }
 
     @Test
@@ -343,11 +466,14 @@ class AudioToVideoRulesTest {
         for (String style : AudioToVideoRules.WAVEFORMS) {
             assertNull(AudioToVideoRules.validate(styled(null, style, false, false, false)), style);
         }
-        String spikes = AudioToVideoRules.filterGraph(styled(null, "SPIKES", false, false, false), new Size(1280, 720), 0, false);
+        String spikes = AudioToVideoRules.filterGraph(
+                styled(null, "SPIKES", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(spikes.contains("showwaves=s=1280x180:mode=line"));
-        String dots = AudioToVideoRules.filterGraph(styled(null, "DOTS", false, false, false), new Size(1280, 720), 0, false);
+        String dots =
+                AudioToVideoRules.filterGraph(styled(null, "DOTS", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(dots.contains("showwaves=s=1280x180:mode=point"));
-        String spectrum = AudioToVideoRules.filterGraph(styled(null, "SPECTRUM", false, false, false), new Size(1280, 720), 0, false);
+        String spectrum = AudioToVideoRules.filterGraph(
+                styled(null, "SPECTRUM", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(spectrum.contains("showfreqs=s=1280x180:mode=line"));
         assertTrue(spectrum.contains("colorkey=0x000000"));
     }
@@ -363,25 +489,31 @@ class AudioToVideoRulesTest {
 
     @Test
     void pulseAndBlocksAreDrawnInTheMiddleAsSeparateBars() {
-        String pulse = AudioToVideoRules.filterGraph(styled(null, "PULSE", false, false, false), new Size(1280, 720), 0, false);
+        String pulse = AudioToVideoRules.filterGraph(
+                styled(null, "PULSE", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(pulse.contains("mode=cline:scale=sqrt"));
         assertTrue(pulse.contains("flags=neighbor"));
         assertTrue(pulse.contains("geq=r='r(X,Y)'"));
         assertTrue(pulse.contains("overlay=(W-w)/2:(H-h)/2"));
-        String blocks = AudioToVideoRules.filterGraph(styled(null, "BLOCKS", false, false, false), new Size(1280, 720), 0, false);
+        String blocks = AudioToVideoRules.filterGraph(
+                styled(null, "BLOCKS", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(blocks.contains("overlay=(W-w)/2:(H-h)/2"));
         // The other styles stay along the bottom.
-        String waves = AudioToVideoRules.filterGraph(styled(null, "WAVES", false, false, false), new Size(1280, 720), 0, false);
+        String waves = AudioToVideoRules.filterGraph(
+                styled(null, "WAVES", false, false, false), new Size(1280, 720), 0, false);
         assertTrue(waves.contains("overlay=0:H-h-36"));
     }
 
     @Test
     void barLayoutsUseWholePixelsAndStayInsideTheFrame() {
-        for (Size size : new Size[]{new Size(640, 360), new Size(854, 480), new Size(1280, 720), new Size(1920, 1080)}) {
+        for (Size size :
+                new Size[] {new Size(640, 360), new Size(854, 480), new Size(1280, 720), new Size(1920, 1080)}) {
             for (String style : AudioToVideoRules.BAR_STYLES) {
                 AudioToVideoRules.BarLayout l = AudioToVideoRules.barLayout(style, size);
                 assertTrue(l.bar() >= 2 && l.bar() < l.pitch(), style + " " + size);
-                assertTrue(l.width() <= size.w() * 0.85 && l.width() >= size.w() * 0.7, style + " " + size + " width " + l.width());
+                assertTrue(
+                        l.width() <= size.w() * 0.85 && l.width() >= size.w() * 0.7,
+                        style + " " + size + " width " + l.width());
                 assertEquals(0, l.width() % 2);
                 assertEquals(0, l.height() % 2);
                 assertTrue(l.height() <= size.h() / 2);

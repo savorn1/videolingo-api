@@ -11,7 +11,6 @@ import com.example.videolingo.dto.UpdateStatusRequest;
 import com.example.videolingo.dto.UpdateUserRequest;
 import com.example.videolingo.dto.UserFilterRequest;
 import com.example.videolingo.dto.UserResponse;
-
 import java.util.List;
 
 public interface UserService {

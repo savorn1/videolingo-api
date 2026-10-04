@@ -5,7 +5,6 @@ import com.example.videolingo.dto.UpdateVideoRequest;
 import com.example.videolingo.dto.VideoFilterRequest;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.dto.VideoStatisticsResponse;
-
 import java.util.List;
 
 public interface VideoService {

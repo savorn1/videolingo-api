@@ -3,13 +3,12 @@ package com.example.videolingo.dto;
 import com.example.videolingo.entity.ReviewStatus;
 import com.example.videolingo.entity.SubtitleKind;
 import com.example.videolingo.entity.SubtitleSource;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @Builder

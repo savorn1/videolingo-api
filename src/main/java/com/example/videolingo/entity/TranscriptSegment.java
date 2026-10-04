@@ -16,9 +16,9 @@ import lombok.Setter;
 // One timed line of a transcript (one subtitle cue). Segments are replaced
 // wholesale on every save, so `position` is simply 0..n-1 in start order.
 @Entity
-@Table(name = "transcript_segments", indexes = {
-        @Index(name = "idx_transcript_segments_transcript", columnList = "transcript_id, position")
-})
+@Table(
+        name = "transcript_segments",
+        indexes = {@Index(name = "idx_transcript_segments_transcript", columnList = "transcript_id, position")})
 @Getter
 @Setter
 @NoArgsConstructor

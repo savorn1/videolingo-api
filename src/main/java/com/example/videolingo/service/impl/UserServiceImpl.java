@@ -22,6 +22,12 @@ import com.example.videolingo.repository.RolePermissionRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.service.UserService;
 import com.example.videolingo.util.PageableUtils;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,13 +36,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -56,12 +55,11 @@ public class UserServiceImpl implements UserService {
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
             String pattern = "%" + filter.getSearch().trim().toLowerCase() + "%";
             conditions.add((root, query, cb) -> cb.or(
-                    cb.like(cb.lower(root.get("username")), pattern),
-                    cb.like(cb.lower(root.get("email")), pattern)));
+                    cb.like(cb.lower(root.get("username")), pattern), cb.like(cb.lower(root.get("email")), pattern)));
         }
         if (filter.getUsername() != null && !filter.getUsername().isBlank()) {
-            conditions.add((root, query, cb) ->
-                    cb.like(cb.lower(root.get("username")), "%" + filter.getUsername().toLowerCase() + "%"));
+            conditions.add((root, query, cb) -> cb.like(
+                    cb.lower(root.get("username")), "%" + filter.getUsername().toLowerCase() + "%"));
         }
         if (filter.getRole() != null) {
             conditions.add((root, query, cb) -> cb.equal(root.get("role"), filter.getRole()));
@@ -73,17 +71,23 @@ public class UserServiceImpl implements UserService {
             conditions.add((root, query, cb) -> cb.equal(root.get("customRoleId"), filter.getCustomRoleId()));
         }
         Specification<User> spec = Specification.allOf(conditions);
-        Pageable pageable = PageableUtils.of(filter.getPage(), filter.getSize(), filter.getSortBy(), filter.getSortOrder());
+        Pageable pageable =
+                PageableUtils.of(filter.getPage(), filter.getSize(), filter.getSortBy(), filter.getSortOrder());
 
         Page<User> users = userRepository.findAll(spec, pageable);
 
         // Batch-resolved rather than looked up per row (N+1 avoidance on a plain FK column).
-        Map<Long, String> customRoleNames = customRoleRepository.findAllById(
-                users.getContent().stream().map(User::getCustomRoleId).filter(Objects::nonNull).distinct().toList()
-        ).stream().collect(Collectors.toMap(CustomRole::getId, CustomRole::getName));
+        Map<Long, String> customRoleNames = customRoleRepository
+                .findAllById(users.getContent().stream()
+                        .map(User::getCustomRoleId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(CustomRole::getId, CustomRole::getName));
 
-        return PageResponse.of(users.map(u -> toResponse(u,
-                u.getCustomRoleId() == null ? null : customRoleNames.get(u.getCustomRoleId()))));
+        return PageResponse.of(users.map(
+                u -> toResponse(u, u.getCustomRoleId() == null ? null : customRoleNames.get(u.getCustomRoleId()))));
     }
 
     @Override
@@ -135,8 +139,10 @@ public class UserServiceImpl implements UserService {
     }
 
     private CustomRole requireCustomRole(Long customRoleId) {
-        return customRoleRepository.findById(customRoleId)
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Custom role not found with id: " + customRoleId));
+        return customRoleRepository
+                .findById(customRoleId)
+                .orElseThrow(() ->
+                        new AppException(HttpStatus.BAD_REQUEST, "Custom role not found with id: " + customRoleId));
     }
 
     @Override
@@ -146,7 +152,8 @@ public class UserServiceImpl implements UserService {
         // Same self-escalation guard as updateRole — a USER account with
         // permission to manage other users must not be able to grant itself
         // a more-privileged custom role.
-        if (user.getUsername().equals(actingUsername) && !Objects.equals(user.getCustomRoleId(), request.getCustomRoleId())) {
+        if (user.getUsername().equals(actingUsername)
+                && !Objects.equals(user.getCustomRoleId(), request.getCustomRoleId())) {
             throw new AppException(HttpStatus.BAD_REQUEST, "You cannot change your own custom role");
         }
         if (request.getCustomRoleId() != null) {
@@ -256,7 +263,8 @@ public class UserServiceImpl implements UserService {
     }
 
     private User findUser(Long id) {
-        return userRepository.findById(id)
+        return userRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with id: " + id));
     }
 
@@ -292,6 +300,11 @@ public class UserServiceImpl implements UserService {
     }
 
     private String customRoleNameOf(Long customRoleId) {
-        return customRoleId == null ? null : customRoleRepository.findById(customRoleId).map(CustomRole::getName).orElse(null);
+        return customRoleId == null
+                ? null
+                : customRoleRepository
+                        .findById(customRoleId)
+                        .map(CustomRole::getName)
+                        .orElse(null);
     }
 }

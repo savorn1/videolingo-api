@@ -8,22 +8,23 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One viewing session of a video by a learner — the raw data behind video
 // statistics (and, later, a user's watch history). Written by the learner
 // app; the admin side only reads it.
 @Entity
-@Table(name = "video_views", indexes = {
-        @Index(name = "idx_video_views_video_id", columnList = "video_id, viewed_at"),
-        @Index(name = "idx_video_views_user_id", columnList = "user_id")
-})
+@Table(
+        name = "video_views",
+        indexes = {
+            @Index(name = "idx_video_views_video_id", columnList = "video_id, viewed_at"),
+            @Index(name = "idx_video_views_user_id", columnList = "user_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

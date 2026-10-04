@@ -12,7 +12,9 @@ public class LanguageRequest {
     // Case-insensitive on input; stored canonically (see LanguageServiceImpl.canonicalCode).
     @NotBlank
     @Size(max = 10)
-    @Pattern(regexp = "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$", message = "must be a language tag like \"en\", \"km\" or \"pt-BR\"")
+    @Pattern(
+            regexp = "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+            message = "must be a language tag like \"en\", \"km\" or \"pt-BR\"")
     private String code;
 
     @NotBlank

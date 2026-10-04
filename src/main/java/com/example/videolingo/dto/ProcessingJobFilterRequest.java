@@ -2,11 +2,10 @@ package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.ProcessingJobStatus;
 import com.example.videolingo.entity.ProcessingJobType;
+import java.time.LocalDate;
 import lombok.Data;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
-
-import java.time.LocalDate;
 
 @Data
 @ParameterObject
@@ -17,8 +16,10 @@ public class ProcessingJobFilterRequest {
     private ProcessingJobStatus status;
     private ProcessingJobType type;
     private Long videoId;
+
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate createdFrom;
+
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate createdTo;
 

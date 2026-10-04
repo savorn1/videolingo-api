@@ -53,20 +53,26 @@ public class NotificationController {
     }
 
     @PostMapping("/send")
-    public ResponseEntity<ApiResponse<BatchResponse>> send(@Valid @RequestBody SendRequest request, Authentication authentication) {
+    public ResponseEntity<ApiResponse<BatchResponse>> send(
+            @Valid @RequestBody SendRequest request, Authentication authentication) {
         BatchResponse batch = notificationService.send(request, username(authentication));
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(
-                "Sent to " + batch.recipientCount() + (batch.recipientCount() == 1 ? " user" : " users"), batch));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "Sent to " + batch.recipientCount() + (batch.recipientCount() == 1 ? " user" : " users"),
+                        batch));
     }
 
     @PostMapping("/preview")
-    public ResponseEntity<ApiResponse<PreviewResponse>> preview(@Valid @RequestBody SendRequest request, Authentication authentication) {
+    public ResponseEntity<ApiResponse<PreviewResponse>> preview(
+            @Valid @RequestBody SendRequest request, Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(notificationService.preview(request, username(authentication))));
     }
 
     @PostMapping("/{id}/resend")
-    public ResponseEntity<ApiResponse<NotificationResponse>> resend(@PathVariable Long id, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Resending", notificationService.resend(id, username(authentication))));
+    public ResponseEntity<ApiResponse<NotificationResponse>> resend(
+            @PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Resending", notificationService.resend(id, username(authentication))));
     }
 
     // ── history (one entry per send) ──────────────────────────────────────
@@ -94,15 +100,18 @@ public class NotificationController {
     }
 
     @PostMapping("/templates")
-    public ResponseEntity<ApiResponse<TemplateResponse>> createTemplate(@Valid @RequestBody TemplateRequest request, Authentication authentication) {
+    public ResponseEntity<ApiResponse<TemplateResponse>> createTemplate(
+            @Valid @RequestBody TemplateRequest request, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Template created", templateService.create(request, username(authentication))));
+                .body(ApiResponse.success(
+                        "Template created", templateService.create(request, username(authentication))));
     }
 
     @PutMapping("/templates/{id}")
-    public ResponseEntity<ApiResponse<TemplateResponse>> updateTemplate(@PathVariable Long id, @Valid @RequestBody TemplateRequest request,
-                                                                        Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Template updated", templateService.update(id, request, username(authentication))));
+    public ResponseEntity<ApiResponse<TemplateResponse>> updateTemplate(
+            @PathVariable Long id, @Valid @RequestBody TemplateRequest request, Authentication authentication) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Template updated", templateService.update(id, request, username(authentication))));
     }
 
     @DeleteMapping("/templates/{id}")

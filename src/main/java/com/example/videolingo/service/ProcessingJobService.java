@@ -7,7 +7,6 @@ import com.example.videolingo.dto.ProcessingJobProgressResponse;
 import com.example.videolingo.dto.ProcessingJobResponse;
 import com.example.videolingo.entity.ProcessingJob;
 import com.example.videolingo.entity.ProcessingJobType;
-
 import java.util.List;
 import java.util.Map;
 

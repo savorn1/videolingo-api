@@ -7,9 +7,11 @@ import com.example.videolingo.entity.NotificationEventType;
 import com.example.videolingo.entity.NotificationStatus;
 import com.example.videolingo.repository.NotificationEventRepository;
 import com.example.videolingo.repository.NotificationRepository;
+import com.example.videolingo.settings.SettingsService;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import com.example.videolingo.settings.SettingsService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailSendException;
@@ -19,9 +21,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 // Delivers queued email notifications off the request thread, only after the
 // send's transaction has committed (so the rows exist and a rolled-back send
@@ -33,8 +32,7 @@ import java.util.List;
 public class NotificationMailer {
 
     /** Published by NotificationService once PENDING email rows are saved. */
-    public record EmailsQueued(List<Long> notificationIds) {
-    }
+    public record EmailsQueued(List<Long> notificationIds) {}
 
     private final ObjectProvider<JavaMailSender> mailSender;
     private final SettingsService settings;
@@ -116,8 +114,10 @@ public class NotificationMailer {
     // unavailable") under generic wrappers; MailSendException keeps the
     // per-message exception aside rather than as its cause.
     static String rootMessage(Exception e) {
-        Throwable t = e instanceof MailSendException send && !send.getFailedMessages().isEmpty()
-                ? send.getFailedMessages().values().iterator().next() : e;
+        Throwable t =
+                e instanceof MailSendException send && !send.getFailedMessages().isEmpty()
+                        ? send.getFailedMessages().values().iterator().next()
+                        : e;
         while (t.getCause() != null && t.getCause() != t) {
             t = t.getCause();
         }

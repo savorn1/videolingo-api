@@ -8,9 +8,8 @@ import com.example.videolingo.dto.SubtitleResponse;
 import com.example.videolingo.dto.UpdateSubtitleRequest;
 import com.example.videolingo.entity.SubtitleKind;
 import com.example.videolingo.revision.RevisionService;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.util.List;
+import org.springframework.web.multipart.MultipartFile;
 
 public interface SubtitleService {
 
@@ -20,7 +19,8 @@ public interface SubtitleService {
 
     SubtitleResponse create(CreateSubtitleRequest request, String actingUsername);
 
-    SubtitleResponse upload(MultipartFile file, Long videoId, String language, String label, SubtitleKind kind, String actingUsername);
+    SubtitleResponse upload(
+            MultipartFile file, Long videoId, String language, String label, SubtitleKind kind, String actingUsername);
 
     SubtitleResponse update(Long id, UpdateSubtitleRequest request, String actingUsername);
 

@@ -1,9 +1,8 @@
 package com.example.videolingo.ai;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-
 import java.math.BigDecimal;
 import java.util.Map;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 // Settings for the Claude-backed AI features (see application.properties "ai.*").
 @ConfigurationProperties("ai")
@@ -20,11 +19,9 @@ public record AiProperties(
         boolean budgetEnforced,
         BigDecimal cacheWriteMultiplier,
         BigDecimal cacheReadMultiplier,
-        Map<String, ModelPrice> pricing
-) {
+        Map<String, ModelPrice> pricing) {
 
-    public record ModelPrice(BigDecimal inputPerMtok, BigDecimal outputPerMtok) {
-    }
+    public record ModelPrice(BigDecimal inputPerMtok, BigDecimal outputPerMtok) {}
 
     public boolean configured() {
         return apiKey != null && !apiKey.isBlank();

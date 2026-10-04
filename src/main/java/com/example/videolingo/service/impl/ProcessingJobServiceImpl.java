@@ -18,6 +18,15 @@ import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -28,22 +37,12 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 @Service
 @RequiredArgsConstructor
 public class ProcessingJobServiceImpl implements ProcessingJobService {
 
-    private static final Set<String> SORTABLE = Set.of(
-            "id", "type", "status", "progress", "attempts", "createdAt", "startedAt", "finishedAt", "updatedAt");
+    private static final Set<String> SORTABLE =
+            Set.of("id", "type", "status", "progress", "attempts", "createdAt", "startedAt", "finishedAt", "updatedAt");
     private static final int MAX_LOG_PAGE = 1000;
 
     private final ProcessingJobRepository jobRepository;
@@ -89,9 +88,14 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
         Pageable pageable = PageableUtils.of(filter.getPage(), filter.getSize(), sortBy, filter.getSortOrder());
         Page<ProcessingJob> jobs = jobRepository.findAll(Specification.allOf(conditions), pageable);
 
-        Map<Long, String> titles = videoRepository.findAllById(
-                jobs.getContent().stream().map(ProcessingJob::getVideoId).filter(Objects::nonNull).distinct().toList()
-        ).stream().collect(Collectors.toMap(Video::getId, Video::getTitle));
+        Map<Long, String> titles = videoRepository
+                .findAllById(jobs.getContent().stream()
+                        .map(ProcessingJob::getVideoId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(Video::getId, Video::getTitle));
 
         // logCount is left at 0 in the list — it's only shown on the detail page.
         return PageResponse.of(jobs.map(j -> toResponse(j, titles.get(j.getVideoId()), 0)));
@@ -127,9 +131,7 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .durationSeconds(durationOf(job))
                 .updatedAt(job.getUpdatedAt())
                 .lastLogId(lastLogId(id))
-                .queuePosition(job.getStatus() == ProcessingJobStatus.QUEUED
-                        ? (int) queueAhead(job)
-                        : null)
+                .queuePosition(job.getStatus() == ProcessingJobStatus.QUEUED ? (int) queueAhead(job) : null)
                 .build();
     }
 
@@ -153,7 +155,9 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
     public ProcessingJobResponse retry(Long id, String actingUsername) {
         ProcessingJob job = findJob(id);
         if (!canRetry(job.getStatus())) {
-            throw new AppException(HttpStatus.CONFLICT, "Only failed or cancelled jobs can be retried (this one is " + job.getStatus() + ")");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Only failed or cancelled jobs can be retried (this one is " + job.getStatus() + ")");
         }
         job.setStatus(ProcessingJobStatus.QUEUED);
         job.setProgress(0);
@@ -173,15 +177,19 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
     public ProcessingJobResponse cancel(Long id, String actingUsername) {
         ProcessingJob job = findJob(id);
         if (!job.getStatus().isActive()) {
-            throw new AppException(HttpStatus.CONFLICT, "Only queued or running jobs can be cancelled (this one is " + job.getStatus() + ")");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Only queued or running jobs can be cancelled (this one is " + job.getStatus() + ")");
         }
         boolean wasRunning = job.getStatus() == ProcessingJobStatus.RUNNING;
         job.setStatus(ProcessingJobStatus.CANCELLED);
         job.setFinishedAt(LocalDateTime.now());
         job.setCurrentStep(null);
         saveGuarded(job);
-        log(job.getId(), ProcessingJobLog.Level.WARN, "Cancelled by " + actingUsername
-                + (wasRunning ? " — the worker stops at its next checkpoint" : ""));
+        log(
+                job.getId(),
+                ProcessingJobLog.Level.WARN,
+                "Cancelled by " + actingUsername + (wasRunning ? " — the worker stops at its next checkpoint" : ""));
         return toDetailResponse(job);
     }
 
@@ -212,7 +220,8 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private ProcessingJob findJob(Long id) {
-        return jobRepository.findById(id)
+        return jobRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Processing job not found with id: " + id));
     }
 
@@ -222,16 +231,24 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
         try {
             jobRepository.saveAndFlush(job);
         } catch (ObjectOptimisticLockingFailureException e) {
-            throw new AppException(HttpStatus.CONFLICT, "The job changed while you were looking at it — refresh and try again");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "The job changed while you were looking at it — refresh and try again");
         }
     }
 
     private void log(Long jobId, ProcessingJobLog.Level level, String message) {
-        logRepository.save(ProcessingJobLog.builder().jobId(jobId).level(level).message(message).build());
+        logRepository.save(ProcessingJobLog.builder()
+                .jobId(jobId)
+                .level(level)
+                .message(message)
+                .build());
     }
 
     private Long lastLogId(Long jobId) {
-        return logRepository.findFirstByJobIdOrderByIdDesc(jobId).map(ProcessingJobLog::getId).orElse(null);
+        return logRepository
+                .findFirstByJobIdOrderByIdDesc(jobId)
+                .map(ProcessingJobLog::getId)
+                .orElse(null);
     }
 
     private static boolean canRetry(ProcessingJobStatus status) {
@@ -256,7 +273,8 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
     }
 
     private ProcessingJobResponse toDetailResponse(ProcessingJob job) {
-        String title = videoRepository.findById(job.getVideoId()).map(Video::getTitle).orElse(null);
+        String title =
+                videoRepository.findById(job.getVideoId()).map(Video::getTitle).orElse(null);
         return toResponse(job, title, logRepository.countByJobId(job.getId()));
     }
 
@@ -283,9 +301,7 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
                 .canRetry(canRetry(status))
                 .canCancel(status.isActive())
                 .canDelete(status != ProcessingJobStatus.RUNNING)
-                .queuePosition(status == ProcessingJobStatus.QUEUED
-                        ? (int) queueAhead(job)
-                        : null)
+                .queuePosition(status == ProcessingJobStatus.QUEUED ? (int) queueAhead(job) : null)
                 .build();
     }
 
@@ -293,6 +309,7 @@ public class ProcessingJobServiceImpl implements ProcessingJobService {
     private int queueAhead(ProcessingJob job) {
         var lane = com.example.videolingo.pipeline.JobLane.of(job.getType());
         var types = lane == null ? com.example.videolingo.pipeline.JobWorker.HANDLED : lane.types();
-        return (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, types, job.getId()) + 1;
+        return (int) jobRepository.countByStatusAndTypeInAndIdLessThan(ProcessingJobStatus.QUEUED, types, job.getId())
+                + 1;
     }
 }

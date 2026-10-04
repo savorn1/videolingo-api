@@ -40,13 +40,16 @@ public class CollectionController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CollectionResponse>> create(@Valid @RequestBody CollectionRequest request, Authentication authentication) {
+    public ResponseEntity<ApiResponse<CollectionResponse>> create(
+            @Valid @RequestBody CollectionRequest request, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Collection created", collectionService.create(request, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Collection created", collectionService.create(request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<CollectionResponse>> update(@PathVariable Long id, @Valid @RequestBody CollectionRequest request) {
+    public ResponseEntity<ApiResponse<CollectionResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody CollectionRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Collection updated", collectionService.update(id, request)));
     }
 
@@ -58,36 +61,46 @@ public class CollectionController {
 
     // View Collection Videos — in collection order.
     @GetMapping("/{id}/videos")
-    public ResponseEntity<PageResponse<CollectionVideoResponse>> videos(@PathVariable Long id,
-                                                                         @RequestParam(defaultValue = "1") int page,
-                                                                         @RequestParam(defaultValue = "50") int size) {
+    public ResponseEntity<PageResponse<CollectionVideoResponse>> videos(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int size) {
         return ResponseEntity.ok(collectionService.videos(id, page, size));
     }
 
     @PostMapping("/{id}/videos")
-    public ResponseEntity<ApiResponse<Integer>> addVideos(@PathVariable Long id, @Valid @RequestBody AddCollectionVideosRequest request,
-                                                          Authentication authentication) {
+    public ResponseEntity<ApiResponse<Integer>> addVideos(
+            @PathVariable Long id,
+            @Valid @RequestBody AddCollectionVideosRequest request,
+            Authentication authentication) {
         int added = collectionService.addVideos(id, request.getVideoIds(), requireUsername(authentication));
-        return ResponseEntity.ok(ApiResponse.success(added == 0 ? "Those videos are already in the collection"
-                : "Added " + added + (added == 1 ? " video" : " videos"), added));
+        return ResponseEntity.ok(ApiResponse.success(
+                added == 0
+                        ? "Those videos are already in the collection"
+                        : "Added " + added + (added == 1 ? " video" : " videos"),
+                added));
     }
 
     // Full new order of the collection's videos.
     @PutMapping("/{id}/videos/order")
-    public ResponseEntity<ApiResponse<Void>> reorder(@PathVariable Long id, @Valid @RequestBody AddCollectionVideosRequest request) {
+    public ResponseEntity<ApiResponse<Void>> reorder(
+            @PathVariable Long id, @Valid @RequestBody AddCollectionVideosRequest request) {
         collectionService.reorder(id, request.getVideoIds());
         return ResponseEntity.ok(ApiResponse.success("Order saved", null));
     }
 
     // Remove Video — from the collection only; the video itself is untouched.
     @DeleteMapping("/{id}/videos/{videoId}")
-    public ResponseEntity<ApiResponse<CollectionResponse>> removeVideo(@PathVariable Long id, @PathVariable Long videoId) {
-        return ResponseEntity.ok(ApiResponse.success("Video removed from collection", collectionService.removeVideo(id, videoId)));
+    public ResponseEntity<ApiResponse<CollectionResponse>> removeVideo(
+            @PathVariable Long id, @PathVariable Long videoId) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Video removed from collection", collectionService.removeVideo(id, videoId)));
     }
 
     // Group videos under section labels ("Week 1"); a blank/null label clears one.
     @PutMapping("/{id}/videos/sections")
-    public ResponseEntity<ApiResponse<Void>> updateSections(@PathVariable Long id, @Valid @RequestBody UpdateSectionsRequest request) {
+    public ResponseEntity<ApiResponse<Void>> updateSections(
+            @PathVariable Long id, @Valid @RequestBody UpdateSectionsRequest request) {
         collectionService.updateSections(id, request.getSections());
         return ResponseEntity.ok(ApiResponse.success("Sections saved", null));
     }
@@ -100,9 +113,11 @@ public class CollectionController {
 
     // A full copy — same videos, sections and visibility — owned by the acting admin.
     @PostMapping("/{id}/duplicate")
-    public ResponseEntity<ApiResponse<CollectionResponse>> duplicate(@PathVariable Long id, Authentication authentication) {
+    public ResponseEntity<ApiResponse<CollectionResponse>> duplicate(
+            @PathVariable Long id, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Collection duplicated", collectionService.duplicate(id, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Collection duplicated", collectionService.duplicate(id, requireUsername(authentication))));
     }
 
     private String requireUsername(Authentication authentication) {

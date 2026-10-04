@@ -1,7 +1,6 @@
 package com.example.videolingo.learn;
 
 import com.example.videolingo.entity.StudyCard;
-
 import java.time.LocalDateTime;
 
 // Spaced repetition, a small take on SM-2: each review's grade moves the
@@ -9,19 +8,23 @@ import java.time.LocalDateTime;
 // it's unit-tested.
 public final class Srs {
 
-    public enum Grade { AGAIN, HARD, GOOD, EASY }
-
-    public record State(double ease, int intervalDays, int repetitions, int lapses, LocalDateTime dueAt) {
+    public enum Grade {
+        AGAIN,
+        HARD,
+        GOOD,
+        EASY
     }
+
+    public record State(double ease, int intervalDays, int repetitions, int lapses, LocalDateTime dueAt) {}
 
     static final double MIN_EASE = 1.3;
     static final double MAX_EASE = 3.0;
     /** A forgotten card comes back within the same study session. */
     static final int AGAIN_MINUTES = 10;
+
     static final int MAX_INTERVAL_DAYS = 365;
 
-    private Srs() {
-    }
+    private Srs() {}
 
     public static State review(State s, Grade grade, LocalDateTime now) {
         double ease = s.ease();
@@ -42,12 +45,15 @@ public final class Srs {
             }
             case GOOD -> {
                 reps++;
-                interval = reps == 1 ? 1 : reps == 2 ? 3 : Math.max(s.intervalDays() + 1, (int) Math.round(s.intervalDays() * ease));
+                interval = reps == 1
+                        ? 1
+                        : reps == 2 ? 3 : Math.max(s.intervalDays() + 1, (int) Math.round(s.intervalDays() * ease));
             }
             case EASY -> {
                 ease += 0.15;
                 reps++;
-                interval = reps == 1 ? 3 : Math.max(s.intervalDays() + 2, (int) Math.round(s.intervalDays() * ease * 1.3));
+                interval =
+                        reps == 1 ? 3 : Math.max(s.intervalDays() + 2, (int) Math.round(s.intervalDays() * ease * 1.3));
             }
             default -> throw new IllegalArgumentException("grade");
         }

@@ -1,11 +1,11 @@
 package com.example.videolingo.service.impl;
 
-import com.example.videolingo.entity.Language;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.example.videolingo.entity.Language;
+import org.junit.jupiter.api.Test;
 
 class LanguageRulesTest {
 
@@ -29,7 +29,8 @@ class LanguageRulesTest {
     @Test
     void deleteIsBlockedForTheDefaultAndForLanguagesInUse() {
         Language plain = Language.builder().code("fr").name("French").build();
-        Language fallback = Language.builder().code("en").name("English").isDefault(true).build();
+        Language fallback =
+                Language.builder().code("en").name("English").isDefault(true).build();
 
         assertNull(LanguageServiceImpl.deleteBlockedReason(plain, 0, 0));
         assertTrue(LanguageServiceImpl.deleteBlockedReason(fallback, 0, 0).contains("default"));

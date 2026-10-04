@@ -8,15 +8,14 @@ import com.example.videolingo.dto.ProcessingJobProgressResponse;
 import com.example.videolingo.dto.ProcessingJobResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.ProcessingJobService;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
 
 // Admin view of the video processing pipeline. Gated as module
 // "processing-jobs" by PermissionAuthorizationManager: GETs need READ,
@@ -52,20 +51,25 @@ public class ProcessingJobController {
 
     // afterId=0 returns from the start; pass the last id you have to tail.
     @GetMapping("/{id}/logs")
-    public ResponseEntity<ApiResponse<List<ProcessingJobLogResponse>>> logs(@PathVariable Long id,
-                                                                            @RequestParam(defaultValue = "0") long afterId,
-                                                                            @RequestParam(defaultValue = "500") int limit) {
+    public ResponseEntity<ApiResponse<List<ProcessingJobLogResponse>>> logs(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") long afterId,
+            @RequestParam(defaultValue = "500") int limit) {
         return ResponseEntity.ok(ApiResponse.success(processingJobService.getLogs(id, afterId, limit)));
     }
 
     @PostMapping("/{id}/retry")
-    public ResponseEntity<ApiResponse<ProcessingJobResponse>> retry(@PathVariable Long id, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Job re-queued", processingJobService.retry(id, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> retry(
+            @PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Job re-queued", processingJobService.retry(id, requireUsername(authentication))));
     }
 
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<ApiResponse<ProcessingJobResponse>> cancel(@PathVariable Long id, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Job cancelled", processingJobService.cancel(id, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> cancel(
+            @PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Job cancelled", processingJobService.cancel(id, requireUsername(authentication))));
     }
 
     @DeleteMapping("/{id}")

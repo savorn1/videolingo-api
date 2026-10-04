@@ -14,11 +14,11 @@ final class Html {
 
     private static final Pattern META = Pattern.compile("<meta\\b([^>]*)>", Pattern.CASE_INSENSITIVE);
     private static final Pattern ATTR = Pattern.compile("([a-zA-Z:_-]+)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')");
-    private static final Pattern TITLE = Pattern.compile("<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern TITLE =
+            Pattern.compile("<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern ENTITY = Pattern.compile("&(#x[0-9a-fA-F]+|#\\d+|amp|lt|gt|quot|apos|nbsp);");
 
-    private Html() {
-    }
+    private Html() {}
 
     /** property/name/itemprop (lower-cased) → contents, in page order. */
     static Map<String, List<String>> meta(String html) {
@@ -33,7 +33,8 @@ final class Html {
             String key = attrs.getOrDefault("property", attrs.getOrDefault("name", attrs.get("itemprop")));
             String content = attrs.get("content");
             if (key != null && content != null) {
-                out.computeIfAbsent(key.toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(unescape(content).strip());
+                out.computeIfAbsent(key.toLowerCase(Locale.ROOT), k -> new ArrayList<>())
+                        .add(unescape(content).strip());
             }
         }
         return out;
@@ -63,15 +64,20 @@ final class Html {
         StringBuilder out = new StringBuilder();
         while (m.find()) {
             String e = m.group(1);
-            String r = switch (e) {
-                case "amp" -> "&";
-                case "lt" -> "<";
-                case "gt" -> ">";
-                case "quot" -> "\"";
-                case "apos" -> "'";
-                case "nbsp" -> " ";
-                default -> new String(Character.toChars(e.startsWith("#x") ? Integer.parseInt(e.substring(2), 16) : Integer.parseInt(e.substring(1))));
-            };
+            String r =
+                    switch (e) {
+                        case "amp" -> "&";
+                        case "lt" -> "<";
+                        case "gt" -> ">";
+                        case "quot" -> "\"";
+                        case "apos" -> "'";
+                        case "nbsp" -> " ";
+                        default ->
+                            new String(Character.toChars(
+                                    e.startsWith("#x")
+                                            ? Integer.parseInt(e.substring(2), 16)
+                                            : Integer.parseInt(e.substring(1))));
+                    };
             m.appendReplacement(out, Matcher.quoteReplacement(r));
         }
         m.appendTail(out);
@@ -83,7 +89,8 @@ final class Html {
         if (s == null) {
             return null;
         }
-        Matcher m = Pattern.compile("^P(?:(\\d+)D)?T?(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?$").matcher(s.strip().toUpperCase(Locale.ROOT));
+        Matcher m = Pattern.compile("^P(?:(\\d+)D)?T?(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?$")
+                .matcher(s.strip().toUpperCase(Locale.ROOT));
         if (!m.matches()) {
             return null;
         }

@@ -12,13 +12,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -35,6 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 // Webhook management and delivery. Delivery: POST the JSON message, signed
 // (WebhookSigner), no redirects followed, 10 s timeout; any 2xx is success.
@@ -49,23 +48,41 @@ public class WebhookService {
     static final int KEEP_DELIVERIES = 100;
     /** Failed attempts in a row (≈ 7 messages with retries) before a webhook is switched off. */
     static final int PAUSE_AFTER_FAILURES = 20;
+
     private static final long[] RETRY_DELAYS_MS = {5_000, 30_000};
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
-    public record WebhookRequest(@NotBlank @Size(max = 100) String name,
-                                 @NotBlank @Size(max = 1000) String url,
-                                 @NotEmpty List<String> events,
-                                 boolean enabled) {
-    }
+    public record WebhookRequest(
+            @NotBlank @Size(max = 100) String name,
+            @NotBlank @Size(max = 1000) String url,
+            @NotEmpty List<String> events,
+            boolean enabled) {}
 
-    public record WebhookResponse(Long id, String name, String url, String secret, List<String> events, boolean enabled,
-                                  LocalDateTime lastDeliveryAt, Integer lastStatus, int consecutiveFailures, String createdBy,
-                                  LocalDateTime createdAt, LocalDateTime updatedAt) {
-    }
+    public record WebhookResponse(
+            Long id,
+            String name,
+            String url,
+            String secret,
+            List<String> events,
+            boolean enabled,
+            LocalDateTime lastDeliveryAt,
+            Integer lastStatus,
+            int consecutiveFailures,
+            String createdBy,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt) {}
 
-    public record DeliveryResponse(Long id, String messageId, String event, int attempt, int status, boolean success, String detail,
-                                   long durationMs, String payload, LocalDateTime createdAt) {
-    }
+    public record DeliveryResponse(
+            Long id,
+            String messageId,
+            String event,
+            int attempt,
+            int status,
+            boolean success,
+            String detail,
+            long durationMs,
+            String payload,
+            LocalDateTime createdAt) {}
 
     private final WebhookRepository webhookRepository;
     private final WebhookDeliveryRepository deliveryRepository;
@@ -80,7 +97,9 @@ public class WebhookService {
 
     @Transactional(readOnly = true)
     public List<WebhookResponse> list() {
-        return webhookRepository.findAllByOrderByIdDesc().stream().map(WebhookService::toResponse).toList();
+        return webhookRepository.findAllByOrderByIdDesc().stream()
+                .map(WebhookService::toResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +109,10 @@ public class WebhookService {
 
     @Transactional
     public WebhookResponse create(WebhookRequest request, String actor) {
-        Webhook webhook = Webhook.builder().secret(WebhookSigner.newSecret()).createdBy(actor).build();
+        Webhook webhook = Webhook.builder()
+                .secret(WebhookSigner.newSecret())
+                .createdBy(actor)
+                .build();
         apply(webhook, request);
         return toResponse(webhookRepository.save(webhook));
     }
@@ -122,9 +144,20 @@ public class WebhookService {
     @Transactional(readOnly = true)
     public List<DeliveryResponse> deliveries(Long id, int limit) {
         find(id);
-        return deliveryRepository.findByWebhookIdOrderByIdDesc(id, PageRequest.of(0, Math.max(1, Math.min(limit, KEEP_DELIVERIES)))).stream()
-                .map(d -> new DeliveryResponse(d.getId(), d.getMessageId(), d.getEvent(), d.getAttempt(), d.getStatus(), d.isSuccess(),
-                        d.getDetail(), d.getDurationMs(), d.getPayload(), d.getCreatedAt()))
+        return deliveryRepository
+                .findByWebhookIdOrderByIdDesc(id, PageRequest.of(0, Math.max(1, Math.min(limit, KEEP_DELIVERIES))))
+                .stream()
+                .map(d -> new DeliveryResponse(
+                        d.getId(),
+                        d.getMessageId(),
+                        d.getEvent(),
+                        d.getAttempt(),
+                        d.getStatus(),
+                        d.isSuccess(),
+                        d.getDetail(),
+                        d.getDurationMs(),
+                        d.getPayload(),
+                        d.getCreatedAt()))
                 .toList();
     }
 
@@ -136,9 +169,19 @@ public class WebhookService {
         data.put("sentBy", actor);
         data.put("message", "This is a test message from VideoLingo.");
         String messageId = UUID.randomUUID().toString();
-        WebhookDelivery d = attempt(webhook, messageId, WebhookEvents.TEST, message(messageId, WebhookEvents.TEST, data), 1);
-        return new DeliveryResponse(d.getId(), d.getMessageId(), d.getEvent(), d.getAttempt(), d.getStatus(), d.isSuccess(), d.getDetail(),
-                d.getDurationMs(), d.getPayload(), d.getCreatedAt());
+        WebhookDelivery d =
+                attempt(webhook, messageId, WebhookEvents.TEST, message(messageId, WebhookEvents.TEST, data), 1);
+        return new DeliveryResponse(
+                d.getId(),
+                d.getMessageId(),
+                d.getEvent(),
+                d.getAttempt(),
+                d.getStatus(),
+                d.isSuccess(),
+                d.getDetail(),
+                d.getDurationMs(),
+                d.getPayload(),
+                d.getCreatedAt());
     }
 
     // ── Delivery ──────────────────────────────────────────────────────────
@@ -191,12 +234,14 @@ public class WebhookService {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             status = response.statusCode();
             String reply = response.body() == null ? "" : response.body().strip();
-            detail = status >= 300 && status < 400 ? "Redirects aren't followed — use the final URL"
+            detail = status >= 300 && status < 400
+                    ? "Redirects aren't followed — use the final URL"
                     : reply.isEmpty() ? null : reply.length() > 300 ? reply.substring(0, 300) + "…" : reply;
         } catch (AppException e) {
             detail = e.getMessage();
         } catch (IOException e) {
-            detail = "No response: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            detail = "No response: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             detail = "Interrupted";
@@ -232,14 +277,20 @@ public class WebhookService {
 
     // Tell admins, so a dead receiver doesn't go unnoticed (and stops being hammered).
     private void announcePause(Webhook w, WebhookDelivery last) {
-        log.warn("Webhook #{} ({}) paused after {} failed deliveries in a row", w.getId(), w.getUrl(), w.getConsecutiveFailures());
+        log.warn(
+                "Webhook #{} ({}) paused after {} failed deliveries in a row",
+                w.getId(),
+                w.getUrl(),
+                w.getConsecutiveFailures());
         try {
-            notifications.notifyAdmins("Webhook paused: " + w.getName(),
+            notifications.notifyAdmins(
+                    "Webhook paused: " + w.getName(),
                     "The webhook “" + w.getName() + "” (" + w.getUrl() + ") failed " + w.getConsecutiveFailures()
                             + " times in a row, so it was switched off. Last result: "
                             + (last.getStatus() == 0 ? "no response" : "HTTP " + last.getStatus())
                             + (last.getDetail() != null ? " — " + last.getDetail() : "")
-                            + ".\n\nFix the receiver, then turn it back on under Administration › Webhooks.", "system");
+                            + ".\n\nFix the receiver, then turn it back on under Administration › Webhooks.",
+                    "system");
         } catch (RuntimeException e) {
             log.warn("Couldn't notify admins about paused webhook #{}", w.getId(), e);
         }
@@ -289,22 +340,40 @@ public class WebhookService {
         try {
             SafeHttp.checkAllowed(uri);
         } catch (SafeHttp.BlockedException e) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Webhooks can only call public web addresses on the standard ports (80/443): "
-                    + e.getMessage().substring(0, 1).toLowerCase() + e.getMessage().substring(1));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "Webhooks can only call public web addresses on the standard ports (80/443): "
+                            + e.getMessage().substring(0, 1).toLowerCase()
+                            + e.getMessage().substring(1));
         }
         return uri;
     }
 
     private Webhook find(Long id) {
-        return webhookRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Webhook not found with id: " + id));
+        return webhookRepository
+                .findById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Webhook not found with id: " + id));
     }
 
     private static List<String> eventsOf(Webhook w) {
-        return w.getEvents() == null || w.getEvents().isBlank() ? List.of() : Arrays.asList(w.getEvents().split(","));
+        return w.getEvents() == null || w.getEvents().isBlank()
+                ? List.of()
+                : Arrays.asList(w.getEvents().split(","));
     }
 
     private static WebhookResponse toResponse(Webhook w) {
-        return new WebhookResponse(w.getId(), w.getName(), w.getUrl(), w.getSecret(), eventsOf(w), w.isEnabled(), w.getLastDeliveryAt(),
-                w.getLastStatus(), w.getConsecutiveFailures(), w.getCreatedBy(), w.getCreatedAt(), w.getUpdatedAt());
+        return new WebhookResponse(
+                w.getId(),
+                w.getName(),
+                w.getUrl(),
+                w.getSecret(),
+                eventsOf(w),
+                w.isEnabled(),
+                w.getLastDeliveryAt(),
+                w.getLastStatus(),
+                w.getConsecutiveFailures(),
+                w.getCreatedBy(),
+                w.getCreatedAt(),
+                w.getUpdatedAt());
     }
 }

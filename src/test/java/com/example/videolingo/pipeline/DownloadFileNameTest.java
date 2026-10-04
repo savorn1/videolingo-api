@@ -1,14 +1,16 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
 
 class DownloadFileNameTest {
 
     @Test
     void keepsTheTitleButDropsCharactersFilesCantHave() {
-        assertEquals("Lesson 1 Greetings  part 2.mp4".replace("  ", " "), PipelineSteps.fileName("Lesson 1: Greetings / part 2", null));
+        assertEquals(
+                "Lesson 1 Greetings  part 2.mp4".replace("  ", " "),
+                PipelineSteps.fileName("Lesson 1: Greetings / part 2", null));
     }
 
     @Test

@@ -1,10 +1,12 @@
 package com.example.videolingo.service.impl;
 
-import com.example.videolingo.settings.Settings;
-import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.dto.FileUploadResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.FileStorageService;
+import com.example.videolingo.settings.Settings;
+import com.example.videolingo.settings.SettingsService;
+import java.io.IOException;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -15,9 +17,6 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-
-import java.io.IOException;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -44,8 +43,10 @@ public class S3FileStorageService implements FileStorageService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Files can be at most " + limits.maxUploadMb() + " MB");
         }
         if (!typeAllowed(file.getContentType(), limits.allowedUploadTypes())) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "This file type (" + (file.getContentType() == null ? "unknown" : file.getContentType())
-                    + ") isn't allowed — accepted: " + String.join(", ", limits.allowedUploadTypes()));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "This file type (" + (file.getContentType() == null ? "unknown" : file.getContentType())
+                            + ") isn't allowed — accepted: " + String.join(", ", limits.allowedUploadTypes()));
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -77,7 +78,8 @@ public class S3FileStorageService implements FileStorageService {
 
     @Override
     public void delete(String key) {
-        s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+        s3Client.deleteObject(
+                DeleteObjectRequest.builder().bucket(bucket).key(key).build());
     }
 
     // Empty list = anything; "image/*" matches the whole family.

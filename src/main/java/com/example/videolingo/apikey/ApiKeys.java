@@ -17,8 +17,7 @@ public final class ApiKeys {
     static final int VISIBLE = PREFIX.length() + 8;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private ApiKeys() {
-    }
+    private ApiKeys() {}
 
     public static String generate() {
         StringBuilder sb = new StringBuilder(PREFIX);
@@ -34,7 +33,9 @@ public final class ApiKeys {
 
     /** Whether `value` is shaped like one of our keys (so the Bearer header can carry either a key or a JWT). */
     public static boolean looksLikeKey(String value) {
-        return value != null && value.startsWith(PREFIX) && value.length() == PREFIX.length() + LENGTH
+        return value != null
+                && value.startsWith(PREFIX)
+                && value.length() == PREFIX.length() + LENGTH
                 && value.substring(PREFIX.length()).chars().allMatch(c -> ALPHABET.indexOf(c) >= 0);
     }
 
@@ -42,7 +43,8 @@ public final class ApiKeys {
     // random, so there's nothing to brute-force from the hash.
     public static String hash(String key) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                    .formatHex(MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

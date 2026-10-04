@@ -3,13 +3,12 @@ package com.example.videolingo.controller;
 import com.example.videolingo.dto.ApiResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.VideoMarkerService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // Named timestamps on a video's timeline. Under /api/admin/videos, so gated
 // as module "videos": GET = READ, the rest = WRITE.
@@ -26,17 +25,22 @@ public class VideoMarkerController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<VideoMarkerService.MarkerResponse>> create(@PathVariable Long videoId,
-                                                                                  @RequestBody VideoMarkerService.MarkerRequest request,
-                                                                                  Authentication authentication) {
+    public ResponseEntity<ApiResponse<VideoMarkerService.MarkerResponse>> create(
+            @PathVariable Long videoId,
+            @RequestBody VideoMarkerService.MarkerRequest request,
+            Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Marker added", markerService.create(videoId, request, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Marker added", markerService.create(videoId, request, requireUsername(authentication))));
     }
 
     @PutMapping("/{markerId}")
-    public ResponseEntity<ApiResponse<VideoMarkerService.MarkerResponse>> update(@PathVariable Long videoId, @PathVariable Long markerId,
-                                                                                  @RequestBody VideoMarkerService.MarkerRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Marker updated", markerService.update(videoId, markerId, request)));
+    public ResponseEntity<ApiResponse<VideoMarkerService.MarkerResponse>> update(
+            @PathVariable Long videoId,
+            @PathVariable Long markerId,
+            @RequestBody VideoMarkerService.MarkerRequest request) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Marker updated", markerService.update(videoId, markerId, request)));
     }
 
     @DeleteMapping("/{markerId}")

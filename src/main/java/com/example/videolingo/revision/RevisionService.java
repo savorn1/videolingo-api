@@ -10,14 +10,13 @@ import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.ContentRevisionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 // Version history for subtitle tracks and transcripts. The owning services
 // call record() after each save that changes content, inside their own
@@ -29,18 +28,22 @@ public class RevisionService {
     /** Oldest revisions beyond this many per track/transcript are dropped. */
     static final int KEEP = 50;
 
-    public record SubtitleSnapshot(String label, String language, SubtitleKind kind, SubtitleRulesDto rules, List<SubtitleCueDto> cues) {
-    }
+    public record SubtitleSnapshot(
+            String label, String language, SubtitleKind kind, SubtitleRulesDto rules, List<SubtitleCueDto> cues) {}
 
-    public record TranscriptSnapshot(String language, List<TranscriptSegmentDto> segments) {
-    }
+    public record TranscriptSnapshot(String language, List<TranscriptSegmentDto> segments) {}
 
-    public record RevisionSummary(Long id, int number, String summary, int itemCount, String createdBy, LocalDateTime createdAt) {
-    }
+    public record RevisionSummary(
+            Long id, int number, String summary, int itemCount, String createdBy, LocalDateTime createdAt) {}
 
-    public record RevisionDetail<T>(Long id, int number, String summary, int itemCount, String createdBy, LocalDateTime createdAt,
-                                    T snapshot) {
-    }
+    public record RevisionDetail<T>(
+            Long id,
+            int number,
+            String summary,
+            int itemCount,
+            String createdBy,
+            LocalDateTime createdAt,
+            T snapshot) {}
 
     private final ContentRevisionRepository repository;
     private final ObjectMapper objectMapper;
@@ -65,13 +68,15 @@ public class RevisionService {
     @Transactional(readOnly = true)
     public List<RevisionSummary> history(EntityType type, Long entityId) {
         return repository.history(type, entityId).stream()
-                .map(r -> new RevisionSummary(r.getId(), r.getNumber(), r.getSummary(), r.getItemCount(), r.getCreatedBy(), r.getCreatedAt()))
+                .map(r -> new RevisionSummary(
+                        r.getId(), r.getNumber(), r.getSummary(), r.getItemCount(), r.getCreatedBy(), r.getCreatedAt()))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public <T> RevisionDetail<T> get(EntityType type, Long entityId, Long revisionId, Class<T> snapshotType) {
-        ContentRevision r = repository.findByIdAndEntityTypeAndEntityId(revisionId, type, entityId)
+        ContentRevision r = repository
+                .findByIdAndEntityTypeAndEntityId(revisionId, type, entityId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Revision not found"));
         T snapshot;
         try {
@@ -79,7 +84,14 @@ public class RevisionService {
         } catch (JsonProcessingException e) {
             throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Revision " + r.getNumber() + " couldn't be read");
         }
-        return new RevisionDetail<>(r.getId(), r.getNumber(), r.getSummary(), r.getItemCount(), r.getCreatedBy(), r.getCreatedAt(), snapshot);
+        return new RevisionDetail<>(
+                r.getId(),
+                r.getNumber(),
+                r.getSummary(),
+                r.getItemCount(),
+                r.getCreatedBy(),
+                r.getCreatedAt(),
+                snapshot);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

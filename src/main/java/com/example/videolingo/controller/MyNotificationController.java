@@ -20,20 +20,23 @@ public class MyNotificationController {
     private final NotificationService notificationService;
 
     @GetMapping
-    public ResponseEntity<PageResponse<NotificationResponse>> list(@RequestParam(defaultValue = "false") boolean unreadOnly,
-                                                                   @RequestParam(defaultValue = "1") int page,
-                                                                   @RequestParam(defaultValue = "10") int size,
-                                                                   Authentication authentication) {
+    public ResponseEntity<PageResponse<NotificationResponse>> list(
+            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {
         return ResponseEntity.ok(notificationService.inbox(authentication.getName(), unreadOnly, page, size));
     }
 
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<InboxCount>> unreadCount(Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(new InboxCount(notificationService.unreadCount(authentication.getName()))));
+        return ResponseEntity.ok(
+                ApiResponse.success(new InboxCount(notificationService.unreadCount(authentication.getName()))));
     }
 
     @PostMapping("/{id}/read")
-    public ResponseEntity<ApiResponse<NotificationResponse>> markRead(@PathVariable Long id, Authentication authentication) {
+    public ResponseEntity<ApiResponse<NotificationResponse>> markRead(
+            @PathVariable Long id, Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(notificationService.markRead(id, authentication.getName())));
     }
 

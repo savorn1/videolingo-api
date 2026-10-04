@@ -25,7 +25,6 @@ public class CreateUserRequest {
 
     private boolean enabled = true;
 
-
     // Only meaningful when role == USER — see PermissionAuthorizationManager.
     // Can also be set/changed later via PUT /{id}/custom-role.
     private Long customRoleId;

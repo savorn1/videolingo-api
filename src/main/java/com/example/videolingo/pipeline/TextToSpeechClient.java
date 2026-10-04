@@ -1,9 +1,6 @@
 package com.example.videolingo.pipeline;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -14,6 +11,8 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 // Text-to-speech through OpenAI's speech API. Asks for raw 24 kHz 16-bit mono
 // PCM and wraps it in a WAV header, which WavMixer places on the dub timeline.
@@ -21,8 +20,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TextToSpeechClient {
 
-    public record Voice(String id, String name, String gender) {
-    }
+    public record Voice(String id, String name, String gender) {}
 
     private static final int SAMPLE_RATE = 24_000;
 
@@ -105,8 +103,14 @@ public class TextToSpeechClient {
     private static byte[] wav(byte[] pcm) {
         ByteBuffer b = ByteBuffer.allocate(44 + pcm.length).order(ByteOrder.LITTLE_ENDIAN);
         b.put("RIFF".getBytes()).putInt(36 + pcm.length).put("WAVE".getBytes());
-        b.put("fmt ".getBytes()).putInt(16).putShort((short) 1).putShort((short) 1)
-                .putInt(SAMPLE_RATE).putInt(SAMPLE_RATE * 2).putShort((short) 2).putShort((short) 16);
+        b.put("fmt ".getBytes())
+                .putInt(16)
+                .putShort((short) 1)
+                .putShort((short) 1)
+                .putInt(SAMPLE_RATE)
+                .putInt(SAMPLE_RATE * 2)
+                .putShort((short) 2)
+                .putShort((short) 16);
         b.put("data".getBytes()).putInt(pcm.length).put(pcm);
         return b.array();
     }

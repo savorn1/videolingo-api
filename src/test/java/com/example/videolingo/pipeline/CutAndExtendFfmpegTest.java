@@ -1,18 +1,17 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-import static org.mockito.Mockito.mock;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 // Runs the real ffmpeg on the cut-out and extend-past-the-end renders, so a bad
 // filter or a sound that drifts is caught here and not by the first job someone
@@ -28,7 +27,10 @@ class CutAndExtendFfmpegTest {
 
     private static int run(List<String> cmd) {
         try {
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+            Process p = new ProcessBuilder(cmd)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
             if (!p.waitFor(120, TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 return -1;
@@ -40,13 +42,22 @@ class CutAndExtendFfmpegTest {
     }
 
     private static MediaTools media() {
-        return new MediaTools(new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null));
+        return new MediaTools(
+                new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     /** A 6 s test picture, with a tone when `sound`. */
     private static Path source(Path dir, boolean sound) {
         Path out = dir.resolve(sound ? "with-sound.mp4" : "silent.mp4");
-        List<String> cmd = new java.util.ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+        List<String> cmd = new java.util.ArrayList<>(List.of(
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
                 "testsrc=size=320x180:rate=25:duration=6"));
         if (sound) {
             cmd.addAll(List.of("-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-c:a", "aac", "-shortest"));
@@ -140,7 +151,18 @@ class CutAndExtendFfmpegTest {
         MediaTools.Probe p = probe(media, out, dir);
         assertTrue(p.hasVideo() && p.hasAudio());
         assertTrue(Math.abs(p.durationMs() - 4000) < 300, "expected about 4 s, got " + p.durationMs() + " ms");
-        Path mono = media.trim(src.toString(), 0, 3000L, null, null, null, false, false, 0, new VideoEditRules.Look(0, 1, 1, 0, true, false, false), ctx);
+        Path mono = media.trim(
+                src.toString(),
+                0,
+                3000L,
+                null,
+                null,
+                null,
+                false,
+                false,
+                0,
+                new VideoEditRules.Look(0, 1, 1, 0, true, false, false),
+                ctx);
         assertTrue(probe(media, mono, dir).hasVideo());
     }
 }

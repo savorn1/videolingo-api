@@ -1,5 +1,6 @@
 package com.example.videolingo.learn;
 
+import com.anthropic.models.messages.TextBlockParam;
 import com.example.videolingo.ai.AiClientService;
 import com.example.videolingo.dto.GlossaryDtos.ApplicableTerm;
 import com.example.videolingo.dto.PageResponse;
@@ -14,7 +15,6 @@ import com.example.videolingo.repository.LanguageRepository;
 import com.example.videolingo.repository.StudyCardRepository;
 import com.example.videolingo.repository.WordLookupRepository;
 import com.example.videolingo.service.impl.TranscriptServiceImpl;
-import com.anthropic.models.messages.TextBlockParam;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -22,6 +22,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -31,12 +36,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 
 // Words looked up from subtitles, and the learner's flashcards.
 //   Lookup: the glossary first (exact, and free), then the shared cache, and
@@ -48,35 +47,57 @@ public class VocabularyService {
 
     static final int MAX_WORD_LENGTH = 60;
 
-    public record Lookup(String word, String language, String targetLanguage, String translation, String meaning, String partOfSpeech,
-                         String example, String source) {
-    }
+    public record Lookup(
+            String word,
+            String language,
+            String targetLanguage,
+            String translation,
+            String meaning,
+            String partOfSpeech,
+            String example,
+            String source) {}
 
     // What the AI answers with (structured output).
     public record LookupOutput(
-            @JsonPropertyDescription("The word's most likely meaning here, translated into the target language — a word or short phrase.")
-            String translation,
-            @JsonPropertyDescription("A one-sentence explanation of the meaning, in the target language, for a learner.")
-            String meaning,
+            @JsonPropertyDescription(
+                            "The word's most likely meaning here, translated into the target language — a word or short phrase.")
+                    String translation,
+            @JsonPropertyDescription(
+                            "A one-sentence explanation of the meaning, in the target language, for a learner.")
+                    String meaning,
             @JsonPropertyDescription("Part of speech in the target language, e.g. noun, verb; empty if unclear.")
-            String partOfSpeech,
+                    String partOfSpeech,
             @JsonPropertyDescription("A short, simple example sentence using the word, in the word's own language.")
-            String example) {
-    }
+                    String example) {}
 
-    public record CardRequest(@NotBlank @Size(max = 300) String front, @NotBlank @Size(max = 1000) String back, @Size(max = 10) String language,
-                              @Size(max = 500) String context, Long videoId, Long atMs) {
-    }
+    public record CardRequest(
+            @NotBlank @Size(max = 300) String front,
+            @NotBlank @Size(max = 1000) String back,
+            @Size(max = 10) String language,
+            @Size(max = 500) String context,
+            Long videoId,
+            Long atMs) {}
 
-    public record CardDto(Long id, String front, String back, String language, String context, Long videoId, Long atMs, StudyCard.Source source,
-                          double ease, int intervalDays, int repetitions, int lapses, LocalDateTime dueAt, LocalDateTime lastReviewedAt, LocalDateTime createdAt) {
-    }
+    public record CardDto(
+            Long id,
+            String front,
+            String back,
+            String language,
+            String context,
+            Long videoId,
+            Long atMs,
+            StudyCard.Source source,
+            double ease,
+            int intervalDays,
+            int repetitions,
+            int lapses,
+            LocalDateTime dueAt,
+            LocalDateTime lastReviewedAt,
+            LocalDateTime createdAt) {}
 
-    public record ReviewRequest(@NotNull Srs.Grade grade) {
-    }
+    public record ReviewRequest(@NotNull Srs.Grade grade) {}
 
-    public record Stats(long total, long due) {
-    }
+    public record Stats(long total, long due) {}
 
     private final GlossaryService glossaryService;
     private final WordLookupRepository lookupRepository;
@@ -89,13 +110,15 @@ public class VocabularyService {
 
     // ── Lookup ────────────────────────────────────────────────────────────
 
-    public Lookup lookup(String rawWord, String language, String target, String context, Long videoId, String username) {
+    public Lookup lookup(
+            String rawWord, String language, String target, String context, Long videoId, String username) {
         String word = normalizeWord(rawWord);
         if (word.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Pick a word to look up");
         }
         if (language == null || language.isBlank() || target == null || target.isBlank()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Say which language the word is in and which to translate it into");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Say which language the word is in and which to translate it into");
         }
         String from = language.strip().toLowerCase(Locale.ROOT);
         String to = target.strip().toLowerCase(Locale.ROOT);
@@ -113,14 +136,25 @@ public class VocabularyService {
         aiClient.requireReady(AiFeature.LOOKUP);
         String fromName = languageName(from);
         String toName = languageName(to);
-        List<TextBlockParam> system = List.of(TextBlockParam.builder().text(
-                "You are a concise bilingual dictionary for language learners. Explain words from " + fromName + " (" + from
-                        + ") in " + toName + " (" + to + "). Give the everyday meaning that fits the context when one is given.").build());
-        String prompt = "Word: " + word + (context != null && !context.isBlank() ? "\nContext: " + cap(context.strip(), 300) : "");
-        LookupOutput out = aiClient.structured(new AiClientService.Call(AiFeature.LOOKUP, videoId, null, null, username),
-                system, prompt, LookupOutput.class, 1024, "low").value();
+        List<TextBlockParam> system = List.of(TextBlockParam.builder()
+                .text("You are a concise bilingual dictionary for language learners. Explain words from " + fromName
+                        + " (" + from + ") in " + toName + " (" + to
+                        + "). Give the everyday meaning that fits the context when one is given.")
+                .build());
+        String prompt = "Word: " + word
+                + (context != null && !context.isBlank() ? "\nContext: " + cap(context.strip(), 300) : "");
+        LookupOutput out = aiClient.structured(
+                        new AiClientService.Call(AiFeature.LOOKUP, videoId, null, null, username),
+                        system,
+                        prompt,
+                        LookupOutput.class,
+                        1024,
+                        "low")
+                .value();
         WordLookup row = WordLookup.builder()
-                .word(word).fromLanguage(from).toLanguage(to)
+                .word(word)
+                .fromLanguage(from)
+                .toLanguage(to)
                 .translation(cap(blankTo(out.translation(), "—"), 300))
                 .meaning(cap(out.meaning(), 500))
                 .partOfSpeech(cap(out.partOfSpeech(), 40))
@@ -139,7 +173,9 @@ public class VocabularyService {
         if (raw == null) {
             return "";
         }
-        String w = raw.strip().replaceAll("^[\\p{P}\\p{S}\\s]+|[\\p{P}\\p{S}\\s]+$", "").toLowerCase(Locale.ROOT);
+        String w = raw.strip()
+                .replaceAll("^[\\p{P}\\p{S}\\s]+|[\\p{P}\\p{S}\\s]+$", "")
+                .toLowerCase(Locale.ROOT);
         return w.length() > MAX_WORD_LENGTH ? w.substring(0, MAX_WORD_LENGTH) : w;
     }
 
@@ -150,27 +186,37 @@ public class VocabularyService {
         List<Specification<StudyCard>> c = new ArrayList<>();
         c.add((root, q, cb) -> cb.equal(root.get("userId"), userId));
         if (search != null && !search.isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(search.strip().toLowerCase(Locale.ROOT)) + "%";
-            c.add((root, q, cb) -> cb.or(cb.like(root.get("frontKey"), pattern, '\\'), cb.like(cb.lower(root.get("back")), pattern, '\\')));
+            String pattern =
+                    "%" + TranscriptServiceImpl.escapeLike(search.strip().toLowerCase(Locale.ROOT)) + "%";
+            c.add((root, q, cb) -> cb.or(
+                    cb.like(root.get("frontKey"), pattern, '\\'), cb.like(cb.lower(root.get("back")), pattern, '\\')));
         }
         if (dueOnly) {
             LocalDateTime now = LocalDateTime.now();
             c.add((root, q, cb) -> cb.lessThanOrEqualTo(root.get("dueAt"), now));
         }
-        Page<StudyCard> result = cardRepository.findAll(Specification.allOf(c),
-                PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt")));
+        Page<StudyCard> result = cardRepository.findAll(
+                Specification.allOf(c),
+                PageRequest.of(
+                        Math.max(page - 1, 0),
+                        Math.max(1, Math.min(size, 100)),
+                        Sort.by(Sort.Direction.DESC, "createdAt")));
         return PageResponse.of(result.map(VocabularyService::toDto));
     }
 
     @Transactional(readOnly = true)
     public Stats stats(Long userId) {
-        return new Stats(cardRepository.countByUserId(userId), cardRepository.countByUserIdAndDueAtLessThanEqual(userId, LocalDateTime.now()));
+        return new Stats(
+                cardRepository.countByUserId(userId),
+                cardRepository.countByUserIdAndDueAtLessThanEqual(userId, LocalDateTime.now()));
     }
 
     @Transactional
     public CardDto create(Long userId, CardRequest r, StudyCard.Source source) {
         String front = r.front().strip();
-        String language = r.language() == null || r.language().isBlank() ? null : r.language().strip().toLowerCase(Locale.ROOT);
+        String language = r.language() == null || r.language().isBlank()
+                ? null
+                : r.language().strip().toLowerCase(Locale.ROOT);
         if (cardRepository.existsByUserIdAndFrontKeyAndLanguage(userId, front.toLowerCase(Locale.ROOT), language)) {
             throw new AppException(HttpStatus.CONFLICT, "“" + front + "” is already in your cards");
         }
@@ -204,8 +250,11 @@ public class VocabularyService {
 
     @Transactional(readOnly = true)
     public List<CardDto> due(Long userId, int limit) {
-        return cardRepository.due(userId, LocalDateTime.now(), PageRequest.of(0, Math.max(1, Math.min(limit, 100)))).stream()
-                .map(VocabularyService::toDto).toList();
+        return cardRepository
+                .due(userId, LocalDateTime.now(), PageRequest.of(0, Math.max(1, Math.min(limit, 100))))
+                .stream()
+                .map(VocabularyService::toDto)
+                .toList();
     }
 
     @Transactional
@@ -225,14 +274,14 @@ public class VocabularyService {
     /** Turns a video's AI key points into cards (point → explanation). Returns how many were new. */
     @Transactional
     public int fromKeyPoints(Long userId, Long generationId, boolean isAdmin) {
-        AiGeneration g = generationRepository.findById(generationId)
+        AiGeneration g = generationRepository
+                .findById(generationId)
                 .filter(x -> x.getType() == AiFeature.KEY_POINTS)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Key points not found"));
         learnService.requireWatchable(g.getVideoId(), userId, isAdmin);
         Map<String, Object> content;
         try {
-            content = objectMapper.readValue(g.getContentJson(), new TypeReference<>() {
-            });
+            content = objectMapper.readValue(g.getContentJson(), new TypeReference<>() {});
         } catch (JsonProcessingException e) {
             throw new AppException(HttpStatus.CONFLICT, "These key points couldn't be read");
         }
@@ -242,13 +291,24 @@ public class VocabularyService {
                 if (!(o instanceof Map<?, ?> p) || !(p.get("point") instanceof String point) || point.isBlank()) {
                     continue;
                 }
-                String language = g.getOutputLanguage() == null ? null : g.getOutputLanguage().toLowerCase(Locale.ROOT);
-                if (cardRepository.existsByUserIdAndFrontKeyAndLanguage(userId, cap(point.strip(), 300).toLowerCase(Locale.ROOT), language)) {
+                String language = g.getOutputLanguage() == null
+                        ? null
+                        : g.getOutputLanguage().toLowerCase(Locale.ROOT);
+                if (cardRepository.existsByUserIdAndFrontKeyAndLanguage(
+                        userId, cap(point.strip(), 300).toLowerCase(Locale.ROOT), language)) {
                     continue;
                 }
                 String explanation = p.get("explanation") instanceof String s && !s.isBlank() ? s : point;
                 long atMs = p.get("timestampSeconds") instanceof Number n ? n.longValue() * 1000 : 0;
-                create(userId, new CardRequest(cap(point.strip(), 300), cap(explanation.strip(), 1000), language, null, g.getVideoId(), atMs),
+                create(
+                        userId,
+                        new CardRequest(
+                                cap(point.strip(), 300),
+                                cap(explanation.strip(), 1000),
+                                language,
+                                null,
+                                g.getVideoId(),
+                                atMs),
                         StudyCard.Source.KEY_POINT);
                 added++;
             }
@@ -259,21 +319,47 @@ public class VocabularyService {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private StudyCard find(Long userId, Long id) {
-        return cardRepository.findByIdAndUserId(id, userId).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Card not found"));
+        return cardRepository
+                .findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Card not found"));
     }
 
     private String languageName(String code) {
-        return languageRepository.findByCodeIgnoreCase(code).map(l -> l.getName()).orElse(code);
+        return languageRepository
+                .findByCodeIgnoreCase(code)
+                .map(l -> l.getName())
+                .orElse(code);
     }
 
     private static Lookup toLookup(WordLookup w, String source) {
-        return new Lookup(w.getWord(), w.getFromLanguage(), w.getToLanguage(), w.getTranslation(), w.getMeaning(), w.getPartOfSpeech(),
-                w.getExample(), source);
+        return new Lookup(
+                w.getWord(),
+                w.getFromLanguage(),
+                w.getToLanguage(),
+                w.getTranslation(),
+                w.getMeaning(),
+                w.getPartOfSpeech(),
+                w.getExample(),
+                source);
     }
 
     private static CardDto toDto(StudyCard c) {
-        return new CardDto(c.getId(), c.getFront(), c.getBack(), c.getLanguage(), c.getContext(), c.getVideoId(), c.getAtMs(), c.getSource(),
-                c.getEase(), c.getIntervalDays(), c.getRepetitions(), c.getLapses(), c.getDueAt(), c.getLastReviewedAt(), c.getCreatedAt());
+        return new CardDto(
+                c.getId(),
+                c.getFront(),
+                c.getBack(),
+                c.getLanguage(),
+                c.getContext(),
+                c.getVideoId(),
+                c.getAtMs(),
+                c.getSource(),
+                c.getEase(),
+                c.getIntervalDays(),
+                c.getRepetitions(),
+                c.getLapses(),
+                c.getDueAt(),
+                c.getLastReviewedAt(),
+                c.getCreatedAt());
     }
 
     private static String cap(String s, int max) {

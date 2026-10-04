@@ -13,8 +13,8 @@ public final class WebhookEvents {
     // Only sent by "Send test"; not subscribable.
     public static final String TEST = "webhook.test";
 
-    public static final List<String> ALL = List.of(JOB_SUCCEEDED, JOB_FAILED, SUBTITLE_REVIEW_REQUESTED, SUBTITLE_APPROVED, SUBTITLE_CHANGES_REQUESTED);
+    public static final List<String> ALL = List.of(
+            JOB_SUCCEEDED, JOB_FAILED, SUBTITLE_REVIEW_REQUESTED, SUBTITLE_APPROVED, SUBTITLE_CHANGES_REQUESTED);
 
-    private WebhookEvents() {
-    }
+    private WebhookEvents() {}
 }

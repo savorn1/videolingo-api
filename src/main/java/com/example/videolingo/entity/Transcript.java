@@ -13,21 +13,24 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // The timed text of a video in one language — the spoken-language transcript,
 // or a translation of it. At most one per (video, language). The text itself
 // lives in TranscriptSegment rows; the counts here are denormalised from them
 // on every save so the list page never has to aggregate segments.
 @Entity
-@Table(name = "transcripts",
-        uniqueConstraints = @UniqueConstraint(name = "uk_transcripts_video_language", columnNames = {"video_id", "language"}),
+@Table(
+        name = "transcripts",
+        uniqueConstraints =
+                @UniqueConstraint(
+                        name = "uk_transcripts_video_language",
+                        columnNames = {"video_id", "language"}),
         indexes = @Index(name = "idx_transcripts_video_id", columnList = "video_id"))
 @Getter
 @Setter

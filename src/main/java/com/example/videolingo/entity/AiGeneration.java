@@ -10,19 +10,20 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // A generated summary / chapter list / key points / question set / quiz for a
 // video. Every run is kept (history); the newest per (video, type, language) is
 // the current one.
 @Entity
-@Table(name = "ai_generations", indexes = @Index(name = "idx_ai_generations_video", columnList = "video_id, type, created_at"))
+@Table(
+        name = "ai_generations",
+        indexes = @Index(name = "idx_ai_generations_video", columnList = "video_id, type, created_at"))
 @Getter
 @Setter
 @NoArgsConstructor

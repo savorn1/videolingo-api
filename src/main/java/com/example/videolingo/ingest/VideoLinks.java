@@ -1,7 +1,6 @@
 package com.example.videolingo.ingest;
 
 import com.example.videolingo.entity.VideoSource;
-
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
@@ -14,27 +13,36 @@ import java.util.regex.Pattern;
 // rules are unit-tested (VideoLinksTest).
 public final class VideoLinks {
 
-    public enum Kind { VIDEO, SHORT, REEL, LIVE, FILE, PAGE }
+    public enum Kind {
+        VIDEO,
+        SHORT,
+        REEL,
+        LIVE,
+        FILE,
+        PAGE
+    }
 
     /** A parsed link. {@code externalId} is null for files and unknown pages. */
-    public record Parsed(VideoSource source, Kind kind, String externalId, String canonicalUrl, String embedUrl, URI uri) {
-    }
+    public record Parsed(
+            VideoSource source, Kind kind, String externalId, String canonicalUrl, String embedUrl, URI uri) {}
 
     public static final int MAX_LENGTH = 2048;
 
     static final Set<String> FILE_EXTENSIONS = Set.of("mp4", "m4v", "webm", "mov", "ogv", "ogg", "mkv", "m3u8");
 
     private static final Pattern YT_ID = Pattern.compile("^[A-Za-z0-9_-]{11}$");
-    private static final Pattern YT_PATH = Pattern.compile("^/(shorts|embed|live|v|e)/([A-Za-z0-9_-]{11})(?:[/?#].*)?$");
-    private static final Pattern VIMEO_PATH = Pattern.compile("^/(?:(?:channels|groups/[^/]+/videos|album/\\d+/video|showcase/\\d+/video)/[^/]*/?)?(\\d{5,12})(?:/([0-9a-f]{6,20}))?/?$");
-    private static final Pattern VIMEO_CHANNEL = Pattern.compile("^/(?:channels|groups)/[^/]+/(?:videos/)?(\\d{5,12})/?$");
+    private static final Pattern YT_PATH =
+            Pattern.compile("^/(shorts|embed|live|v|e)/([A-Za-z0-9_-]{11})(?:[/?#].*)?$");
+    private static final Pattern VIMEO_PATH = Pattern.compile(
+            "^/(?:(?:channels|groups/[^/]+/videos|album/\\d+/video|showcase/\\d+/video)/[^/]*/?)?(\\d{5,12})(?:/([0-9a-f]{6,20}))?/?$");
+    private static final Pattern VIMEO_CHANNEL =
+            Pattern.compile("^/(?:channels|groups)/[^/]+/(?:videos/)?(\\d{5,12})/?$");
     private static final Pattern VIMEO_PLAYER = Pattern.compile("^/video/(\\d{5,12})/?$");
     private static final Pattern FB_REEL = Pattern.compile("^/reel/(\\d{5,25})/?$");
     private static final Pattern FB_VIDEOS = Pattern.compile("^/[^/]+/videos/(?:[^/]+/)?(\\d{5,25})/?$");
     private static final Pattern FB_SHARE = Pattern.compile("^/share/(v|r)/([A-Za-z0-9]+)/?$");
 
-    private VideoLinks() {
-    }
+    private VideoLinks() {}
 
     /** Validates and classifies {@code raw}; throws {@link IllegalArgumentException} with a readable reason. */
     public static Parsed parse(String raw) {
@@ -58,19 +66,22 @@ public final class VideoLinks {
             }
             Matcher m = YT_PATH.matcher(path);
             if (m.matches()) {
-                Kind kind = switch (m.group(1)) {
-                    case "shorts" -> Kind.SHORT;
-                    case "live" -> Kind.LIVE;
-                    default -> Kind.VIDEO;
-                };
+                Kind kind =
+                        switch (m.group(1)) {
+                            case "shorts" -> Kind.SHORT;
+                            case "live" -> Kind.LIVE;
+                            default -> Kind.VIDEO;
+                        };
                 return youtube(m.group(2), kind, uri);
             }
-            throw new IllegalArgumentException("That YouTube link isn't a single video (playlists and channels can't be added)");
+            throw new IllegalArgumentException(
+                    "That YouTube link isn't a single video (playlists and channels can't be added)");
         }
         if (isHost(host, "vimeo.com")) {
             Matcher m = host.equals("player.vimeo.com") ? VIMEO_PLAYER.matcher(path) : VIMEO_PATH.matcher(path);
             if (m.matches()) {
-                String hash = host.equals("player.vimeo.com") ? query(uri, "h") : (m.groupCount() >= 2 ? m.group(2) : null);
+                String hash =
+                        host.equals("player.vimeo.com") ? query(uri, "h") : (m.groupCount() >= 2 ? m.group(2) : null);
                 return vimeo(m.group(1), hash, uri);
             }
             Matcher c = VIMEO_CHANNEL.matcher(path);
@@ -100,12 +111,19 @@ public final class VideoLinks {
             }
             Matcher videos = FB_VIDEOS.matcher(path);
             if (videos.matches()) {
-                return facebook(videos.group(1), Kind.VIDEO, "https://www.facebook.com/watch/?v=" + videos.group(1), uri);
+                return facebook(
+                        videos.group(1), Kind.VIDEO, "https://www.facebook.com/watch/?v=" + videos.group(1), uri);
             }
             Matcher share = FB_SHARE.matcher(path);
             if (share.matches()) {
                 Kind kind = share.group(1).equals("r") ? Kind.REEL : Kind.VIDEO;
-                return new Parsed(VideoSource.FACEBOOK, kind, null, "https://www.facebook.com/share/" + share.group(1) + "/" + share.group(2) + "/", null, uri);
+                return new Parsed(
+                        VideoSource.FACEBOOK,
+                        kind,
+                        null,
+                        "https://www.facebook.com/share/" + share.group(1) + "/" + share.group(2) + "/",
+                        null,
+                        uri);
             }
             throw new IllegalArgumentException("That Facebook link isn't a video or reel");
         }
@@ -125,8 +143,11 @@ public final class VideoLinks {
         return switch (source) {
             case YOUTUBE -> externalId == null ? null : "https://www.youtube-nocookie.com/embed/" + externalId;
             case VIMEO -> externalId == null ? null : vimeoEmbed(externalId, videoUrl);
-            case FACEBOOK -> videoUrl == null ? null
-                    : "https://www.facebook.com/plugins/video.php?show_text=false&href=" + java.net.URLEncoder.encode(videoUrl, java.nio.charset.StandardCharsets.UTF_8);
+            case FACEBOOK ->
+                videoUrl == null
+                        ? null
+                        : "https://www.facebook.com/plugins/video.php?show_text=false&href="
+                                + java.net.URLEncoder.encode(videoUrl, java.nio.charset.StandardCharsets.UTF_8);
             default -> null;
         };
     }
@@ -193,8 +214,10 @@ public final class VideoLinks {
     }
 
     private static Parsed youtube(String id, Kind kind, URI uri) {
-        String canonical = kind == Kind.SHORT ? "https://www.youtube.com/shorts/" + id : "https://www.youtube.com/watch?v=" + id;
-        return new Parsed(VideoSource.YOUTUBE, kind, id, canonical, "https://www.youtube-nocookie.com/embed/" + id, uri);
+        String canonical =
+                kind == Kind.SHORT ? "https://www.youtube.com/shorts/" + id : "https://www.youtube.com/watch?v=" + id;
+        return new Parsed(
+                VideoSource.YOUTUBE, kind, id, canonical, "https://www.youtube-nocookie.com/embed/" + id, uri);
     }
 
     private static Parsed vimeo(String id, String hash, URI uri) {
@@ -215,6 +238,7 @@ public final class VideoLinks {
     }
 
     private static Parsed facebook(String id, Kind kind, String canonical, URI uri) {
-        return new Parsed(VideoSource.FACEBOOK, kind, id, canonical, embedUrl(VideoSource.FACEBOOK, id, canonical), uri);
+        return new Parsed(
+                VideoSource.FACEBOOK, kind, id, canonical, embedUrl(VideoSource.FACEBOOK, id, canonical), uri);
     }
 }

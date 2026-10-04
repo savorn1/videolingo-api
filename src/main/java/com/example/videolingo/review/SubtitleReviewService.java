@@ -13,16 +13,15 @@ import com.example.videolingo.repository.SubtitleRepository;
 import com.example.videolingo.repository.VideoRepository;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
 
 // Subtitle review: submit → approve / request changes, plus comments pinned
 // to moments in the track. Status rules are in ReviewStatus. Decisions notify
@@ -33,23 +32,33 @@ import java.util.Objects;
 @Slf4j
 public class SubtitleReviewService {
 
-    public record ReviewRequest(@Size(max = 1000) String note) {
-    }
+    public record ReviewRequest(@Size(max = 1000) String note) {}
 
-    public record CommentRequest(@NotBlank @Size(max = 2000) String body, Long atMs) {
-    }
+    public record CommentRequest(@NotBlank @Size(max = 2000) String body, Long atMs) {}
 
-    public record ResolveRequest(boolean resolved) {
-    }
+    public record ResolveRequest(boolean resolved) {}
 
-    public record CommentResponse(Long id, Long subtitleId, Long atMs, String cueText, String body, String author, boolean resolved,
-                                  String resolvedBy, LocalDateTime resolvedAt, LocalDateTime createdAt) {
-    }
+    public record CommentResponse(
+            Long id,
+            Long subtitleId,
+            Long atMs,
+            String cueText,
+            String body,
+            String author,
+            boolean resolved,
+            String resolvedBy,
+            LocalDateTime resolvedAt,
+            LocalDateTime createdAt) {}
 
     /** Published after the transition commits' transaction work is done (listeners use AFTER_COMMIT). */
-    public record SubtitleReviewEvent(Long subtitleId, Long videoId, String label, String language, ReviewStatus status,
-                                      String actor, String note) {
-    }
+    public record SubtitleReviewEvent(
+            Long subtitleId,
+            Long videoId,
+            String label,
+            String language,
+            ReviewStatus status,
+            String actor,
+            String note) {}
 
     private final SubtitleRepository subtitleRepository;
     private final SubtitleCueRepository cueRepository;
@@ -68,7 +77,8 @@ public class SubtitleReviewService {
             throw new AppException(HttpStatus.CONFLICT, "This track is already waiting for review");
         }
         if (status == ReviewStatus.APPROVED) {
-            throw new AppException(HttpStatus.CONFLICT, "This track is already approved — edit it to start a new review");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "This track is already approved — edit it to start a new review");
         }
         if (s.getCueCount() == 0) {
             throw new AppException(HttpStatus.CONFLICT, "Add some cues before sending the track for review");
@@ -81,8 +91,11 @@ public class SubtitleReviewService {
         s.setReviewNote(blankToNull(note));
         subtitleRepository.save(s);
         String what = describe(s);
-        notifyQuietly(() -> notifications.notifyAdmins("Subtitle ready for review: " + what,
-                actor + " sent " + what + " for review." + (s.getReviewNote() != null ? "\n\nNote: " + s.getReviewNote() : ""), actor));
+        notifyQuietly(() -> notifications.notifyAdmins(
+                "Subtitle ready for review: " + what,
+                actor + " sent " + what + " for review."
+                        + (s.getReviewNote() != null ? "\n\nNote: " + s.getReviewNote() : ""),
+                actor));
         publish(s, actor);
     }
 
@@ -94,8 +107,11 @@ public class SubtitleReviewService {
         }
         decide(s, ReviewStatus.APPROVED, note, actor);
         String what = describe(s);
-        notifyQuietly(() -> notifications.notifyInApp(List.of(s.getReviewRequestedBy()), "Approved: " + what,
-                actor + " approved " + what + "." + (s.getReviewNote() != null ? "\n\n" + s.getReviewNote() : ""), actor));
+        notifyQuietly(() -> notifications.notifyInApp(
+                List.of(s.getReviewRequestedBy()),
+                "Approved: " + what,
+                actor + " approved " + what + "." + (s.getReviewNote() != null ? "\n\n" + s.getReviewNote() : ""),
+                actor));
         publish(s, actor);
     }
 
@@ -107,8 +123,11 @@ public class SubtitleReviewService {
         Subtitle s = requireInReview(id);
         decide(s, ReviewStatus.CHANGES_REQUESTED, note, actor);
         String what = describe(s);
-        notifyQuietly(() -> notifications.notifyInApp(List.of(s.getReviewRequestedBy()), "Changes requested: " + what,
-                actor + " asked for changes to " + what + ":\n\n" + s.getReviewNote(), actor));
+        notifyQuietly(() -> notifications.notifyInApp(
+                List.of(s.getReviewRequestedBy()),
+                "Changes requested: " + what,
+                actor + " asked for changes to " + what + ":\n\n" + s.getReviewNote(),
+                actor));
         publish(s, actor);
     }
 
@@ -117,7 +136,9 @@ public class SubtitleReviewService {
     @Transactional(readOnly = true)
     public List<CommentResponse> comments(Long subtitleId) {
         find(subtitleId);
-        return commentRepository.findBySubtitleIdOrderByCreatedAtAsc(subtitleId).stream().map(SubtitleReviewService::toResponse).toList();
+        return commentRepository.findBySubtitleIdOrderByCreatedAtAsc(subtitleId).stream()
+                .map(SubtitleReviewService::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -136,10 +157,12 @@ public class SubtitleReviewService {
                 .author(actor)
                 .build());
         // Let the submitter know while their track is in review (and not about their own comments).
-        if (s.reviewStatus() == ReviewStatus.IN_REVIEW && s.getReviewRequestedBy() != null && !s.getReviewRequestedBy().equals(actor)) {
+        if (s.reviewStatus() == ReviewStatus.IN_REVIEW
+                && s.getReviewRequestedBy() != null
+                && !s.getReviewRequestedBy().equals(actor)) {
             String what = describe(s);
-            notifyQuietly(() -> notifications.notifyInApp(List.of(s.getReviewRequestedBy()), "New comment on " + what,
-                    actor + ": " + c.getBody(), actor));
+            notifyQuietly(() -> notifications.notifyInApp(
+                    List.of(s.getReviewRequestedBy()), "New comment on " + what, actor + ": " + c.getBody(), actor));
         }
         return toResponse(c);
     }
@@ -175,36 +198,42 @@ public class SubtitleReviewService {
     private Subtitle requireInReview(Long id) {
         Subtitle s = find(id);
         if (s.reviewStatus() != ReviewStatus.IN_REVIEW) {
-            throw new AppException(HttpStatus.CONFLICT, "This track isn't waiting for review (it's " + label(s.reviewStatus()) + ")");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "This track isn't waiting for review (it's " + label(s.reviewStatus()) + ")");
         }
         return s;
     }
 
     private Subtitle find(Long id) {
-        return subtitleRepository.findById(id)
+        return subtitleRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Subtitle track not found with id: " + id));
     }
 
     private SubtitleComment findComment(Long subtitleId, Long commentId) {
-        return commentRepository.findByIdAndSubtitleId(commentId, subtitleId)
+        return commentRepository
+                .findByIdAndSubtitleId(commentId, subtitleId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Comment not found"));
     }
 
     private String cueAt(Long subtitleId, long atMs) {
         return cueRepository.findBySubtitleIdOrderByPositionAsc(subtitleId).stream()
                 .filter(c -> c.getStartMs() <= atMs && atMs < c.getEndMs())
-                .map(SubtitleCue::getText).findFirst().orElse(null);
+                .map(SubtitleCue::getText)
+                .findFirst()
+                .orElse(null);
     }
 
     // "“Khmer” on “Lesson 1”"
     private String describe(Subtitle s) {
-        String title = videoRepository.findById(s.getVideoId()).map(Video::getTitle).orElse("video #" + s.getVideoId());
+        String title =
+                videoRepository.findById(s.getVideoId()).map(Video::getTitle).orElse("video #" + s.getVideoId());
         return "“" + s.getLabel() + "” on “" + title + "”";
     }
 
     private void publish(Subtitle s, String actor) {
-        events.publishEvent(new SubtitleReviewEvent(s.getId(), s.getVideoId(), s.getLabel(), s.getLanguage(), s.reviewStatus(), actor,
-                s.getReviewNote()));
+        events.publishEvent(new SubtitleReviewEvent(
+                s.getId(), s.getVideoId(), s.getLabel(), s.getLanguage(), s.reviewStatus(), actor, s.getReviewNote()));
     }
 
     // A notification problem must never undo the review decision itself.
@@ -230,7 +259,16 @@ public class SubtitleReviewService {
     }
 
     private static CommentResponse toResponse(SubtitleComment c) {
-        return new CommentResponse(c.getId(), c.getSubtitleId(), c.getAtMs(), c.getCueText(), c.getBody(), c.getAuthor(), c.isResolved(),
-                c.getResolvedBy(), c.getResolvedAt(), c.getCreatedAt());
+        return new CommentResponse(
+                c.getId(),
+                c.getSubtitleId(),
+                c.getAtMs(),
+                c.getCueText(),
+                c.getBody(),
+                c.getAuthor(),
+                c.isResolved(),
+                c.getResolvedBy(),
+                c.getResolvedAt(),
+                c.getCreatedAt());
     }
 }

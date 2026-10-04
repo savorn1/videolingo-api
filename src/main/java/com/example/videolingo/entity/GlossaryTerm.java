@@ -18,7 +18,9 @@ import lombok.Setter;
 // doNotTranslate = keep `source` as-is ("VideoLingo"); then `target` is
 // stored equal to `source`.
 @Entity
-@Table(name = "glossary_terms", indexes = @Index(name = "idx_glossary_terms_glossary", columnList = "glossary_id, position"))
+@Table(
+        name = "glossary_terms",
+        indexes = @Index(name = "idx_glossary_terms_glossary", columnList = "glossary_id, position"))
 @Getter
 @Setter
 @NoArgsConstructor

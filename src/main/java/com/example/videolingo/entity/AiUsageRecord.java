@@ -10,23 +10,24 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-
 // One row per Claude API call — successful or not — with its token usage and
 // cost. The source for AI usage and cost reporting. Failed calls are recorded
 // too (tokens 0 when the call never completed) so errors show up in the stats.
 @Entity
-@Table(name = "ai_usage", indexes = {
-        @Index(name = "idx_ai_usage_created", columnList = "created_at"),
-        @Index(name = "idx_ai_usage_video", columnList = "video_id")
-})
+@Table(
+        name = "ai_usage",
+        indexes = {
+            @Index(name = "idx_ai_usage_created", columnList = "created_at"),
+            @Index(name = "idx_ai_usage_video", columnList = "video_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

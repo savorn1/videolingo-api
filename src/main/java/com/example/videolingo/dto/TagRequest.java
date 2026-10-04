@@ -8,7 +8,8 @@ import lombok.Data;
 public class TagRequest {
 
     // Normalised before saving: leading '#' dropped, whitespace collapsed.
-    @NotBlank @Size(max = 60)
+    @NotBlank
+    @Size(max = 60)
     private String name;
 
     // Optional — generated from the name when blank (create), kept when blank (update).

@@ -7,9 +7,6 @@ import com.example.videolingo.glossary.GlossaryService;
 import com.example.videolingo.repository.LanguageRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -19,6 +16,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 // Translates transcript lines with OpenAI, line for line, so every
 // translated line keeps its original timing. Lines go in batches; each batch
@@ -34,23 +33,40 @@ public class Translator {
 
     // The reply must be {"lines": [{"index": n, "text": "..."}]} — see TranslationOutput.
     private static final Map<String, Object> RESPONSE_FORMAT = Map.of(
-            "type", "json_schema",
-            "json_schema", Map.of(
-                    "name", "translation",
-                    "strict", true,
-                    "schema", Map.of(
-                            "type", "object",
-                            "additionalProperties", false,
-                            "required", List.of("lines"),
-                            "properties", Map.of("lines", Map.of(
-                                    "type", "array",
-                                    "items", Map.of(
-                                            "type", "object",
-                                            "additionalProperties", false,
-                                            "required", List.of("index", "text"),
-                                            "properties", Map.of(
-                                                    "index", Map.of("type", "integer"),
-                                                    "text", Map.of("type", "string"))))))));
+            "type",
+            "json_schema",
+            "json_schema",
+            Map.of(
+                    "name",
+                    "translation",
+                    "strict",
+                    true,
+                    "schema",
+                    Map.of(
+                            "type",
+                            "object",
+                            "additionalProperties",
+                            false,
+                            "required",
+                            List.of("lines"),
+                            "properties",
+                            Map.of(
+                                    "lines",
+                                    Map.of(
+                                            "type",
+                                            "array",
+                                            "items",
+                                            Map.of(
+                                                    "type",
+                                                    "object",
+                                                    "additionalProperties",
+                                                    false,
+                                                    "required",
+                                                    List.of("index", "text"),
+                                                    "properties",
+                                                    Map.of(
+                                                            "index", Map.of("type", "integer"),
+                                                            "text", Map.of("type", "string"))))))));
 
     private final PipelineProperties props;
     private final ObjectMapper objectMapper;
@@ -65,18 +81,26 @@ public class Translator {
     }
 
     /** Same size and order as `lines`. `forSpeech` asks for wording short enough to be spoken in the original time. */
-    public List<String> translate(List<String> lines, String from, String to, boolean forSpeech, long videoId, Long transcriptId, JobContext ctx) {
+    public List<String> translate(
+            List<String> lines,
+            String from,
+            String to,
+            boolean forSpeech,
+            long videoId,
+            Long transcriptId,
+            JobContext ctx) {
         requireReady();
         String fromName = name(from);
         String toName = name(to);
-        String system = "You translate video subtitles from " + fromName + " (" + from + ") into " + toName + " (" + to + ").\n"
+        String system =
+                "You translate video subtitles from " + fromName + " (" + from + ") into " + toName + " (" + to + ").\n"
                         + "- Translate every line; return exactly one line per input index.\n"
                         + "- Keep each line's meaning within that line — don't move text between lines.\n"
                         + "- Use natural, everyday spoken " + toName + ", not word-for-word translation.\n"
                         + "- Keep names, numbers and technical terms accurate.\n"
                         + (forSpeech
-                        ? "- The lines will be read aloud by a voice over the original timing, so keep each one about as short as the original.\n"
-                        : "")
+                                ? "- The lines will be read aloud by a voice over the original timing, so keep each one about as short as the original.\n"
+                                : "")
                         + "- Output only the translation, no notes.\n";
         List<GlossaryEntry> glossary = glossaryService.termsFor(from, to);
         if (!glossary.isEmpty()) {
@@ -89,7 +113,9 @@ public class Translator {
         for (int b = 0; b < batches; b++) {
             int start = b * BATCH;
             int end = Math.min(lines.size(), start + BATCH);
-            ctx.progress(b * 100 / Math.max(1, batches), "Translating to " + toName + " (" + (b + 1) + " of " + batches + ")");
+            ctx.progress(
+                    b * 100 / Math.max(1, batches),
+                    "Translating to " + toName + " (" + (b + 1) + " of " + batches + ")");
 
             StringBuilder prompt = new StringBuilder();
             if (start > 0) {
@@ -101,7 +127,11 @@ public class Translator {
             }
             prompt.append("Translate these lines:\n");
             for (int i = start; i < end; i++) {
-                prompt.append('[').append(i).append("] ").append(lines.get(i).replace('\n', ' ')).append('\n');
+                prompt.append('[')
+                        .append(i)
+                        .append("] ")
+                        .append(lines.get(i).replace('\n', ' '))
+                        .append('\n');
             }
 
             String rules = GlossaryPrompt.section(GlossaryPrompt.relevant(glossary, lines.subList(start, end)));
@@ -130,9 +160,9 @@ public class Translator {
     private TranslationOutput complete(String system, String prompt) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("model", props.translationModel());
-        payload.put("messages", List.of(
-                Map.of("role", "system", "content", system),
-                Map.of("role", "user", "content", prompt)));
+        payload.put(
+                "messages",
+                List.of(Map.of("role", "system", "content", system), Map.of("role", "user", "content", prompt)));
         payload.put("response_format", RESPONSE_FORMAT);
         payload.put("max_completion_tokens", MAX_TOKENS);
         HttpRequest request;
@@ -157,7 +187,8 @@ public class Translator {
         if (r.statusCode() == 200) {
             JsonNode message = readMessage(r.body());
             if (message.hasNonNull("refusal")) {
-                throw new JobFailure("Translation was refused: " + message.path("refusal").asText());
+                throw new JobFailure(
+                        "Translation was refused: " + message.path("refusal").asText());
             }
             try {
                 return objectMapper.readValue(message.path("content").asText(), TranslationOutput.class);
@@ -188,6 +219,9 @@ public class Translator {
     }
 
     public String name(String code) {
-        return languageRepository.findByCodeIgnoreCase(code).map(l -> l.getName()).orElse(code);
+        return languageRepository
+                .findByCodeIgnoreCase(code)
+                .map(l -> l.getName())
+                .orElse(code);
     }
 }

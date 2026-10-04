@@ -5,8 +5,7 @@ import java.util.List;
 // Scores quiz answers. Pure and static so it's unit-tested.
 public final class QuizGrader {
 
-    private QuizGrader() {
-    }
+    private QuizGrader() {}
 
     /** How many answers match; a missing or out-of-range answer counts as wrong. */
     public static int score(List<Integer> correct, List<Integer> answers) {

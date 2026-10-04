@@ -1,10 +1,5 @@
 package com.example.videolingo.service;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,6 +8,10 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
 
 // Password-reset tokens live in Redis with a TTL, so expiry needs no cleanup
 // job. Only a SHA-256 hash of the token is stored — a Redis dump alone can't

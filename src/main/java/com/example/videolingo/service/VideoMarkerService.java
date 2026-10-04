@@ -4,13 +4,12 @@ import com.example.videolingo.entity.VideoMarker;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.VideoMarkerRepository;
 import com.example.videolingo.repository.VideoRepository;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 // Named timestamps on a video's timeline (see VideoMarker). Plain CRUD —
 // no processing job involved.
@@ -18,11 +17,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class VideoMarkerService {
 
-    public record MarkerResponse(Long id, long atMs, String label, String color, String createdBy, LocalDateTime createdAt) {
-    }
+    public record MarkerResponse(
+            Long id, long atMs, String label, String color, String createdBy, LocalDateTime createdAt) {}
 
-    public record MarkerRequest(long atMs, String label, String color) {
-    }
+    public record MarkerRequest(long atMs, String label, String color) {}
 
     private final VideoRepository videoRepository;
     private final VideoMarkerRepository markerRepository;
@@ -30,7 +28,9 @@ public class VideoMarkerService {
     @Transactional(readOnly = true)
     public List<MarkerResponse> list(Long videoId) {
         requireVideo(videoId);
-        return markerRepository.findByVideoIdOrderByAtMsAsc(videoId).stream().map(VideoMarkerService::toResponse).toList();
+        return markerRepository.findByVideoIdOrderByAtMsAsc(videoId).stream()
+                .map(VideoMarkerService::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -69,7 +69,8 @@ public class VideoMarkerService {
     }
 
     private VideoMarker findMarker(Long videoId, Long markerId) {
-        return markerRepository.findById(markerId)
+        return markerRepository
+                .findById(markerId)
                 .filter(m -> m.getVideoId().equals(videoId))
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Marker not found"));
     }
@@ -99,6 +100,7 @@ public class VideoMarkerService {
     }
 
     private static MarkerResponse toResponse(VideoMarker m) {
-        return new MarkerResponse(m.getId(), m.getAtMs(), m.getLabel(), m.getColor(), m.getCreatedBy(), m.getCreatedAt());
+        return new MarkerResponse(
+                m.getId(), m.getAtMs(), m.getLabel(), m.getColor(), m.getCreatedBy(), m.getCreatedAt());
     }
 }

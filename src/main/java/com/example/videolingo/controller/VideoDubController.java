@@ -25,11 +25,13 @@ public class VideoDubController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<ProcessingJobResponse>> create(@PathVariable Long videoId,
-                                                                     @RequestBody DubService.CreateDubRequest request,
-                                                                     Authentication authentication) {
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> create(
+            @PathVariable Long videoId,
+            @RequestBody DubService.CreateDubRequest request,
+            Authentication authentication) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success("Voice-over queued", dubService.create(videoId, request, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Voice-over queued", dubService.create(videoId, request, requireUsername(authentication))));
     }
 
     @DeleteMapping("/{dubId}")
@@ -38,13 +40,13 @@ public class VideoDubController {
         return ResponseEntity.ok(ApiResponse.success("Voice track deleted", null));
     }
 
-    public record LockRequest(boolean locked) {
-    }
+    public record LockRequest(boolean locked) {}
 
     @PutMapping("/{dubId}/lock")
-    public ResponseEntity<ApiResponse<DubService.DubResponse>> setLocked(@PathVariable Long videoId, @PathVariable Long dubId,
-                                                                          @RequestBody LockRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(request.locked() ? "Track locked" : "Track unlocked",
+    public ResponseEntity<ApiResponse<DubService.DubResponse>> setLocked(
+            @PathVariable Long videoId, @PathVariable Long dubId, @RequestBody LockRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                request.locked() ? "Track locked" : "Track unlocked",
                 dubService.setLocked(videoId, dubId, request.locked())));
     }
 

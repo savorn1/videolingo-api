@@ -2,33 +2,44 @@ package com.example.videolingo.service.impl;
 
 import com.example.videolingo.dto.PageResponse;
 import com.example.videolingo.dto.UpdateVideoRequest;
+import com.example.videolingo.dto.VideoCategoryDto;
 import com.example.videolingo.dto.VideoFilterRequest;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.dto.VideoStatisticsResponse;
 import com.example.videolingo.dto.VideoStatisticsResponse.DailyViewCount;
+import com.example.videolingo.dto.VideoTagDto;
+import com.example.videolingo.entity.Category;
+import com.example.videolingo.entity.Tag;
 import com.example.videolingo.entity.User;
 import com.example.videolingo.entity.Video;
+import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.exception.AppException;
+import com.example.videolingo.ingest.VideoLinks;
+import com.example.videolingo.pipeline.DubService;
+import com.example.videolingo.repository.CategoryRepository;
+import com.example.videolingo.repository.TagRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.repository.VideoViewRepository;
-import com.example.videolingo.dto.VideoCategoryDto;
-import com.example.videolingo.dto.VideoTagDto;
-import com.example.videolingo.entity.Tag;
-import com.example.videolingo.repository.TagRepository;
-import com.example.videolingo.entity.Category;
-import com.example.videolingo.repository.CategoryRepository;
 import com.example.videolingo.service.CategoryService;
-import com.example.videolingo.entity.VideoSource;
-import com.example.videolingo.ingest.VideoLinks;
-import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.service.FileStorageService;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.VideoMarkerService;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
-import com.example.videolingo.pipeline.DubService;
+import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.util.PageableUtils;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,18 +47,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -76,14 +75,16 @@ public class VideoServiceImpl implements VideoService {
     public PageResponse<VideoResponse> listVideos(VideoFilterRequest filter) {
         List<Specification<Video>> conditions = new ArrayList<>();
 
-        conditions.add(filter.isDeleted()
-                ? (root, query, cb) -> cb.isNotNull(root.get("deletedAt"))
-                : (root, query, cb) -> cb.isNull(root.get("deletedAt")));
+        conditions.add(
+                filter.isDeleted()
+                        ? (root, query, cb) -> cb.isNotNull(root.get("deletedAt"))
+                        : (root, query, cb) -> cb.isNull(root.get("deletedAt")));
         // Archived is its own axis, only meaningful outside the trash (Videos / Archived / Trash tabs).
         if (!filter.isDeleted()) {
-            conditions.add(filter.isArchived()
-                    ? (root, query, cb) -> cb.isNotNull(root.get("archivedAt"))
-                    : (root, query, cb) -> cb.isNull(root.get("archivedAt")));
+            conditions.add(
+                    filter.isArchived()
+                            ? (root, query, cb) -> cb.isNotNull(root.get("archivedAt"))
+                            : (root, query, cb) -> cb.isNull(root.get("archivedAt")));
         }
         if (filter.getVisibility() != null) {
             conditions.add((root, query, cb) -> cb.equal(root.get("visibility"), filter.getVisibility()));
@@ -107,7 +108,8 @@ public class VideoServiceImpl implements VideoService {
             conditions.add((root, query, cb) -> cb.isMember(filter.getTagId(), root.<Collection<Long>>get("tagIds")));
         }
         if (filter.getCategoryId() != null) {
-            conditions.add((root, query, cb) -> cb.isMember(filter.getCategoryId(), root.<Collection<Long>>get("categoryIds")));
+            conditions.add((root, query, cb) ->
+                    cb.isMember(filter.getCategoryId(), root.<Collection<Long>>get("categoryIds")));
         }
         if (filter.getCreatedFrom() != null) {
             LocalDateTime from = filter.getCreatedFrom().atStartOfDay();
@@ -124,14 +126,25 @@ public class VideoServiceImpl implements VideoService {
 
         // Owner names and view counts are batch-resolved for the page, not per row.
         List<Video> content = videos.getContent();
-        Map<Long, String> ownerNames = userRepository.findAllById(
-                content.stream().map(Video::getOwnerId).filter(Objects::nonNull).distinct().toList()
-        ).stream().collect(Collectors.toMap(User::getId, User::getUsername));
-        Map<Long, Long> viewCounts = content.isEmpty() ? Map.of() : videoViewRepository
-                .countByVideoIds(content.stream().map(Video::getId).toList()).stream()
-                .collect(Collectors.toMap(VideoViewRepository.VideoViewCount::getVideoId, VideoViewRepository.VideoViewCount::getViews));
+        Map<Long, String> ownerNames = userRepository
+                .findAllById(content.stream()
+                        .map(Video::getOwnerId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername));
+        Map<Long, Long> viewCounts = content.isEmpty()
+                ? Map.of()
+                : videoViewRepository
+                        .countByVideoIds(content.stream().map(Video::getId).toList())
+                        .stream()
+                        .collect(Collectors.toMap(
+                                VideoViewRepository.VideoViewCount::getVideoId,
+                                VideoViewRepository.VideoViewCount::getViews));
 
-        return PageResponse.of(videos.map(v -> toResponse(v,
+        return PageResponse.of(videos.map(v -> toResponse(
+                v,
                 v.getOwnerId() == null ? null : ownerNames.get(v.getOwnerId()),
                 viewCounts.getOrDefault(v.getId(), 0L))));
     }
@@ -162,13 +175,16 @@ public class VideoServiceImpl implements VideoService {
             Set<Long> resolved = categoryService.resolveForVideo(request.getCategoryIds(), video.getCategoryIds());
             int maxCategories = settings.video().maxCategoriesPerVideo();
             if (resolved.size() > maxCategories) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST,
+                        "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
             }
             video.getCategoryIds().clear();
             video.getCategoryIds().addAll(resolved);
         }
         if (video.getCategoryIds().isEmpty() && settings.video().requireCategory()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
         }
         return toResponse(videoRepository.save(video));
     }
@@ -281,7 +297,8 @@ public class VideoServiceImpl implements VideoService {
     @Transactional
     public VideoResponse duplicate(Long id, String actingUsername) {
         Video source = findVideo(id);
-        Long ownerId = userRepository.findByUsername(actingUsername).map(User::getId).orElse(source.getOwnerId());
+        Long ownerId =
+                userRepository.findByUsername(actingUsername).map(User::getId).orElse(source.getOwnerId());
         Video copy = Video.builder()
                 .title(source.getTitle() + " (copy)")
                 .description(source.getDescription())
@@ -321,8 +338,10 @@ public class VideoServiceImpl implements VideoService {
 
         // Zero-fill so the chart has one bar per day, including quiet days.
         LocalDate firstDay = LocalDate.now().minusDays(window - 1L);
-        Map<LocalDate, Long> counts = videoViewRepository.dailyViewsSince(video.getId(), firstDay.atStartOfDay()).stream()
-                .collect(Collectors.toMap(VideoViewRepository.DailyViews::getDay, VideoViewRepository.DailyViews::getViews));
+        Map<LocalDate, Long> counts =
+                videoViewRepository.dailyViewsSince(video.getId(), firstDay.atStartOfDay()).stream()
+                        .collect(Collectors.toMap(
+                                VideoViewRepository.DailyViews::getDay, VideoViewRepository.DailyViews::getViews));
         List<DailyViewCount> daily = new ArrayList<>(window);
         for (int i = 0; i < window; i++) {
             LocalDate day = firstDay.plusDays(i);
@@ -343,7 +362,8 @@ public class VideoServiceImpl implements VideoService {
     }
 
     private Video findVideo(Long id) {
-        return videoRepository.findById(id)
+        return videoRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + id));
     }
 
@@ -355,10 +375,15 @@ public class VideoServiceImpl implements VideoService {
     }
 
     private VideoResponse toResponse(Video video) {
-        String ownerUsername = video.getOwnerId() == null ? null
-                : userRepository.findById(video.getOwnerId()).map(User::getUsername).orElse(null);
+        String ownerUsername = video.getOwnerId() == null
+                ? null
+                : userRepository
+                        .findById(video.getOwnerId())
+                        .map(User::getUsername)
+                        .orElse(null);
         long views = videoViewRepository.countByVideoIds(List.of(video.getId())).stream()
-                .mapToLong(VideoViewRepository.VideoViewCount::getViews).sum();
+                .mapToLong(VideoViewRepository.VideoViewCount::getViews)
+                .sum();
         return toResponse(video, ownerUsername, views);
     }
 
@@ -410,7 +435,8 @@ public class VideoServiceImpl implements VideoService {
         Video video = requireLive(findVideo(id), "tag");
         Set<Long> requested = new LinkedHashSet<>(tagIds);
         requested.remove(null);
-        List<Long> found = tagRepository.findAllById(requested).stream().map(Tag::getId).toList();
+        List<Long> found =
+                tagRepository.findAllById(requested).stream().map(Tag::getId).toList();
         List<Long> missing = requested.stream().filter(t -> !found.contains(t)).toList();
         if (!missing.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unknown tag id(s): " + missing);
@@ -419,7 +445,9 @@ public class VideoServiceImpl implements VideoService {
         merged.addAll(requested);
         int maxTags = settings.video().maxTagsPerVideo();
         if (merged.size() > maxTags) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A video can have at most " + maxTags + " tags (this would make " + merged.size() + ")");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "A video can have at most " + maxTags + " tags (this would make " + merged.size() + ")");
         }
         video.getTagIds().addAll(requested);
         return toResponse(videoRepository.save(video));
@@ -451,7 +479,8 @@ public class VideoServiceImpl implements VideoService {
             return List.of();
         }
         return categoryRepository.findAllById(video.getCategoryIds()).stream()
-                .sorted(Comparator.comparingInt(Category::getSortOrder).thenComparing(Category::getName, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparingInt(Category::getSortOrder)
+                        .thenComparing(Category::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(c -> new VideoCategoryDto(c.getId(), c.getName(), c.getColor(), c.isEnabled()))
                 .toList();
     }

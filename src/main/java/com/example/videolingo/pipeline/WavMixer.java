@@ -30,7 +30,8 @@ public final class WavMixer {
 
     public void place(Clip clip, long atMs) {
         if (clip.sampleRate() != sampleRate) {
-            throw new IllegalArgumentException("Clip is " + clip.sampleRate() + " Hz, timeline is " + sampleRate + " Hz");
+            throw new IllegalArgumentException(
+                    "Clip is " + clip.sampleRate() + " Hz, timeline is " + sampleRate + " Hz");
         }
         int offset = (int) (atMs * sampleRate / 1000);
         int end = offset + clip.samples().length;
@@ -53,10 +54,19 @@ public final class WavMixer {
     public void writeWav(Path file) throws IOException {
         int dataBytes = length * 2;
         ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-        header.put("RIFF".getBytes()).putInt(36 + dataBytes).put("WAVE".getBytes())
-                .put("fmt ".getBytes()).putInt(16).putShort((short) 1).putShort((short) 1)
-                .putInt(sampleRate).putInt(sampleRate * 2).putShort((short) 2).putShort((short) 16)
-                .put("data".getBytes()).putInt(dataBytes);
+        header.put("RIFF".getBytes())
+                .putInt(36 + dataBytes)
+                .put("WAVE".getBytes())
+                .put("fmt ".getBytes())
+                .putInt(16)
+                .putShort((short) 1)
+                .putShort((short) 1)
+                .putInt(sampleRate)
+                .putInt(sampleRate * 2)
+                .putShort((short) 2)
+                .putShort((short) 16)
+                .put("data".getBytes())
+                .putInt(dataBytes);
         try (OutputStream out = Files.newOutputStream(file)) {
             out.write(header.array());
             ByteBuffer data = ByteBuffer.allocate(64 * 1024).order(ByteOrder.LITTLE_ENDIAN);
@@ -91,7 +101,8 @@ public final class WavMixer {
                 bits = b.getShort(body + 14);
             } else if ("data".equals(id)) {
                 if (channels != 1 || bits != 16) {
-                    throw new JobFailure("Expected 16-bit mono speech audio, got " + bits + "-bit, " + channels + " channel(s)");
+                    throw new JobFailure(
+                            "Expected 16-bit mono speech audio, got " + bits + "-bit, " + channels + " channel(s)");
                 }
                 int n = Math.min(size, wav.length - body) / 2;
                 short[] samples = new short[n];

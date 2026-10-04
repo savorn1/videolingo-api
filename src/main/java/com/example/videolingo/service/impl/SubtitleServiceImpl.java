@@ -25,27 +25,19 @@ import com.example.videolingo.repository.SubtitleRepository;
 import com.example.videolingo.repository.TranscriptRepository;
 import com.example.videolingo.repository.TranscriptSegmentRepository;
 import com.example.videolingo.repository.VideoRepository;
+import com.example.videolingo.revision.RevisionService;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.SubtitleService;
 import com.example.videolingo.service.TranscriptService;
-import com.example.videolingo.revision.RevisionService;
+import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.subtitle.Cue;
 import com.example.videolingo.subtitle.SubtitleFiles;
 import com.example.videolingo.subtitle.SubtitleIssue;
 import com.example.videolingo.subtitle.SubtitleQuality;
 import com.example.videolingo.subtitle.SubtitleRules;
-import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.subtitle.SubtitleSegmenter;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Subquery;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -60,12 +52,31 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
 public class SubtitleServiceImpl implements SubtitleService {
 
-    private static final Set<String> SORTABLE = Set.of("id", "label", "language", "kind", "source", "published", "cueCount", "issueCount", "durationMs", "createdAt", "updatedAt", "reviewStatus");
+    private static final Set<String> SORTABLE = Set.of(
+            "id",
+            "label",
+            "language",
+            "kind",
+            "source",
+            "published",
+            "cueCount",
+            "issueCount",
+            "durationMs",
+            "createdAt",
+            "updatedAt",
+            "reviewStatus");
 
     private final SubtitleRepository subtitleRepository;
     private final SubtitleCueRepository cueRepository;
@@ -85,7 +96,8 @@ public class SubtitleServiceImpl implements SubtitleService {
     public PageResponse<SubtitleResponse> list(SubtitleFilterRequest filter) {
         List<Specification<Subtitle>> conditions = new ArrayList<>();
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
+            String pattern = "%"
+                    + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
             conditions.add((root, query, cb) -> {
                 Subquery<Long> videoIds = query.subquery(Long.class);
                 var video = videoIds.from(Video.class);
@@ -100,7 +112,8 @@ public class SubtitleServiceImpl implements SubtitleService {
             conditions.add((root, query, cb) -> root.get("videoId").in(filter.getVideoIds()));
         }
         if (filter.getLanguage() != null && !filter.getLanguage().isBlank()) {
-            conditions.add((root, query, cb) -> cb.equal(cb.lower(root.get("language")), filter.getLanguage().toLowerCase()));
+            conditions.add((root, query, cb) -> cb.equal(
+                    cb.lower(root.get("language")), filter.getLanguage().toLowerCase()));
         }
         if (filter.getSource() != null) {
             conditions.add((root, query, cb) -> cb.equal(root.get("source"), filter.getSource()));
@@ -110,20 +123,31 @@ public class SubtitleServiceImpl implements SubtitleService {
         }
         if (filter.getReviewStatus() != null) {
             // Rows from before the review workflow have no status: they're drafts.
-            conditions.add(filter.getReviewStatus() == ReviewStatus.DRAFT
-                    ? (root, query, cb) -> cb.or(cb.isNull(root.get("reviewStatus")), cb.equal(root.get("reviewStatus"), ReviewStatus.DRAFT))
-                    : (root, query, cb) -> cb.equal(root.get("reviewStatus"), filter.getReviewStatus()));
+            conditions.add(
+                    filter.getReviewStatus() == ReviewStatus.DRAFT
+                            ? (root, query, cb) -> cb.or(
+                                    cb.isNull(root.get("reviewStatus")),
+                                    cb.equal(root.get("reviewStatus"), ReviewStatus.DRAFT))
+                            : (root, query, cb) -> cb.equal(root.get("reviewStatus"), filter.getReviewStatus()));
         }
         if (filter.getHasIssues() != null) {
-            conditions.add(filter.getHasIssues()
-                    ? (root, query, cb) -> cb.greaterThan(root.get("issueCount"), 0)
-                    : (root, query, cb) -> cb.equal(root.get("issueCount"), 0));
+            conditions.add(
+                    filter.getHasIssues()
+                            ? (root, query, cb) -> cb.greaterThan(root.get("issueCount"), 0)
+                            : (root, query, cb) -> cb.equal(root.get("issueCount"), 0));
         }
         String sortBy = SORTABLE.contains(filter.getSortBy()) ? filter.getSortBy() : "updatedAt";
-        Page<Subtitle> page = subtitleRepository.findAll(Specification.allOf(conditions),
+        Page<Subtitle> page = subtitleRepository.findAll(
+                Specification.allOf(conditions),
                 PageableUtils.of(filter.getPage(), filter.getSize(), sortBy, filter.getSortOrder()));
-        Map<Long, Video> videos = videoRepository.findAllById(page.getContent().stream().map(Subtitle::getVideoId).distinct().toList())
-                .stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        Map<Long, Video> videos =
+                videoRepository
+                        .findAllById(page.getContent().stream()
+                                .map(Subtitle::getVideoId)
+                                .distinct()
+                                .toList())
+                        .stream()
+                        .collect(Collectors.toMap(Video::getId, Function.identity()));
         return PageResponse.of(page.map(s -> toResponse(s, videos.get(s.getVideoId()), null, null)));
     }
 
@@ -148,7 +172,8 @@ public class SubtitleServiceImpl implements SubtitleService {
             language = languageService.resolve(request.getLanguage(), true);
         }
         SubtitleKind kind = request.getKind() == null ? SubtitleKind.SUBTITLES : request.getKind();
-        SubtitleRules rules = request.getRules() != null ? toRules(request.getRules()) : settings.subtitleDefaults(language);
+        SubtitleRules rules =
+                request.getRules() != null ? toRules(request.getRules()) : settings.subtitleDefaults(language);
 
         Subtitle subtitle = Subtitle.builder()
                 .videoId(video.getId())
@@ -164,13 +189,17 @@ public class SubtitleServiceImpl implements SubtitleService {
         subtitle = subtitleRepository.save(subtitle);
         replaceCues(subtitle, transcript != null ? generateFrom(transcript, rules) : List.of());
         subtitle = subtitleRepository.save(subtitle);
-        snapshot(subtitle, transcript != null ? "Generated from transcript #" + transcript.getId() : "Created", actingUsername);
+        snapshot(
+                subtitle,
+                transcript != null ? "Generated from transcript #" + transcript.getId() : "Created",
+                actingUsername);
         return toDetailResponse(subtitle, null);
     }
 
     @Override
     @Transactional
-    public SubtitleResponse upload(MultipartFile file, Long videoId, String language, String label, SubtitleKind kind, String actingUsername) {
+    public SubtitleResponse upload(
+            MultipartFile file, Long videoId, String language, String label, SubtitleKind kind, String actingUsername) {
         if (file == null || file.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Choose a .srt or .vtt file to upload");
         }
@@ -190,8 +219,10 @@ public class SubtitleServiceImpl implements SubtitleService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Could not read the uploaded file");
         }
         if (parsed.cues().isEmpty()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "No usable cues in that file"
-                    + (parsed.warnings().isEmpty() ? "" : " — " + String.join("; ", parsed.warnings())));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "No usable cues in that file"
+                            + (parsed.warnings().isEmpty() ? "" : " — " + String.join("; ", parsed.warnings())));
         }
 
         SubtitleKind k = kind == null ? SubtitleKind.SUBTITLES : kind;
@@ -209,7 +240,10 @@ public class SubtitleServiceImpl implements SubtitleService {
         subtitle = subtitleRepository.save(subtitle);
         replaceCues(subtitle, parsed.cues());
         subtitle = subtitleRepository.save(subtitle);
-        snapshot(subtitle, "Uploaded " + (file.getOriginalFilename() == null ? "a file" : file.getOriginalFilename()), actingUsername);
+        snapshot(
+                subtitle,
+                "Uploaded " + (file.getOriginalFilename() == null ? "a file" : file.getOriginalFilename()),
+                actingUsername);
         return toDetailResponse(subtitle, parsed.warnings());
     }
 
@@ -220,13 +254,20 @@ public class SubtitleServiceImpl implements SubtitleService {
     public SubtitleResponse update(Long id, UpdateSubtitleRequest request, String actingUsername) {
         Subtitle subtitle = find(id);
         if (!Objects.equals(subtitle.getVersion(), request.getVersion())) {
-            throw new AppException(HttpStatus.CONFLICT, "This subtitle track changed since you opened it. Reload it, then re-apply your edits.");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "This subtitle track changed since you opened it. Reload it, then re-apply your edits.");
         }
         boolean wasPublished = subtitle.isPublished();
         SubtitleRules rulesBefore = rulesOf(subtitle);
         boolean languageUnchanged = request.getLanguage().strip().equalsIgnoreCase(subtitle.getLanguage());
         subtitle.setLanguage(languageService.resolve(request.getLanguage(), !languageUnchanged));
-        subtitle.setLabel(chooseLabel(subtitle.getVideoId(), request.getLabel(), subtitle.getLanguage(), request.getKind(), subtitle.getId()));
+        subtitle.setLabel(chooseLabel(
+                subtitle.getVideoId(),
+                request.getLabel(),
+                subtitle.getLanguage(),
+                request.getKind(),
+                subtitle.getId()));
         subtitle.setKind(request.getKind());
         subtitle.setPublished(request.getPublished());
         if (!subtitle.isPublished()) {
@@ -241,7 +282,8 @@ public class SubtitleServiceImpl implements SubtitleService {
             for (int i = 0; i < request.getCues().size(); i++) {
                 SubtitleCueDto c = request.getCues().get(i);
                 if (c.getEndMs() <= c.getStartMs()) {
-                    throw new AppException(HttpStatus.BAD_REQUEST, "Cue " + (i + 1) + ": end time must be after start time");
+                    throw new AppException(
+                            HttpStatus.BAD_REQUEST, "Cue " + (i + 1) + ": end time must be after start time");
                 }
                 cues.add(new Cue(c.getStartMs(), c.getEndMs(), normalizeCueText(c.getText())));
             }
@@ -256,13 +298,22 @@ public class SubtitleServiceImpl implements SubtitleService {
         if (contentChanged) {
             reopenIfApproved(subtitle);
         }
-        if (subtitle.isPublished() && !wasPublished && settings.translation().requireApprovalToPublish()
+        if (subtitle.isPublished()
+                && !wasPublished
+                && settings.translation().requireApprovalToPublish()
                 && subtitle.reviewStatus() != ReviewStatus.APPROVED) {
-            throw new AppException(HttpStatus.CONFLICT, "Get this track approved before publishing it (Settings › Translation requires review first)");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Get this track approved before publishing it (Settings › Translation requires review first)");
         }
-        if (subtitle.isPublished() && subtitle.getIssueCount() > 0 && settings.translation().blockPublishWithIssues()) {
-            throw new AppException(HttpStatus.CONFLICT, "Fix the " + subtitle.getIssueCount() + " readability issue"
-                    + (subtitle.getIssueCount() == 1 ? "" : "s") + " before publishing (Settings › Translation doesn't allow publishing tracks with issues)");
+        if (subtitle.isPublished()
+                && subtitle.getIssueCount() > 0
+                && settings.translation().blockPublishWithIssues()) {
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Fix the " + subtitle.getIssueCount() + " readability issue"
+                            + (subtitle.getIssueCount() == 1 ? "" : "s")
+                            + " before publishing (Settings › Translation doesn't allow publishing tracks with issues)");
         }
         subtitle = subtitleRepository.saveAndFlush(subtitle);
         if (contentChanged) {
@@ -292,16 +343,23 @@ public class SubtitleServiceImpl implements SubtitleService {
     @Transactional
     public SubtitleResponse regenerate(Long id, RegenerateSubtitleRequest request, String actingUsername) {
         Subtitle subtitle = find(id);
-        Long transcriptId = request != null && request.getTranscriptId() != null ? request.getTranscriptId() : subtitle.getTranscriptId();
+        Long transcriptId = request != null && request.getTranscriptId() != null
+                ? request.getTranscriptId()
+                : subtitle.getTranscriptId();
         if (transcriptId == null) {
-            throw new AppException(HttpStatus.CONFLICT, "This track wasn't generated from a transcript — choose one to regenerate from");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "This track wasn't generated from a transcript — choose one to regenerate from");
         }
         Transcript transcript = requireTranscriptOf(transcriptId, subtitle.getVideoId());
         if (!transcript.getLanguage().equalsIgnoreCase(subtitle.getLanguage())) {
-            throw new AppException(HttpStatus.CONFLICT, "That transcript is in " + transcript.getLanguage() + " but this track is " + subtitle.getLanguage()
-                    + " — pick a " + subtitle.getLanguage() + " transcript, or create a new track");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "That transcript is in " + transcript.getLanguage() + " but this track is " + subtitle.getLanguage()
+                            + " — pick a " + subtitle.getLanguage() + " transcript, or create a new track");
         }
-        SubtitleRules rules = request != null && request.getRules() != null ? toRules(request.getRules()) : rulesOf(subtitle);
+        SubtitleRules rules =
+                request != null && request.getRules() != null ? toRules(request.getRules()) : rulesOf(subtitle);
         applyRules(subtitle, rules);
         replaceCues(subtitle, generateFrom(transcript, rules));
         subtitle.setTranscriptId(transcript.getId());
@@ -334,7 +392,8 @@ public class SubtitleServiceImpl implements SubtitleService {
     @Transactional(readOnly = true)
     public RevisionService.RevisionDetail<RevisionService.SubtitleSnapshot> revision(Long id, Long revisionId) {
         find(id);
-        return revisions.get(ContentRevision.EntityType.SUBTITLE, id, revisionId, RevisionService.SubtitleSnapshot.class);
+        return revisions.get(
+                ContentRevision.EntityType.SUBTITLE, id, revisionId, RevisionService.SubtitleSnapshot.class);
     }
 
     // Brings back that revision's cues and readability rules as a new save
@@ -345,15 +404,20 @@ public class SubtitleServiceImpl implements SubtitleService {
     public SubtitleResponse restoreRevision(Long id, Long revisionId, Long version, String actingUsername) {
         Subtitle subtitle = find(id);
         if (version != null && !Objects.equals(subtitle.getVersion(), version)) {
-            throw new AppException(HttpStatus.CONFLICT, "This subtitle track changed since you opened it. Reload it, then try again.");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "This subtitle track changed since you opened it. Reload it, then try again.");
         }
-        var revision = revisions.get(ContentRevision.EntityType.SUBTITLE, id, revisionId, RevisionService.SubtitleSnapshot.class);
+        var revision = revisions.get(
+                ContentRevision.EntityType.SUBTITLE, id, revisionId, RevisionService.SubtitleSnapshot.class);
         RevisionService.SubtitleSnapshot snap = revision.snapshot();
         if (snap.rules() != null) {
             applyRules(subtitle, toRules(snap.rules()));
         }
-        List<Cue> cues = snap.cues() == null ? List.of() : snap.cues().stream()
-                .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText())).toList();
+        List<Cue> cues = snap.cues() == null
+                ? List.of()
+                : snap.cues().stream()
+                        .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText()))
+                        .toList();
         replaceCues(subtitle, cues);
         subtitle.setSource(SubtitleSource.MANUAL);
         subtitle.setUpdatedBy(actingUsername);
@@ -373,11 +437,18 @@ public class SubtitleServiceImpl implements SubtitleService {
                 + "." + TranscriptServiceImpl.slug(subtitle.getLabel()) + "." + subtitle.getLanguage();
         String fmt = format == null ? "vtt" : format.toLowerCase();
         return switch (fmt) {
-            case "srt" -> new TranscriptService.ExportedFile(base + ".srt", "application/x-subrip; charset=utf-8",
-                    SubtitleFiles.toSrt(cues).getBytes(StandardCharsets.UTF_8));
-            case "vtt" -> new TranscriptService.ExportedFile(base + ".vtt", "text/vtt; charset=utf-8",
-                    SubtitleFiles.toVtt(cues).getBytes(StandardCharsets.UTF_8));
-            default -> throw new AppException(HttpStatus.BAD_REQUEST, "Unknown format '" + format + "' — use srt or vtt");
+            case "srt" ->
+                new TranscriptService.ExportedFile(
+                        base + ".srt",
+                        "application/x-subrip; charset=utf-8",
+                        SubtitleFiles.toSrt(cues).getBytes(StandardCharsets.UTF_8));
+            case "vtt" ->
+                new TranscriptService.ExportedFile(
+                        base + ".vtt",
+                        "text/vtt; charset=utf-8",
+                        SubtitleFiles.toVtt(cues).getBytes(StandardCharsets.UTF_8));
+            default ->
+                throw new AppException(HttpStatus.BAD_REQUEST, "Unknown format '" + format + "' — use srt or vtt");
         };
     }
 
@@ -394,20 +465,31 @@ public class SubtitleServiceImpl implements SubtitleService {
 
     private void snapshot(Subtitle subtitle, String summary, String actor) {
         List<SubtitleCueDto> cues = cueRepository.findBySubtitleIdOrderByPositionAsc(subtitle.getId()).stream()
-                .map(c -> SubtitleCueDto.builder().startMs(c.getStartMs()).endMs(c.getEndMs()).text(c.getText()).build())
+                .map(c -> SubtitleCueDto.builder()
+                        .startMs(c.getStartMs())
+                        .endMs(c.getEndMs())
+                        .text(c.getText())
+                        .build())
                 .toList();
-        revisions.record(ContentRevision.EntityType.SUBTITLE, subtitle.getId(),
-                new RevisionService.SubtitleSnapshot(subtitle.getLabel(), subtitle.getLanguage(), subtitle.getKind(), toRulesDto(subtitle), cues),
-                cues.size(), summary, actor);
+        revisions.record(
+                ContentRevision.EntityType.SUBTITLE,
+                subtitle.getId(),
+                new RevisionService.SubtitleSnapshot(
+                        subtitle.getLabel(), subtitle.getLanguage(), subtitle.getKind(), toRulesDto(subtitle), cues),
+                cues.size(),
+                summary,
+                actor);
     }
 
     private Subtitle find(Long id) {
-        return subtitleRepository.findById(id)
+        return subtitleRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Subtitle track not found with id: " + id));
     }
 
     private Video requireLiveVideo(Long videoId) {
-        Video video = videoRepository.findById(videoId)
+        Video video = videoRepository
+                .findById(videoId)
                 .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Video not found with id: " + videoId));
         if (video.isDeleted()) {
             throw new AppException(HttpStatus.CONFLICT, "Restore the video before adding subtitles to it");
@@ -416,13 +498,18 @@ public class SubtitleServiceImpl implements SubtitleService {
     }
 
     private Transcript requireTranscriptOf(Long transcriptId, Long videoId) {
-        Transcript transcript = transcriptRepository.findById(transcriptId)
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Transcript not found with id: " + transcriptId));
+        Transcript transcript = transcriptRepository
+                .findById(transcriptId)
+                .orElseThrow(() ->
+                        new AppException(HttpStatus.BAD_REQUEST, "Transcript not found with id: " + transcriptId));
         if (!transcript.getVideoId().equals(videoId)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Transcript #" + transcriptId + " belongs to a different video");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Transcript #" + transcriptId + " belongs to a different video");
         }
         if (transcript.getSegmentCount() == 0) {
-            throw new AppException(HttpStatus.CONFLICT, "Transcript #" + transcriptId + " is empty — there's nothing to build subtitles from");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Transcript #" + transcriptId + " is empty — there's nothing to build subtitles from");
         }
         return transcript;
     }
@@ -443,11 +530,15 @@ public class SubtitleServiceImpl implements SubtitleService {
                     ? subtitleRepository.existsByVideoIdAndLabelIgnoreCase(videoId, label)
                     : subtitleRepository.existsByVideoIdAndLabelIgnoreCaseAndIdNot(videoId, label, selfId);
             if (taken) {
-                throw new AppException(HttpStatus.CONFLICT, "This video already has a track labelled \"" + label + "\"");
+                throw new AppException(
+                        HttpStatus.CONFLICT, "This video already has a track labelled \"" + label + "\"");
             }
             return label;
         }
-        String base = languageRepository.findByCodeIgnoreCase(language).map(l -> l.getName()).orElse(language)
+        String base = languageRepository
+                        .findByCodeIgnoreCase(language)
+                        .map(l -> l.getName())
+                        .orElse(language)
                 + (kind == SubtitleKind.CAPTIONS ? " (captions)" : "");
         String label = base;
         for (int n = 2; subtitleRepository.existsByVideoIdAndLabelIgnoreCase(videoId, label); n++) {
@@ -458,7 +549,11 @@ public class SubtitleServiceImpl implements SubtitleService {
 
     // Trim each line, drop blank lines, keep the author's line breaks.
     private static String normalizeCueText(String text) {
-        return text.replace("\r\n", "\n").lines().map(String::strip).filter(l -> !l.isEmpty()).collect(Collectors.joining("\n"));
+        return text.replace("\r\n", "\n")
+                .lines()
+                .map(String::strip)
+                .filter(l -> !l.isEmpty())
+                .collect(Collectors.joining("\n"));
     }
 
     private void replaceCues(Subtitle subtitle, List<Cue> cues) {
@@ -467,7 +562,13 @@ public class SubtitleServiceImpl implements SubtitleService {
         long end = 0;
         for (int i = 0; i < cues.size(); i++) {
             Cue c = cues.get(i);
-            rows.add(SubtitleCue.builder().subtitleId(subtitle.getId()).position(i).startMs(c.startMs()).endMs(c.endMs()).text(c.text()).build());
+            rows.add(SubtitleCue.builder()
+                    .subtitleId(subtitle.getId())
+                    .position(i)
+                    .startMs(c.startMs())
+                    .endMs(c.endMs())
+                    .text(c.text())
+                    .build());
             end = Math.max(end, c.endMs());
         }
         cueRepository.saveAll(rows);
@@ -482,24 +583,32 @@ public class SubtitleServiceImpl implements SubtitleService {
     }
 
     private void recountIssues(Subtitle subtitle) {
-        subtitle.setIssueCount(SubtitleQuality.check(cuesOf(subtitle.getId()), rulesOf(subtitle)).size());
+        subtitle.setIssueCount(SubtitleQuality.check(cuesOf(subtitle.getId()), rulesOf(subtitle))
+                .size());
     }
 
     private List<Cue> cuesOf(Long subtitleId) {
         return cueRepository.findBySubtitleIdOrderByPositionAsc(subtitleId).stream()
-                .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText())).toList();
+                .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText()))
+                .toList();
     }
 
     private static SubtitleRules toRules(SubtitleRulesDto dto) {
         try {
-            return new SubtitleRules(dto.getMaxCharsPerLine(), dto.getMaxLines(), dto.getMinDurationMs(), dto.getMaxDurationMs(), dto.getMaxCps());
+            return new SubtitleRules(
+                    dto.getMaxCharsPerLine(),
+                    dto.getMaxLines(),
+                    dto.getMinDurationMs(),
+                    dto.getMaxDurationMs(),
+                    dto.getMaxCps());
         } catch (IllegalArgumentException e) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Maximum duration must be longer than the minimum");
         }
     }
 
     private static SubtitleRules rulesOf(Subtitle s) {
-        return new SubtitleRules(s.getMaxCharsPerLine(), s.getMaxLines(), s.getMinDurationMs(), s.getMaxDurationMs(), s.getMaxCps());
+        return new SubtitleRules(
+                s.getMaxCharsPerLine(), s.getMaxLines(), s.getMinDurationMs(), s.getMaxDurationMs(), s.getMaxCps());
     }
 
     private static void applyRules(Subtitle s, SubtitleRules r) {
@@ -511,31 +620,48 @@ public class SubtitleServiceImpl implements SubtitleService {
     }
 
     private static SubtitleRulesDto toRulesDto(Subtitle s) {
-        return SubtitleRulesDto.builder().maxCharsPerLine(s.getMaxCharsPerLine()).maxLines(s.getMaxLines())
-                .minDurationMs(s.getMinDurationMs()).maxDurationMs(s.getMaxDurationMs()).maxCps(s.getMaxCps()).build();
+        return SubtitleRulesDto.builder()
+                .maxCharsPerLine(s.getMaxCharsPerLine())
+                .maxLines(s.getMaxLines())
+                .minDurationMs(s.getMinDurationMs())
+                .maxDurationMs(s.getMaxDurationMs())
+                .maxCps(s.getMaxCps())
+                .build();
     }
 
     // Strict UTF-8, so a Latin-1/Windows-1252 file is reported instead of
     // silently turning its accents into '?'.
     private static String decodeUtf8(byte[] bytes) {
         try {
-            return StandardCharsets.UTF_8.newDecoder()
+            return StandardCharsets.UTF_8
+                    .newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes)).toString();
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
         } catch (CharacterCodingException e) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The file isn't UTF-8 text — re-save it as UTF-8 and upload again");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "The file isn't UTF-8 text — re-save it as UTF-8 and upload again");
         }
     }
 
     private SubtitleResponse toDetailResponse(Subtitle subtitle, List<String> warnings) {
         Video video = videoRepository.findById(subtitle.getVideoId()).orElse(null);
         List<SubtitleCue> rows = cueRepository.findBySubtitleIdOrderByPositionAsc(subtitle.getId());
-        List<Cue> cues = rows.stream().map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText())).toList();
+        List<Cue> cues = rows.stream()
+                .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText()))
+                .toList();
         List<SubtitleIssueDto> issues = SubtitleQuality.check(cues, rulesOf(subtitle)).stream()
-                .map((SubtitleIssue i) -> new SubtitleIssueDto(i.cueIndex(), i.type().name(), i.message())).toList();
+                .map((SubtitleIssue i) ->
+                        new SubtitleIssueDto(i.cueIndex(), i.type().name(), i.message()))
+                .toList();
         List<SubtitleCueDto> cueDtos = rows.stream()
-                .map(c -> SubtitleCueDto.builder().id(c.getId()).startMs(c.getStartMs()).endMs(c.getEndMs()).text(c.getText()).build())
+                .map(c -> SubtitleCueDto.builder()
+                        .id(c.getId())
+                        .startMs(c.getStartMs())
+                        .endMs(c.getEndMs())
+                        .text(c.getText())
+                        .build())
                 .toList();
         SubtitleResponse response = toResponse(subtitle, video, cueDtos, issues);
         response.setWarnings(warnings);
@@ -543,9 +669,14 @@ public class SubtitleServiceImpl implements SubtitleService {
         return response;
     }
 
-    private SubtitleResponse toResponse(Subtitle s, Video video, List<SubtitleCueDto> cues, List<SubtitleIssueDto> issues) {
-        String transcriptLanguage = s.getTranscriptId() == null ? null
-                : transcriptRepository.findById(s.getTranscriptId()).map(Transcript::getLanguage).orElse(null);
+    private SubtitleResponse toResponse(
+            Subtitle s, Video video, List<SubtitleCueDto> cues, List<SubtitleIssueDto> issues) {
+        String transcriptLanguage = s.getTranscriptId() == null
+                ? null
+                : transcriptRepository
+                        .findById(s.getTranscriptId())
+                        .map(Transcript::getLanguage)
+                        .orElse(null);
         return SubtitleResponse.builder()
                 .id(s.getId())
                 .videoId(s.getVideoId())

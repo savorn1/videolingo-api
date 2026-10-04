@@ -1,10 +1,9 @@
 package com.example.videolingo.subtitle;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class SubtitleLogicTest {
 
@@ -20,7 +19,9 @@ class SubtitleLogicTest {
 
     @Test
     void mediumSegmentIsWrappedIntoTwoBalancedLines() {
-        Cue cue = SubtitleSegmenter.segment(List.of(new Cue(0, 4000, "I would like a large coffee with oat milk, please.")), RULES).get(0);
+        Cue cue = SubtitleSegmenter.segment(
+                        List.of(new Cue(0, 4000, "I would like a large coffee with oat milk, please.")), RULES)
+                .get(0);
         String[] lines = cue.text().split("\n");
         assertEquals(2, lines.length);
         assertTrue(lines[0].length() <= 42 && lines[1].length() <= 42);
@@ -33,7 +34,9 @@ class SubtitleLogicTest {
                 + "Would you like to try our seasonal pumpkin latte with extra cinnamon on top?";
         List<Cue> cues = SubtitleSegmenter.segment(List.of(new Cue(10_000, 20_000, text)), RULES);
         assertTrue(cues.size() >= 2);
-        assertTrue(cues.get(0).text().replace("\n", " ").endsWith("today."), cues.get(0).text());
+        assertTrue(
+                cues.get(0).text().replace("\n", " ").endsWith("today."),
+                cues.get(0).text());
         assertEquals(10_000, cues.get(0).startMs());
         assertEquals(20_000, cues.get(cues.size() - 1).endMs());
         for (int i = 1; i < cues.size(); i++) {
@@ -51,7 +54,11 @@ class SubtitleLogicTest {
         assertEquals(16, ja16.maxCharsPerLine());
         List<Cue> cues = SubtitleSegmenter.segment(List.of(new Cue(0, 9000, ja)), ja16);
         assertTrue(cues.size() >= 2, "66 characters don't fit one 2×16 cue");
-        assertEquals(ja, String.join("", cues.stream().map(c -> c.text().replace("\n", "")).toList()), "no characters lost or spaces added");
+        assertEquals(
+                ja,
+                String.join(
+                        "", cues.stream().map(c -> c.text().replace("\n", "")).toList()),
+                "no characters lost or spaces added");
         for (Cue c : cues) {
             for (String line : c.text().split("\n")) {
                 assertTrue(SubtitleText.length(line) <= 16, line);
@@ -62,7 +69,8 @@ class SubtitleLogicTest {
 
     @Test
     void shortCuesAreStretchedButNeverIntoTheNextCue() {
-        List<Cue> cues = SubtitleSegmenter.segment(List.of(new Cue(0, 300, "Hi."), new Cue(600, 900, "Yes."), new Cue(5000, 5200, "Bye.")), RULES);
+        List<Cue> cues = SubtitleSegmenter.segment(
+                List.of(new Cue(0, 300, "Hi."), new Cue(600, 900, "Yes."), new Cue(5000, 5200, "Bye.")), RULES);
         assertEquals(600, cues.get(0).endMs(), "stretched up to the next cue only");
         assertEquals(1600, cues.get(1).endMs(), "stretched to the minimum");
         assertEquals(6000, cues.get(2).endMs(), "last cue stretched to the minimum");
@@ -87,7 +95,8 @@ class SubtitleLogicTest {
 
     @Test
     void emptyAndBrokenSegmentsAreDropped() {
-        assertTrue(SubtitleSegmenter.segment(List.of(new Cue(0, 1000, "   "), new Cue(2000, 1000, "backwards")), RULES).isEmpty());
+        assertTrue(SubtitleSegmenter.segment(List.of(new Cue(0, 1000, "   "), new Cue(2000, 1000, "backwards")), RULES)
+                .isEmpty());
     }
 
     // ── quality ──────────────────────────────────────────────────────────
@@ -101,7 +110,9 @@ class SubtitleLogicTest {
                 new Cue(5000, 6000, "a\nb\nc"),
                 new Cue(7000, 16000, "Too long on screen"),
                 new Cue(17000, 17500, "Way too many characters for half a second"));
-        List<SubtitleIssue.Type> types = SubtitleQuality.check(cues, RULES).stream().map(SubtitleIssue::type).toList();
+        List<SubtitleIssue.Type> types = SubtitleQuality.check(cues, RULES).stream()
+                .map(SubtitleIssue::type)
+                .toList();
         assertTrue(types.contains(SubtitleIssue.Type.TOO_SHORT));
         assertTrue(types.contains(SubtitleIssue.Type.OVERLAP));
         assertTrue(types.contains(SubtitleIssue.Type.LINE_TOO_LONG));
@@ -112,14 +123,17 @@ class SubtitleLogicTest {
 
     @Test
     void cleanTrackHasNoIssues() {
-        assertTrue(SubtitleQuality.check(List.of(new Cue(0, 2000, "Hello."), new Cue(2000, 4000, "How are you?")), RULES).isEmpty());
+        assertTrue(
+                SubtitleQuality.check(List.of(new Cue(0, 2000, "Hello."), new Cue(2000, 4000, "How are you?")), RULES)
+                        .isEmpty());
     }
 
     // ── files ────────────────────────────────────────────────────────────
 
     @Test
     void parsesSrtKeepingLineBreaksAndSkippingBrokenCues() {
-        String srt = "﻿1\r\n00:00:01,000 --> 00:00:02,500\r\n<i>Hello</i>\r\nthere\r\n\r\n2\r\n00:00:05,000 --> 00:00:04,000\r\nBackwards\r\n\r\n3\r\n00:00:06,000 --> 00:00:07,000\r\nEnd";
+        String srt =
+                "﻿1\r\n00:00:01,000 --> 00:00:02,500\r\n<i>Hello</i>\r\nthere\r\n\r\n2\r\n00:00:05,000 --> 00:00:04,000\r\nBackwards\r\n\r\n3\r\n00:00:06,000 --> 00:00:07,000\r\nEnd";
         SubtitleFiles.Parsed parsed = SubtitleFiles.parse(srt);
         assertEquals("srt", parsed.format());
         assertEquals(List.of(new Cue(1000, 2500, "Hello\nthere"), new Cue(6000, 7000, "End")), parsed.cues());
@@ -128,7 +142,8 @@ class SubtitleLogicTest {
 
     @Test
     void parsesVttWithHeaderNotesSettingsAndShortTimestamps() {
-        String vtt = "WEBVTT\n\nNOTE hi\n\nid-1\n00:01.000 --> 00:02.000 align:start\n<v Ana>Hi &amp; bye\n\n01:00:00.000 --> 01:00:01.5\nLate";
+        String vtt =
+                "WEBVTT\n\nNOTE hi\n\nid-1\n00:01.000 --> 00:02.000 align:start\n<v Ana>Hi &amp; bye\n\n01:00:00.000 --> 01:00:01.5\nLate";
         SubtitleFiles.Parsed parsed = SubtitleFiles.parse(vtt);
         assertEquals("vtt", parsed.format());
         assertEquals(List.of(new Cue(1000, 2000, "Hi & bye"), new Cue(3_600_000, 3_601_500, "Late")), parsed.cues());
@@ -143,7 +158,8 @@ class SubtitleLogicTest {
     void writesSrtAndEscapedVtt() {
         List<Cue> cues = List.of(new Cue(0, 1500, "A & B\n<tag> --> x"));
         assertEquals("1\n00:00:00,000 --> 00:00:01,500\nA & B\n<tag> --> x\n\n", SubtitleFiles.toSrt(cues));
-        assertEquals("WEBVTT\n\n00:00:00.000 --> 00:00:01.500\nA &amp; B\n&lt;tag> --&gt; x\n\n", SubtitleFiles.toVtt(cues));
+        assertEquals(
+                "WEBVTT\n\n00:00:00.000 --> 00:00:01.500\nA &amp; B\n&lt;tag> --&gt; x\n\n", SubtitleFiles.toVtt(cues));
     }
 
     @Test

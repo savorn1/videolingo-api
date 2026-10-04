@@ -1,9 +1,8 @@
 package com.example.videolingo.apikey;
 
+import java.util.Collection;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
-
-import java.util.Collection;
 
 // A request authenticated with an API key rather than a sign-in. Behaves
 // exactly like the owner's session token; the distinct type lets the audit

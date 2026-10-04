@@ -10,13 +10,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "ai_chat_messages", indexes = @Index(name = "idx_ai_chat_messages_chat", columnList = "chat_id, id"))
@@ -27,7 +26,10 @@ import java.time.LocalDateTime;
 @Builder
 public class AiChatMessage {
 
-    public enum Role { USER, ASSISTANT }
+    public enum Role {
+        USER,
+        ASSISTANT
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

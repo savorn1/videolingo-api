@@ -22,6 +22,7 @@ public class AiGenerateRequest {
     private String outputLanguage;
 
     // Number of items for KEY_POINTS / QUESTIONS / QUIZ (defaults 6 / 5 / 8).
-    @Min(1) @Max(20)
+    @Min(1)
+    @Max(20)
     private Integer count;
 }

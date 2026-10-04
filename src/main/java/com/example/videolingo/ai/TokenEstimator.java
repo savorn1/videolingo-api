@@ -7,8 +7,7 @@ package com.example.videolingo.ai;
 // Deliberately errs high rather than low. Pure and static so it's unit-tested.
 public final class TokenEstimator {
 
-    private TokenEstimator() {
-    }
+    private TokenEstimator() {}
 
     public static long estimate(String text) {
         if (text == null || text.isEmpty()) {

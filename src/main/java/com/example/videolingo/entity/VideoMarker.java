@@ -1,13 +1,12 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 // A named timestamp on a video's timeline (e.g. "intro ends"), shown as a
 // flag on the ruler and used as a snap target when dragging the playhead.

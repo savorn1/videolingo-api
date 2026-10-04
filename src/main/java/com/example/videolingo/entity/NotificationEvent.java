@@ -10,17 +10,18 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // Timeline entry for a notification: created, sent, failed, retried, read.
 @Entity
-@Table(name = "notification_events", indexes = @Index(name = "idx_notification_events_notification", columnList = "notification_id"))
+@Table(
+        name = "notification_events",
+        indexes = @Index(name = "idx_notification_events_notification", columnList = "notification_id"))
 @Getter
 @Setter
 @NoArgsConstructor

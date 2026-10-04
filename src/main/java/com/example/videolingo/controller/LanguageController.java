@@ -36,17 +36,21 @@ public class LanguageController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<LanguageResponse>> create(@Valid @RequestBody LanguageRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Language created", languageService.create(request)));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Language created", languageService.create(request)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<LanguageResponse>> update(@PathVariable Long id, @Valid @RequestBody LanguageRequest request) {
+    public ResponseEntity<ApiResponse<LanguageResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody LanguageRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Language updated", languageService.update(id, request)));
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<LanguageResponse>> updateStatus(@PathVariable Long id, @Valid @RequestBody UpdateLanguageStatusRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(request.getEnabled() ? "Language enabled" : "Language disabled",
+    public ResponseEntity<ApiResponse<LanguageResponse>> updateStatus(
+            @PathVariable Long id, @Valid @RequestBody UpdateLanguageStatusRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                request.getEnabled() ? "Language enabled" : "Language disabled",
                 languageService.setEnabled(id, request.getEnabled())));
     }
 

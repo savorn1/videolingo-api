@@ -8,13 +8,12 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.time.LocalDateTime;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
-
-import java.io.IOException;
-import java.time.LocalDateTime;
 
 // Writes an AuditLog row for each request AuditPolicy keeps. Registered
 // inside the security chain right after authentication (SecurityConfig), so
@@ -43,13 +42,17 @@ public class AuditRequestFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = path(request);
         // Only the login body is kept (to name who tried to sign in), and only its username.
-        HttpServletRequest req = LOGIN.equals(path) ? new ContentCachingRequestWrapper(request, LOGIN_BODY_LIMIT) : request;
+        HttpServletRequest req =
+                LOGIN.equals(path) ? new ContentCachingRequestWrapper(request, LOGIN_BODY_LIMIT) : request;
         long started = System.nanoTime();
         try {
             chain.doFilter(req, response);
         } finally {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            boolean signedIn = auth != null && auth.isAuthenticated() && auth.getName() != null && !"anonymousUser".equals(auth.getName());
+            boolean signedIn = auth != null
+                    && auth.isAuthenticated()
+                    && auth.getName() != null
+                    && !"anonymousUser".equals(auth.getName());
             String detail = null;
             String username = signedIn ? auth.getName() : null;
             if (req instanceof ContentCachingRequestWrapper cached) {
@@ -63,11 +66,17 @@ public class AuditRequestFilter extends OncePerRequestFilter {
             auditService.record(AuditLog.builder()
                     .createdAt(LocalDateTime.now())
                     .username(cap(username, 100))
-                    .authType(auth instanceof ApiKeyAuthenticationToken ? "api-key" : signedIn || username != null ? "session" : null)
+                    .authType(
+                            auth instanceof ApiKeyAuthenticationToken
+                                    ? "api-key"
+                                    : signedIn || username != null ? "session" : null)
                     .method(request.getMethod().toUpperCase())
                     .path(cap(path, 500))
                     .module(cap(AuditPolicy.moduleOf(path), 60))
-                    .action(path.startsWith("/api/admin/") ? RequestModuleAction.actionOf(request).name() : null)
+                    .action(
+                            path.startsWith("/api/admin/")
+                                    ? RequestModuleAction.actionOf(request).name()
+                                    : null)
                     .entityId(AuditPolicy.entityIdOf(path))
                     .status(response.getStatus())
                     .durationMs((System.nanoTime() - started) / 1_000_000)

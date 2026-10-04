@@ -1,8 +1,5 @@
 package com.example.videolingo.service;
 
-import com.example.videolingo.dto.TranscriptSegmentDto;
-import java.util.List;
-
 import com.example.videolingo.dto.CreateTranscriptRequest;
 import com.example.videolingo.dto.PageResponse;
 import com.example.videolingo.dto.ProcessingJobResponse;
@@ -10,8 +7,10 @@ import com.example.videolingo.dto.TranscriptFilterRequest;
 import com.example.videolingo.dto.TranscriptResponse;
 import com.example.videolingo.dto.TranscriptSearchHit;
 import com.example.videolingo.dto.TranscriptSearchRequest;
+import com.example.videolingo.dto.TranscriptSegmentDto;
 import com.example.videolingo.dto.UpdateTranscriptRequest;
 import com.example.videolingo.revision.RevisionService;
+import java.util.List;
 
 public interface TranscriptService {
 
@@ -46,6 +45,5 @@ public interface TranscriptService {
     // `version` (optional) guards against restoring over edits made since the page loaded.
     TranscriptResponse restoreRevision(Long id, Long revisionId, Long version, String actingUsername);
 
-    record ExportedFile(String filename, String contentType, byte[] content) {
-    }
+    record ExportedFile(String filename, String contentType, byte[] content) {}
 }

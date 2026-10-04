@@ -9,14 +9,13 @@ import com.example.videolingo.dto.PageResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.glossary.GlossaryService;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // Translation glossaries, gated as module "glossaries" (GET = READ, the rest WRITE).
 @RestController
@@ -35,7 +34,8 @@ public class GlossaryController {
     // The merged terms that apply when translating into `target` (from
     // `source`, if given) — what the subtitle editor checks cues against.
     @GetMapping("/terms")
-    public ResponseEntity<ApiResponse<List<ApplicableTerm>>> terms(@RequestParam String target, @RequestParam(required = false) String source) {
+    public ResponseEntity<ApiResponse<List<ApplicableTerm>>> terms(
+            @RequestParam String target, @RequestParam(required = false) String source) {
         return ResponseEntity.ok(ApiResponse.success(glossaryService.applicable(source, target)));
     }
 
@@ -45,15 +45,18 @@ public class GlossaryController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<GlossaryResponse>> create(@Valid @RequestBody GlossaryRequest request, Authentication authentication) {
+    public ResponseEntity<ApiResponse<GlossaryResponse>> create(
+            @Valid @RequestBody GlossaryRequest request, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Glossary created", glossaryService.create(request, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Glossary created", glossaryService.create(request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<GlossaryResponse>> update(@PathVariable Long id, @Valid @RequestBody GlossaryRequest request,
-                                                                Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Glossary saved", glossaryService.update(id, request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<GlossaryResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody GlossaryRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Glossary saved", glossaryService.update(id, request, requireUsername(authentication))));
     }
 
     @DeleteMapping("/{id}")

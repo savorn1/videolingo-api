@@ -2,13 +2,12 @@ package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.entity.VideoVisibility;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @Builder

@@ -25,11 +25,13 @@ public class VideoDownloadController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<ProcessingJobResponse>> start(@PathVariable Long videoId,
-                                                                    @RequestBody VideoDownloadService.DownloadRequest request,
-                                                                    Authentication authentication) {
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> start(
+            @PathVariable Long videoId,
+            @RequestBody VideoDownloadService.DownloadRequest request,
+            Authentication authentication) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success("Download queued", downloadService.start(videoId, request, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Download queued", downloadService.start(videoId, request, requireUsername(authentication))));
     }
 
     @DeleteMapping("/{exportId}")

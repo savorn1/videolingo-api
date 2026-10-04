@@ -8,14 +8,13 @@ import com.example.videolingo.webhook.WebhookService.DeliveryResponse;
 import com.example.videolingo.webhook.WebhookService.WebhookRequest;
 import com.example.videolingo.webhook.WebhookService.WebhookResponse;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // Outgoing webhooks, module "webhooks" (GET = READ, the rest WRITE).
 @RestController
@@ -43,23 +42,29 @@ public class WebhookController {
     }
 
     @GetMapping("/{id}/deliveries")
-    public ResponseEntity<ApiResponse<List<DeliveryResponse>>> deliveries(@PathVariable Long id, @RequestParam(defaultValue = "50") int limit) {
+    public ResponseEntity<ApiResponse<List<DeliveryResponse>>> deliveries(
+            @PathVariable Long id, @RequestParam(defaultValue = "50") int limit) {
         return ResponseEntity.ok(ApiResponse.success(webhookService.deliveries(id, limit)));
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<WebhookResponse>> create(@Valid @RequestBody WebhookRequest request, Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Webhook created", webhookService.create(request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<WebhookResponse>> create(
+            @Valid @RequestBody WebhookRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "Webhook created", webhookService.create(request, requireUsername(authentication))));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<WebhookResponse>> update(@PathVariable Long id, @Valid @RequestBody WebhookRequest request) {
+    public ResponseEntity<ApiResponse<WebhookResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody WebhookRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Webhook saved", webhookService.update(id, request)));
     }
 
     @PostMapping("/{id}/rotate-secret")
     public ResponseEntity<ApiResponse<WebhookResponse>> rotateSecret(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success("New signing secret created — update your receiver", webhookService.rotateSecret(id)));
+        return ResponseEntity.ok(ApiResponse.success(
+                "New signing secret created — update your receiver", webhookService.rotateSecret(id)));
     }
 
     @PostMapping("/{id}/test")

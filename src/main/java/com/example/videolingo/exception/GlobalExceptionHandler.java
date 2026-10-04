@@ -1,5 +1,7 @@
 package com.example.videolingo.exception;
 
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,14 +10,11 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MultipartException;
-
-import java.util.Map;
-import java.util.stream.Collectors;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 // Deliberately no catch-all Exception handler — every thrown exception must be
 // an AppException (or one of the other handled types below) so its response
@@ -46,18 +45,27 @@ public class GlobalExceptionHandler {
     // otherwise falls through to Spring's default body, which has no message.
     @ExceptionHandler({MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
     ResponseEntity<Map<String, Object>> handleMissingInput(Exception ex) {
-        String name = ex instanceof MissingServletRequestPartException part ? part.getRequestPartName()
+        String name = ex instanceof MissingServletRequestPartException part
+                ? part.getRequestPartName()
                 : ((MissingServletRequestParameterException) ex).getParameterName();
         log.warn("status=400 message=Missing request input '{}'", name);
         return ResponseEntity.badRequest()
-                .body(Map.of("statusCode", 400, "message", "Missing required field: " + name, "errors", Map.of(name, "is required")));
+                .body(Map.of(
+                        "statusCode",
+                        400,
+                        "message",
+                        "Missing required field: " + name,
+                        "errors",
+                        Map.of(name, "is required")));
     }
 
     // Malformed JSON or a value that doesn't fit the field (e.g. an unknown enum
     // constant) — otherwise the whitelabel body, with no message.
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
-        log.warn("status=400 message=Unreadable request body: {}", ex.getMostSpecificCause().getMessage());
+        log.warn(
+                "status=400 message=Unreadable request body: {}",
+                ex.getMostSpecificCause().getMessage());
         return ResponseEntity.badRequest()
                 .body(Map.of("statusCode", 400, "message", "The request body is malformed or has an invalid value"));
     }
@@ -68,11 +76,18 @@ public class GlobalExceptionHandler {
     ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         log.warn("status=400 message=Invalid value for '{}': {}", ex.getName(), ex.getValue());
         return ResponseEntity.badRequest()
-                .body(Map.of("statusCode", 400, "message", "Invalid value for '" + ex.getName() + "'", "errors", Map.of(ex.getName(), "is invalid")));
+                .body(Map.of(
+                        "statusCode",
+                        400,
+                        "message",
+                        "Invalid value for '" + ex.getName() + "'",
+                        "errors",
+                        Map.of(ex.getName(), "is invalid")));
     }
 
     @ExceptionHandler(com.example.videolingo.settings.SettingsValidationException.class)
-    ResponseEntity<Map<String, Object>> handleSettingsValidation(com.example.videolingo.settings.SettingsValidationException ex) {
+    ResponseEntity<Map<String, Object>> handleSettingsValidation(
+            com.example.videolingo.settings.SettingsValidationException ex) {
         log.warn("status=400 message=Settings validation failed errors={}", ex.getErrors());
         return ResponseEntity.badRequest()
                 .body(Map.of("statusCode", 400, "message", "Validation failed", "errors", ex.getErrors()));
@@ -80,8 +95,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("statusCode", 403, "message", "Access denied"));
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("statusCode", 403, "message", "Access denied"));
     }
 
     // Covers MaxUploadSizeExceededException too (it extends MultipartException) —

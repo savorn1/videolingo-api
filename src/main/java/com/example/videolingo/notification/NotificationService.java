@@ -25,17 +25,6 @@ import com.example.videolingo.repository.NotificationRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.settings.SettingsService;
 import com.example.videolingo.util.PageableUtils;
-import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -54,6 +43,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 // Send Notification, the notification log, Notification History (one row per
 // send) and each user's in-app inbox. Email delivery itself is asynchronous
@@ -64,7 +63,8 @@ public class NotificationService {
 
     public static final int MAX_RECIPIENTS = 10_000;
     private static final int LIST_BODY_PREVIEW = 160;
-    private static final Set<String> SORTABLE = Set.of("createdAt", "sentAt", "readAt", "status", "channel", "recipientUsername", "subject");
+    private static final Set<String> SORTABLE =
+            Set.of("createdAt", "sentAt", "readAt", "status", "channel", "recipientUsername", "subject");
     private static final Set<String> BATCH_SORTABLE = Set.of("createdAt", "subject", "recipientCount", "sentBy");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
@@ -83,27 +83,36 @@ public class NotificationService {
 
     // ── Send ──────────────────────────────────────────────────────────────
 
-    private record Content(NotificationTemplate template, String subject, String body) {
-    }
+    private record Content(NotificationTemplate template, String subject, String body) {}
 
-    private record Audience(List<User> users, String label, int disabledSkipped) {
-    }
+    private record Audience(List<User> users, String label, int disabledSkipped) {}
 
     @Transactional(readOnly = true)
     public PreviewResponse preview(SendRequest request, String actor) {
         Content content = content(request, false);
         Audience audience = audience(request);
         Set<String> used = TemplateRenderer.variables(content.subject(), content.body());
-        Set<String> missing = TemplateRenderer.missing(TemplateRenderer.customVariables(content.subject(), content.body()), request.getVariables());
+        Set<String> missing = TemplateRenderer.missing(
+                TemplateRenderer.customVariables(content.subject(), content.body()), request.getVariables());
         // With nobody chosen yet, preview as the sender.
-        User sample = audience.users().isEmpty() ? userRepository.findByUsername(actor).orElse(null) : audience.users().get(0);
+        User sample = audience.users().isEmpty()
+                ? userRepository.findByUsername(actor).orElse(null)
+                : audience.users().get(0);
         Map<String, String> values = values(sample, request.getVariables());
         int withoutEmail = request.getChannels().contains(NotificationChannel.EMAIL)
-                ? (int) audience.users().stream().filter(u -> blank(u.getEmail())).count() : 0;
-        return new PreviewResponse(content.subject() == null ? "" : TemplateRenderer.render(content.subject(), values),
+                ? (int) audience.users().stream()
+                        .filter(u -> blank(u.getEmail()))
+                        .count()
+                : 0;
+        return new PreviewResponse(
+                content.subject() == null ? "" : TemplateRenderer.render(content.subject(), values),
                 content.body() == null ? "" : TemplateRenderer.render(content.body(), values),
-                sample == null ? null : sample.getUsername(), audience.users().size(), withoutEmail, audience.disabledSkipped(),
-                List.copyOf(used), List.copyOf(missing));
+                sample == null ? null : sample.getUsername(),
+                audience.users().size(),
+                withoutEmail,
+                audience.disabledSkipped(),
+                List.copyOf(used),
+                List.copyOf(missing));
     }
 
     @Transactional
@@ -111,19 +120,28 @@ public class NotificationService {
         Content content = content(request, true);
         Audience audience = audience(request);
         if (audience.users().isEmpty()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, audience.disabledSkipped() > 0
-                    ? "Every selected user is disabled — nobody would receive this" : "Choose at least one recipient");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    audience.disabledSkipped() > 0
+                            ? "Every selected user is disabled — nobody would receive this"
+                            : "Choose at least one recipient");
         }
-        Set<String> missing = TemplateRenderer.missing(TemplateRenderer.customVariables(content.subject(), content.body()), request.getVariables());
+        Set<String> missing = TemplateRenderer.missing(
+                TemplateRenderer.customVariables(content.subject(), content.body()), request.getVariables());
         if (!missing.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Fill in a value for: " + String.join(", ", missing));
         }
-        List<NotificationChannel> channels = request.getChannels().stream().sorted(Comparator.comparing(Enum::ordinal)).toList();
+        List<NotificationChannel> channels = request.getChannels().stream()
+                .sorted(Comparator.comparing(Enum::ordinal))
+                .toList();
 
         NotificationBatch batch = batchRepository.save(NotificationBatch.builder()
-                .templateId(content.template() == null ? null : content.template().getId())
-                .templateCode(content.template() == null ? null : content.template().getCode())
-                .templateName(content.template() == null ? null : content.template().getName())
+                .templateId(
+                        content.template() == null ? null : content.template().getId())
+                .templateCode(
+                        content.template() == null ? null : content.template().getCode())
+                .templateName(
+                        content.template() == null ? null : content.template().getName())
                 // Shared values filled in; per-recipient ones ({{username}}…) stay as placeholders.
                 .subject(cap(TemplateRenderer.render(content.subject(), values(null, request.getVariables())), 200))
                 .channels(channels.stream().map(Enum::name).collect(Collectors.joining(",")))
@@ -146,8 +164,10 @@ public class NotificationService {
                         .recipientUsername(user.getUsername())
                         .recipientEmail(blank(user.getEmail()) ? null : user.getEmail())
                         .channel(channel)
-                        .status(channel == NotificationChannel.IN_APP ? NotificationStatus.SENT
-                                : noEmail ? NotificationStatus.FAILED : NotificationStatus.PENDING)
+                        .status(
+                                channel == NotificationChannel.IN_APP
+                                        ? NotificationStatus.SENT
+                                        : noEmail ? NotificationStatus.FAILED : NotificationStatus.PENDING)
                         .attempts(channel == NotificationChannel.IN_APP ? 1 : 0)
                         .sentAt(channel == NotificationChannel.IN_APP ? now : null)
                         .errorMessage(noEmail ? "User has no email address" : null)
@@ -169,7 +189,8 @@ public class NotificationService {
             } else if (n.getStatus() == NotificationStatus.FAILED) {
                 timeline.add(event(n.getId(), NotificationEventType.FAILED, n.getErrorMessage(), actor));
             } else {
-                timeline.add(event(n.getId(), NotificationEventType.CREATED, "Queued for " + n.getRecipientEmail(), actor));
+                timeline.add(
+                        event(n.getId(), NotificationEventType.CREATED, "Queued for " + n.getRecipientEmail(), actor));
                 queued.add(n.getId());
             }
         }
@@ -190,9 +211,14 @@ public class NotificationService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyInApp(Collection<String> usernames, String subject, String body, String actor) {
-        List<Long> ids = usernames.stream().filter(Objects::nonNull).distinct()
-                .map(userRepository::findByUsername).flatMap(Optional::stream)
-                .filter(User::isEnabled).map(User::getId).toList();
+        List<Long> ids = usernames.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(userRepository::findByUsername)
+                .flatMap(Optional::stream)
+                .filter(User::isEnabled)
+                .map(User::getId)
+                .toList();
         if (ids.isEmpty()) {
             return;
         }
@@ -207,13 +233,19 @@ public class NotificationService {
     /** Same, to every enabled ADMIN account. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyAdmins(String subject, String body, String actor) {
-        notifyInApp(userRepository.findAll((root, q, cb) -> cb.equal(root.get("role"), Role.ADMIN)).stream()
-                .map(User::getUsername).toList(), subject, body, actor);
+        notifyInApp(
+                userRepository.findAll((root, q, cb) -> cb.equal(root.get("role"), Role.ADMIN)).stream()
+                        .map(User::getUsername)
+                        .toList(),
+                subject,
+                body,
+                actor);
     }
 
     private Content content(SendRequest r, boolean strict) {
         NotificationTemplate template = r.getTemplateId() == null ? null : templateService.find(r.getTemplateId());
-        String subject = !blank(r.getSubject()) ? r.getSubject().trim() : template == null ? null : template.getSubject();
+        String subject =
+                !blank(r.getSubject()) ? r.getSubject().trim() : template == null ? null : template.getSubject();
         String body = !blank(r.getBody()) ? r.getBody().strip() : template == null ? null : template.getBody();
         if (strict && (subject == null || body == null)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Write a subject and message, or choose a template");
@@ -229,14 +261,20 @@ public class NotificationService {
             users = userRepository.findAll(Sort.by("username"));
             label = "All users";
         } else if (r.getRole() != null) {
-            users = userRepository.findAll((root, q, cb) -> cb.equal(root.get("role"), r.getRole()), Sort.by("username"));
+            users = userRepository.findAll(
+                    (root, q, cb) -> cb.equal(root.get("role"), r.getRole()), Sort.by("username"));
             label = r.getRole() == Role.ADMIN ? "All admins" : "All users with role USER";
         } else if (r.getUserIds() != null && !r.getUserIds().isEmpty()) {
             Set<Long> ids = new LinkedHashSet<>(r.getUserIds());
-            Map<Long, User> found = userRepository.findAllById(ids).stream().collect(Collectors.toMap(User::getId, Function.identity()));
-            List<Long> unknown = ids.stream().filter(id -> !found.containsKey(id)).toList();
+            Map<Long, User> found = userRepository.findAllById(ids).stream()
+                    .collect(Collectors.toMap(User::getId, Function.identity()));
+            List<Long> unknown =
+                    ids.stream().filter(id -> !found.containsKey(id)).toList();
             if (!unknown.isEmpty()) {
-                throw new AppException(HttpStatus.NOT_FOUND, "Users not found: " + unknown.stream().map(String::valueOf).collect(Collectors.joining(", ")));
+                throw new AppException(
+                        HttpStatus.NOT_FOUND,
+                        "Users not found: "
+                                + unknown.stream().map(String::valueOf).collect(Collectors.joining(", ")));
             }
             users = ids.stream().map(found::get).toList();
             label = "";
@@ -250,10 +288,12 @@ public class NotificationService {
         } else if (enabled.size() == 1 && disabled == 0) {
             label = enabled.get(0).getUsername();
         } else {
-            label = enabled.size() + " selected user" + (enabled.size() == 1 ? "" : "s") + (disabled > 0 ? " (" + disabled + " disabled skipped)" : "");
+            label = enabled.size() + " selected user" + (enabled.size() == 1 ? "" : "s")
+                    + (disabled > 0 ? " (" + disabled + " disabled skipped)" : "");
         }
         if (enabled.size() > MAX_RECIPIENTS) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A single send can reach at most " + MAX_RECIPIENTS + " users");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "A single send can reach at most " + MAX_RECIPIENTS + " users");
         }
         return new Audience(enabled, label, disabled);
     }
@@ -284,7 +324,9 @@ public class NotificationService {
         List<Specification<Notification>> c = new ArrayList<>();
         if (!blank(f.getSearch())) {
             String p = likePattern(f.getSearch());
-            c.add((r, q, cb) -> cb.or(cb.like(cb.lower(r.get("subject")), p, '\\'), cb.like(cb.lower(r.get("recipientUsername")), p, '\\'),
+            c.add((r, q, cb) -> cb.or(
+                    cb.like(cb.lower(r.get("subject")), p, '\\'),
+                    cb.like(cb.lower(r.get("recipientUsername")), p, '\\'),
                     cb.like(cb.lower(r.get("recipientEmail")), p, '\\')));
         }
         if (f.getRecipientId() != null) c.add((r, q, cb) -> cb.equal(r.get("recipientId"), f.getRecipientId()));
@@ -296,11 +338,19 @@ public class NotificationService {
             c.add((r, q, cb) -> cb.equal(r.get("channel"), NotificationChannel.IN_APP));
             c.add((r, q, cb) -> f.getRead() ? cb.isNotNull(r.get("readAt")) : cb.isNull(r.get("readAt")));
         }
-        if (f.getFrom() != null) c.add((r, q, cb) -> cb.greaterThanOrEqualTo(r.get("createdAt"), f.getFrom().atStartOfDay()));
-        if (f.getTo() != null) c.add((r, q, cb) -> cb.lessThan(r.get("createdAt"), f.getTo().plusDays(1).atStartOfDay()));
+        if (f.getFrom() != null)
+            c.add((r, q, cb) ->
+                    cb.greaterThanOrEqualTo(r.get("createdAt"), f.getFrom().atStartOfDay()));
+        if (f.getTo() != null)
+            c.add((r, q, cb) ->
+                    cb.lessThan(r.get("createdAt"), f.getTo().plusDays(1).atStartOfDay()));
         String sortBy = SORTABLE.contains(f.getSortBy()) ? f.getSortBy() : "createdAt";
-        return PageResponse.of(notificationRepository.findAll(Specification.allOf(c),
-                PageableUtils.of(f.getPage(), Math.min(Math.max(f.getSize(), 1), 100), sortBy, f.getSortOrder())).map(n -> toResponse(n, false, null)));
+        return PageResponse.of(notificationRepository
+                .findAll(
+                        Specification.allOf(c),
+                        PageableUtils.of(
+                                f.getPage(), Math.min(Math.max(f.getSize(), 1), 100), sortBy, f.getSortOrder()))
+                .map(n -> toResponse(n, false, null)));
     }
 
     @Transactional(readOnly = true)
@@ -317,14 +367,20 @@ public class NotificationService {
             throw new AppException(HttpStatus.CONFLICT, "Only email notifications can be resent");
         }
         if (n.getStatus() != NotificationStatus.FAILED) {
-            throw new AppException(HttpStatus.CONFLICT, "Only failed emails can be resent (this one is " + n.getStatus().name().toLowerCase(Locale.ROOT) + ")");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Only failed emails can be resent (this one is "
+                            + n.getStatus().name().toLowerCase(Locale.ROOT) + ")");
         }
         // Pick up an address added or changed since the first attempt.
         if (n.getRecipientId() != null) {
-            userRepository.findById(n.getRecipientId()).ifPresent(u -> n.setRecipientEmail(blank(u.getEmail()) ? null : u.getEmail()));
+            userRepository
+                    .findById(n.getRecipientId())
+                    .ifPresent(u -> n.setRecipientEmail(blank(u.getEmail()) ? null : u.getEmail()));
         }
         if (blank(n.getRecipientEmail())) {
-            throw new AppException(HttpStatus.CONFLICT, n.getRecipientUsername() + " has no email address — add one first");
+            throw new AppException(
+                    HttpStatus.CONFLICT, n.getRecipientUsername() + " has no email address — add one first");
         }
         n.setStatus(NotificationStatus.PENDING);
         n.setErrorMessage(null);
@@ -341,23 +397,35 @@ public class NotificationService {
         List<Specification<NotificationBatch>> c = new ArrayList<>();
         if (!blank(f.getSearch())) {
             String p = likePattern(f.getSearch());
-            c.add((r, q, cb) -> cb.or(cb.like(cb.lower(r.get("subject")), p, '\\'), cb.like(cb.lower(r.get("templateName")), p, '\\'),
-                    cb.like(cb.lower(r.get("templateCode")), p, '\\'), cb.like(cb.lower(r.get("sentBy")), p, '\\')));
+            c.add((r, q, cb) -> cb.or(
+                    cb.like(cb.lower(r.get("subject")), p, '\\'),
+                    cb.like(cb.lower(r.get("templateName")), p, '\\'),
+                    cb.like(cb.lower(r.get("templateCode")), p, '\\'),
+                    cb.like(cb.lower(r.get("sentBy")), p, '\\')));
         }
         if (f.getTemplateId() != null) c.add((r, q, cb) -> cb.equal(r.get("templateId"), f.getTemplateId()));
-        if (!blank(f.getSentBy())) c.add((r, q, cb) -> cb.equal(r.get("sentBy"), f.getSentBy().trim()));
-        if (f.getFrom() != null) c.add((r, q, cb) -> cb.greaterThanOrEqualTo(r.get("createdAt"), f.getFrom().atStartOfDay()));
-        if (f.getTo() != null) c.add((r, q, cb) -> cb.lessThan(r.get("createdAt"), f.getTo().plusDays(1).atStartOfDay()));
+        if (!blank(f.getSentBy()))
+            c.add((r, q, cb) -> cb.equal(r.get("sentBy"), f.getSentBy().trim()));
+        if (f.getFrom() != null)
+            c.add((r, q, cb) ->
+                    cb.greaterThanOrEqualTo(r.get("createdAt"), f.getFrom().atStartOfDay()));
+        if (f.getTo() != null)
+            c.add((r, q, cb) ->
+                    cb.lessThan(r.get("createdAt"), f.getTo().plusDays(1).atStartOfDay()));
         String sortBy = BATCH_SORTABLE.contains(f.getSortBy()) ? f.getSortBy() : "createdAt";
-        Page<NotificationBatch> page = batchRepository.findAll(Specification.allOf(c),
+        Page<NotificationBatch> page = batchRepository.findAll(
+                Specification.allOf(c),
                 PageableUtils.of(f.getPage(), Math.min(Math.max(f.getSize(), 1), 100), sortBy, f.getSortOrder()));
-        Map<Long, NotificationRepository.BatchCounts> counts = countsFor(page.getContent().stream().map(NotificationBatch::getId).toList());
+        Map<Long, NotificationRepository.BatchCounts> counts = countsFor(
+                page.getContent().stream().map(NotificationBatch::getId).toList());
         return PageResponse.of(page.map(b -> toBatch(b, counts.get(b.getId()))));
     }
 
     @Transactional(readOnly = true)
     public BatchResponse batch(Long id) {
-        NotificationBatch b = batchRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Send not found with id: " + id));
+        NotificationBatch b = batchRepository
+                .findById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Send not found with id: " + id));
         return toBatch(b, countsFor(List.of(id)).get(id));
     }
 
@@ -366,22 +434,28 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> inbox(String username, boolean unreadOnly, int page, int size) {
         Long userId = userId(username);
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 50), Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+        PageRequest pageable = PageRequest.of(
+                Math.max(page - 1, 0),
+                Math.min(Math.max(size, 1), 50),
+                Sort.by(Sort.Direction.DESC, "createdAt", "id"));
         Page<Notification> result = unreadOnly
-                ? notificationRepository.findByRecipientIdAndChannelAndReadAtIsNull(userId, NotificationChannel.IN_APP, pageable)
+                ? notificationRepository.findByRecipientIdAndChannelAndReadAtIsNull(
+                        userId, NotificationChannel.IN_APP, pageable)
                 : notificationRepository.findByRecipientIdAndChannel(userId, NotificationChannel.IN_APP, pageable);
         return PageResponse.of(result.map(n -> toResponse(n, true, null)));
     }
 
     @Transactional(readOnly = true)
     public long unreadCount(String username) {
-        return notificationRepository.countByRecipientIdAndChannelAndReadAtIsNull(userId(username), NotificationChannel.IN_APP);
+        return notificationRepository.countByRecipientIdAndChannelAndReadAtIsNull(
+                userId(username), NotificationChannel.IN_APP);
     }
 
     @Transactional
     public NotificationResponse markRead(Long id, String username) {
         Long userId = userId(username);
-        Notification n = notificationRepository.findById(id)
+        Notification n = notificationRepository
+                .findById(id)
                 .filter(x -> userId.equals(x.getRecipientId()) && x.getChannel() == NotificationChannel.IN_APP)
                 // Someone else's notification is reported as missing, not forbidden.
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Notification not found with id: " + id));
@@ -400,19 +474,25 @@ public class NotificationService {
             return 0;
         }
         int updated = notificationRepository.markRead(ids, LocalDateTime.now());
-        eventRepository.saveAll(ids.stream().map(id -> event(id, NotificationEventType.READ, "Marked all as read", username)).toList());
+        eventRepository.saveAll(ids.stream()
+                .map(id -> event(id, NotificationEventType.READ, "Marked all as read", username))
+                .toList());
         return updated;
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
 
     private Long userId(String username) {
-        return userRepository.findByUsername(username).map(User::getId)
+        return userRepository
+                .findByUsername(username)
+                .map(User::getId)
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Account not found"));
     }
 
     private Notification find(Long id) {
-        return notificationRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Notification not found with id: " + id));
+        return notificationRepository
+                .findById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Notification not found with id: " + id));
     }
 
     private Map<Long, NotificationRepository.BatchCounts> countsFor(List<Long> batchIds) {
@@ -420,32 +500,83 @@ public class NotificationService {
             return Map.of();
         }
         return notificationRepository.countsByBatch(batchIds).stream()
-                .collect(Collectors.toMap(NotificationRepository.BatchCounts::getBatchId, Function.identity(), (a, b) -> a, LinkedHashMap::new));
+                .collect(Collectors.toMap(
+                        NotificationRepository.BatchCounts::getBatchId,
+                        Function.identity(),
+                        (a, b) -> a,
+                        LinkedHashMap::new));
     }
 
-    private static NotificationEvent event(Long notificationId, NotificationEventType type, String detail, String actor) {
-        return NotificationEvent.builder().notificationId(notificationId).type(type).detail(detail).actor(actor).build();
+    private static NotificationEvent event(
+            Long notificationId, NotificationEventType type, String detail, String actor) {
+        return NotificationEvent.builder()
+                .notificationId(notificationId)
+                .type(type)
+                .detail(detail)
+                .actor(actor)
+                .build();
     }
 
     private static NotificationResponse toResponse(Notification n, boolean fullBody, List<NotificationEvent> timeline) {
         boolean truncated = !fullBody && n.getBody().length() > LIST_BODY_PREVIEW;
         String body = truncated ? n.getBody().substring(0, LIST_BODY_PREVIEW).stripTrailing() + "…" : n.getBody();
-        return new NotificationResponse(n.getId(), n.getBatchId(), n.getRecipientId(), n.getRecipientUsername(), n.getRecipientEmail(),
-                n.getChannel(), n.getStatus(), n.getTemplateId(), n.getTemplateCode(), n.getSubject(), body, truncated, n.getAttempts(),
-                n.getErrorMessage(), n.getSentBy(), n.getCreatedAt(), n.getSentAt(), n.getReadAt(),
-                timeline == null ? null : timeline.stream().map(e -> new EventDto(e.getId(), e.getType(), e.getDetail(), e.getActor(), e.getCreatedAt())).toList());
+        return new NotificationResponse(
+                n.getId(),
+                n.getBatchId(),
+                n.getRecipientId(),
+                n.getRecipientUsername(),
+                n.getRecipientEmail(),
+                n.getChannel(),
+                n.getStatus(),
+                n.getTemplateId(),
+                n.getTemplateCode(),
+                n.getSubject(),
+                body,
+                truncated,
+                n.getAttempts(),
+                n.getErrorMessage(),
+                n.getSentBy(),
+                n.getCreatedAt(),
+                n.getSentAt(),
+                n.getReadAt(),
+                timeline == null
+                        ? null
+                        : timeline.stream()
+                                .map(e -> new EventDto(
+                                        e.getId(), e.getType(), e.getDetail(), e.getActor(), e.getCreatedAt()))
+                                .toList());
     }
 
     private static BatchResponse toBatch(NotificationBatch b, NotificationRepository.BatchCounts c) {
-        List<NotificationChannel> channels = Arrays.stream(b.getChannels().split(",")).filter(s -> !s.isBlank()).map(NotificationChannel::valueOf).toList();
-        return new BatchResponse(b.getId(), b.getTemplateId(), b.getTemplateCode(), b.getTemplateName(), b.getSubject(), channels, b.getAudience(),
-                b.getRecipientCount(), b.getSentBy(), b.getCreatedAt(),
-                c == null ? 0 : c.getTotal(), c == null ? 0 : c.getSent(), c == null ? 0 : c.getFailed(), c == null ? 0 : c.getPending(),
-                c == null ? 0 : c.getRead(), c == null ? 0 : c.getInApp());
+        List<NotificationChannel> channels = Arrays.stream(b.getChannels().split(","))
+                .filter(s -> !s.isBlank())
+                .map(NotificationChannel::valueOf)
+                .toList();
+        return new BatchResponse(
+                b.getId(),
+                b.getTemplateId(),
+                b.getTemplateCode(),
+                b.getTemplateName(),
+                b.getSubject(),
+                channels,
+                b.getAudience(),
+                b.getRecipientCount(),
+                b.getSentBy(),
+                b.getCreatedAt(),
+                c == null ? 0 : c.getTotal(),
+                c == null ? 0 : c.getSent(),
+                c == null ? 0 : c.getFailed(),
+                c == null ? 0 : c.getPending(),
+                c == null ? 0 : c.getRead(),
+                c == null ? 0 : c.getInApp());
     }
 
     static String likePattern(String search) {
-        String escaped = search.trim().toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        String escaped = search.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
         return "%" + escaped + "%";
     }
 

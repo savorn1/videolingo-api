@@ -17,13 +17,15 @@ public class CurrentUserResolver {
         if (authentication == null || authentication.getName() == null) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
-        return userRepository.findByUsername(authentication.getName())
+        return userRepository
+                .findByUsername(authentication.getName())
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "User not found"))
                 .getId();
     }
 
     public boolean isAdmin(Authentication authentication) {
-        return authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        return authentication != null
+                && authentication.getAuthorities().stream()
+                        .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 }

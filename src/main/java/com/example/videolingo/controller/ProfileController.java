@@ -30,20 +30,21 @@ public class ProfileController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<UserResponse>> getMyProfile(Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(
-                userService.getUser(currentUserResolver.requireUserId(authentication))));
+        return ResponseEntity.ok(
+                ApiResponse.success(userService.getUser(currentUserResolver.requireUserId(authentication))));
     }
 
     @PutMapping
-    public ResponseEntity<ApiResponse<UserResponse>> updateMyProfile(@Valid @RequestBody UpdateProfileRequest request,
-                                                                        Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Profile updated",
+    public ResponseEntity<ApiResponse<UserResponse>> updateMyProfile(
+            @Valid @RequestBody UpdateProfileRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Profile updated",
                 userService.updateProfile(currentUserResolver.requireUserId(authentication), request)));
     }
 
     @PutMapping("/password")
-    public ResponseEntity<ApiResponse<Void>> changeMyPassword(@Valid @RequestBody ChangePasswordRequest request,
-                                                                 Authentication authentication) {
+    public ResponseEntity<ApiResponse<Void>> changeMyPassword(
+            @Valid @RequestBody ChangePasswordRequest request, Authentication authentication) {
         userService.changePassword(currentUserResolver.requireUserId(authentication), request);
         return ResponseEntity.ok(ApiResponse.success("Password changed", null));
     }

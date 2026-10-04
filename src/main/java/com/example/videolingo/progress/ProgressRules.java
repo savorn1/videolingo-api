@@ -12,8 +12,7 @@ public final class ProgressRules {
     /** Below this, "Continue watching" doesn't bother listing a video. */
     public static final int MIN_RESUME_SECONDS = 5;
 
-    private ProgressRules() {
-    }
+    private ProgressRules() {}
 
     public static boolean completes(boolean ended, double positionSeconds, Double durationSeconds) {
         if (ended) {
@@ -33,7 +32,9 @@ public final class ProgressRules {
             return 0;
         }
         long claimed = Math.round(claimedSeconds);
-        long cap = secondsSinceLast == null ? MAX_DELTA_SECONDS : Math.min(MAX_DELTA_SECONDS, Math.max(0, secondsSinceLast) + DELTA_SLACK_SECONDS);
+        long cap = secondsSinceLast == null
+                ? MAX_DELTA_SECONDS
+                : Math.min(MAX_DELTA_SECONDS, Math.max(0, secondsSinceLast) + DELTA_SLACK_SECONDS);
         return Math.min(claimed, cap);
     }
 

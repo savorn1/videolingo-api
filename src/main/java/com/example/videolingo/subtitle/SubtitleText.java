@@ -5,8 +5,7 @@ package com.example.videolingo.subtitle;
 // characters; everything else only at spaces.
 public final class SubtitleText {
 
-    private SubtitleText() {
-    }
+    private SubtitleText() {}
 
     public static boolean isSpaceless(String text) {
         int letters = 0;
@@ -19,9 +18,12 @@ public final class SubtitleText {
             }
             letters++;
             Character.UnicodeScript script = Character.UnicodeScript.of(cp);
-            if (script == Character.UnicodeScript.HAN || script == Character.UnicodeScript.HIRAGANA
-                    || script == Character.UnicodeScript.KATAKANA || script == Character.UnicodeScript.THAI
-                    || script == Character.UnicodeScript.KHMER || script == Character.UnicodeScript.LAO
+            if (script == Character.UnicodeScript.HAN
+                    || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA
+                    || script == Character.UnicodeScript.THAI
+                    || script == Character.UnicodeScript.KHMER
+                    || script == Character.UnicodeScript.LAO
                     || script == Character.UnicodeScript.MYANMAR) {
                 spaceless++;
             }

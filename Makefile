@@ -1,4 +1,4 @@
-.PHONY: run build test clean package
+.PHONY: run build test clean package format format-check
 
 -include .env
 export
@@ -21,3 +21,9 @@ test:
 
 clean:
 	./mvnw clean
+
+format:
+	./mvnw spotless:apply
+
+format-check:
+	./mvnw spotless:check

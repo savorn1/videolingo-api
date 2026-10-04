@@ -1,13 +1,12 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 // A prior version of a video's file — kept when the file is replaced (upload
 // or a promoted trim/crop edit) so nothing is silently lost. See VideoVersionService.

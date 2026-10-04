@@ -10,22 +10,23 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One delivery: one recipient on one channel, with the subject/body already
 // rendered for them. Recipient and template fields are snapshots so the record
 // stays readable after the user or template is deleted.
 @Entity
-@Table(name = "notifications", indexes = {
-        @Index(name = "idx_notifications_recipient", columnList = "recipient_id, channel, read_at"),
-        @Index(name = "idx_notifications_batch", columnList = "batch_id")
-})
+@Table(
+        name = "notifications",
+        indexes = {
+            @Index(name = "idx_notifications_recipient", columnList = "recipient_id, channel, read_at"),
+            @Index(name = "idx_notifications_batch", columnList = "batch_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

@@ -1,13 +1,12 @@
 package com.example.videolingo.learn;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class LearnLogicTest {
 
@@ -39,7 +38,9 @@ class LearnLogicTest {
     void easeStaysInBounds() {
         Srs.State s = new Srs.State(1.3, 1, 1, 0, NOW);
         assertEquals(1.3, Srs.review(s, Srs.Grade.HARD, NOW).ease(), 1e-9);
-        assertTrue(Srs.review(new Srs.State(3.0, 10, 3, 0, NOW), Srs.Grade.EASY, NOW).ease() <= 3.0);
+        assertTrue(Srs.review(new Srs.State(3.0, 10, 3, 0, NOW), Srs.Grade.EASY, NOW)
+                        .ease()
+                <= 3.0);
     }
 
     @Test

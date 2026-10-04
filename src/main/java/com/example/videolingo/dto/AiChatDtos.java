@@ -3,16 +3,14 @@ package com.example.videolingo.dto;
 import com.example.videolingo.entity.AiChatMessage;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import lombok.Data;
 
 public final class AiChatDtos {
 
-    private AiChatDtos() {
-    }
+    private AiChatDtos() {}
 
     @Data
     public static class CreateChatRequest {
@@ -29,15 +27,23 @@ public final class AiChatDtos {
         private String content;
     }
 
-    public record MessageDto(Long id, AiChatMessage.Role role, String content, LocalDateTime createdAt, AiUsageDto usage) {
-    }
+    public record MessageDto(
+            Long id, AiChatMessage.Role role, String content, LocalDateTime createdAt, AiUsageDto usage) {}
 
-    public record ChatDto(Long id, Long videoId, String videoTitle, Long transcriptId, String transcriptLanguage, String title,
-                          int messageCount, BigDecimal totalCostUsd, String createdBy, LocalDateTime createdAt,
-                          LocalDateTime updatedAt, List<MessageDto> messages) {
-    }
+    public record ChatDto(
+            Long id,
+            Long videoId,
+            String videoTitle,
+            Long transcriptId,
+            String transcriptLanguage,
+            String title,
+            int messageCount,
+            BigDecimal totalCostUsd,
+            String createdBy,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            List<MessageDto> messages) {}
 
     // Result of one chat turn: the stored user + assistant messages.
-    public record TurnDto(ChatDto chat, MessageDto userMessage, MessageDto assistantMessage) {
-    }
+    public record TurnDto(ChatDto chat, MessageDto userMessage, MessageDto assistantMessage) {}
 }

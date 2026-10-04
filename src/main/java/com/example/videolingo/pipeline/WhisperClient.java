@@ -2,9 +2,6 @@ package com.example.videolingo.pipeline;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -20,6 +17,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 // Speech-to-text through OpenAI's transcription API (Whisper), with segment
 // timestamps (verbose_json).
@@ -34,25 +33,23 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WhisperClient {
 
-    public record Segment(long startMs, long endMs, String text) {
-    }
+    public record Segment(long startMs, long endMs, String text) {}
 
     /** `detectedLanguage` is what the model reports hearing, as a lower-case name ("khmer"), or null. */
-    public record Result(List<Segment> segments, String detectedLanguage) {
-    }
+    public record Result(List<Segment> segments, String detectedLanguage) {}
 
     // ISO 639-1 codes the transcription API accepts as a `language` hint
     // (OpenAI's speech-to-text "supported languages" list).
     static final Set<String> SUPPORTED_HINTS = Set.of(
-            "af", "ar", "hy", "az", "be", "bs", "bg", "ca", "zh", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "gl", "de", "el",
-            "he", "hi", "hu", "is", "id", "it", "ja", "kn", "kk", "ko", "lv", "lt", "mk", "ms", "mr", "mi", "ne", "no", "fa", "pl",
-            "pt", "ro", "ru", "sr", "sk", "sl", "es", "sw", "sv", "tl", "ta", "th", "tr", "uk", "ur", "vi", "cy");
+            "af", "ar", "hy", "az", "be", "bs", "bg", "ca", "zh", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "gl",
+            "de", "el", "he", "hi", "hu", "is", "id", "it", "ja", "kn", "kk", "ko", "lv", "lt", "mk", "ms", "mr", "mi",
+            "ne", "no", "fa", "pl", "pt", "ro", "ru", "sr", "sk", "sl", "es", "sw", "sv", "tl", "ta", "th", "tr", "uk",
+            "ur", "vi", "cy");
 
     // For languages without a hint: a line in the language, passed as the
     // `prompt` (text the model treats as coming just before the audio), which
     // makes it far likelier to transcribe in that language and script.
-    static final Map<String, String> PRIMING_PROMPTS = Map.of(
-            "km", "សូមស្វាគមន៍។ ខាងក្រោមនេះជាការសន្ទនាជាភាសាខ្មែរ។");
+    static final Map<String, String> PRIMING_PROMPTS = Map.of("km", "សូមស្វាគមន៍។ ខាងក្រោមនេះជាការសន្ទនាជាភាសាខ្មែរ។");
 
     /** The `language` hint to send for this video language, or null when the API wouldn't accept one. */
     static String languageHint(String language) {
@@ -97,8 +94,9 @@ public class WhisperClient {
             } else if (primingPrompt(language) != null) {
                 field(body, boundary, "prompt", primingPrompt(language));
             }
-            body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + audio.getFileName()
-                    + "\"\r\nContent-Type: audio/mpeg\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\""
+                            + audio.getFileName() + "\"\r\nContent-Type: audio/mpeg\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
             body.write(Files.readAllBytes(audio));
             body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
@@ -123,7 +121,8 @@ public class WhisperClient {
             throw new JobFailure("OpenAI rejected the API key (OPENAI_API_KEY)");
         }
         if (response.statusCode() >= 400) {
-            throw new JobFailure("Speech-to-text failed (HTTP " + response.statusCode() + "): " + errorText(response.body()));
+            throw new JobFailure(
+                    "Speech-to-text failed (HTTP " + response.statusCode() + "): " + errorText(response.body()));
         }
         try {
             JsonNode root = objectMapper.readTree(response.body());
@@ -153,8 +152,10 @@ public class WhisperClient {
         }
     }
 
-    private static void field(ByteArrayOutputStream body, String boundary, String name, String value) throws IOException {
-        body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"\r\n\r\n" + value + "\r\n")
-                .getBytes(StandardCharsets.UTF_8));
+    private static void field(ByteArrayOutputStream body, String boundary, String name, String value)
+            throws IOException {
+        body.write(
+                ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"\r\n\r\n" + value + "\r\n")
+                        .getBytes(StandardCharsets.UTF_8));
     }
 }

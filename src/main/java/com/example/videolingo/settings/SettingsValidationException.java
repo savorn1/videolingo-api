@@ -1,8 +1,7 @@
 package com.example.videolingo.settings;
 
-import lombok.Getter;
-
 import java.util.Map;
+import lombok.Getter;
 
 // Field errors from a settings update, reported like request validation errors.
 @Getter

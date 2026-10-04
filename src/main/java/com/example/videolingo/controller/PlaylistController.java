@@ -23,35 +23,38 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class PlaylistController {
 
-    public record CreateRequest(@NotBlank @Size(max = 200) String title) {
-    }
+    public record CreateRequest(@NotBlank @Size(max = 200) String title) {}
 
-    public record RenameRequest(@NotBlank @Size(max = 200) String title) {
-    }
+    public record RenameRequest(@NotBlank @Size(max = 200) String title) {}
 
-    public record AddVideoRequest(@NotNull Long videoId) {
-    }
+    public record AddVideoRequest(@NotNull Long videoId) {}
 
     private final PlaylistService playlistService;
     private final CurrentUserResolver currentUser;
 
     @GetMapping
-    public ResponseEntity<PageResponse<CollectionResponse>> mine(@RequestParam(defaultValue = "1") int page,
-                                                                    @RequestParam(defaultValue = "50") int size,
-                                                                    Authentication authentication) {
+    public ResponseEntity<PageResponse<CollectionResponse>> mine(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int size,
+            Authentication authentication) {
         return ResponseEntity.ok(playlistService.mine(userId(authentication), page, size));
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CollectionResponse>> create(@Valid @RequestBody CreateRequest request, Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Playlist created",
-                playlistService.create(userId(authentication), request.title(), requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<CollectionResponse>> create(
+            @Valid @RequestBody CreateRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "Playlist created",
+                        playlistService.create(
+                                userId(authentication), request.title(), requireUsername(authentication))));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<CollectionResponse>> rename(@PathVariable Long id, @Valid @RequestBody RenameRequest request,
-                                                                    Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Playlist renamed", playlistService.rename(userId(authentication), id, request.title())));
+    public ResponseEntity<ApiResponse<CollectionResponse>> rename(
+            @PathVariable Long id, @Valid @RequestBody RenameRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Playlist renamed", playlistService.rename(userId(authentication), id, request.title())));
     }
 
     @DeleteMapping("/{id}")
@@ -61,15 +64,19 @@ public class PlaylistController {
     }
 
     @PostMapping("/{id}/videos")
-    public ResponseEntity<ApiResponse<CollectionResponse>> addVideo(@PathVariable Long id, @Valid @RequestBody AddVideoRequest request,
-                                                                      Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Added to playlist",
-                playlistService.addVideo(userId(authentication), id, request.videoId(), requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<CollectionResponse>> addVideo(
+            @PathVariable Long id, @Valid @RequestBody AddVideoRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Added to playlist",
+                playlistService.addVideo(
+                        userId(authentication), id, request.videoId(), requireUsername(authentication))));
     }
 
     @DeleteMapping("/{id}/videos/{videoId}")
-    public ResponseEntity<ApiResponse<CollectionResponse>> removeVideo(@PathVariable Long id, @PathVariable Long videoId, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Removed from playlist", playlistService.removeVideo(userId(authentication), id, videoId)));
+    public ResponseEntity<ApiResponse<CollectionResponse>> removeVideo(
+            @PathVariable Long id, @PathVariable Long videoId, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Removed from playlist", playlistService.removeVideo(userId(authentication), id, videoId)));
     }
 
     private Long userId(Authentication authentication) {

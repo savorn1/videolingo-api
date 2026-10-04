@@ -1,19 +1,18 @@
 package com.example.videolingo.ai;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.example.videolingo.ai.schema.ChaptersOutput;
 import com.example.videolingo.ai.schema.QuizOutput;
-import org.junit.jupiter.api.Test;
-
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class AiLogicTest {
 
-    private static final Map<String, AiProperties.ModelPrice> PRICES = Map.of(
-            "claude-opus-5", new AiProperties.ModelPrice(new BigDecimal("5.00"), new BigDecimal("25.00")));
+    private static final Map<String, AiProperties.ModelPrice> PRICES =
+            Map.of("claude-opus-5", new AiProperties.ModelPrice(new BigDecimal("5.00"), new BigDecimal("25.00")));
     private static final BigDecimal W = new BigDecimal("1.25");
     private static final BigDecimal R = new BigDecimal("0.1");
 
@@ -21,8 +20,11 @@ class AiLogicTest {
 
     @Test
     void costAddsTheFourTokenBuckets() {
-        // 10k input × $5/M = 0.05; 2k output × $25/M = 0.05; 8k cache write × $6.25/M = 0.05; 100k cache read × $0.50/M = 0.05
-        assertEquals(new BigDecimal("0.200000"), CostCalculator.cost(PRICES, "claude-opus-5", 10_000, 2_000, 8_000, 100_000, W, R));
+        // 10k input × $5/M = 0.05; 2k output × $25/M = 0.05; 8k cache write × $6.25/M = 0.05; 100k cache read × $0.50/M
+        // = 0.05
+        assertEquals(
+                new BigDecimal("0.200000"),
+                CostCalculator.cost(PRICES, "claude-opus-5", 10_000, 2_000, 8_000, 100_000, W, R));
     }
 
     @Test
@@ -68,7 +70,11 @@ class AiLogicTest {
                 new ChaptersOutput.Chapter(90, "Duplicate", "x"),
                 new ChaptersOutput.Chapter(9999, "Past the end", "x")));
         var out = OutputValidator.chapters(in, 300_000);
-        assertEquals(List.of(0, 90), out.value().chapters().stream().map(ChaptersOutput.Chapter::startSeconds).toList());
+        assertEquals(
+                List.of(0, 90),
+                out.value().chapters().stream()
+                        .map(ChaptersOutput.Chapter::startSeconds)
+                        .toList());
         // duplicate dropped, past-the-end dropped, first moved to 0:00
         assertEquals(3, out.warnings().size());
     }

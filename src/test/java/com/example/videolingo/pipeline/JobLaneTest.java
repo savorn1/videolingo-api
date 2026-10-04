@@ -1,14 +1,13 @@
 package com.example.videolingo.pipeline;
 
-import com.example.videolingo.entity.ProcessingJobType;
-import org.junit.jupiter.api.Test;
-
-import java.util.EnumSet;
-import java.util.Set;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.example.videolingo.entity.ProcessingJobType;
+import java.util.EnumSet;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
 
 class JobLaneTest {
 
@@ -48,13 +47,16 @@ class JobLaneTest {
 
     @Test
     void concurrencyDefaultsToOneAndIsCapped() {
-        PipelineProperties none = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null);
+        PipelineProperties none =
+                new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, null, null);
         assertEquals(1, none.concurrency(JobLane.MEDIA));
         assertEquals(1, none.concurrency(JobLane.AI));
-        PipelineProperties set = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 2, 99);
+        PipelineProperties set =
+                new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 2, 99);
         assertEquals(2, set.concurrency(JobLane.MEDIA));
         assertEquals(PipelineProperties.MAX_CONCURRENCY, set.concurrency(JobLane.AI));
-        PipelineProperties bad = new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 0, -3);
+        PipelineProperties bad =
+                new PipelineProperties(null, null, null, null, null, null, null, null, null, null, null, 0, -3);
         assertEquals(1, bad.concurrency(JobLane.MEDIA));
         assertEquals(1, bad.concurrency(JobLane.AI));
     }

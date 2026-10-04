@@ -13,30 +13,37 @@ import com.example.videolingo.dto.VideoIngestDtos.MergeVideosResponse;
 import com.example.videolingo.dto.VideoIngestDtos.ReplaceRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
-import com.example.videolingo.entity.ProcessingJobType;
-import com.example.videolingo.pipeline.AudioEditRules;
-import com.example.videolingo.pipeline.AudioToVideoRules;
-import com.example.videolingo.pipeline.JobFailure;
-import com.example.videolingo.pipeline.PipelineSteps;
-import com.example.videolingo.pipeline.MergeRules;
-import com.example.videolingo.service.ProcessingJobService;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.example.videolingo.pipeline.OverlayRules;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.entity.Language;
+import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.entity.User;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.exception.AppException;
+import com.example.videolingo.pipeline.AudioEditRules;
+import com.example.videolingo.pipeline.AudioToVideoRules;
+import com.example.videolingo.pipeline.JobFailure;
+import com.example.videolingo.pipeline.MergeRules;
+import com.example.videolingo.pipeline.OverlayRules;
+import com.example.videolingo.pipeline.PipelineSteps;
 import com.example.videolingo.repository.LanguageRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.CategoryService;
 import com.example.videolingo.service.LanguageService;
+import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
 import com.example.videolingo.settings.SettingsService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -52,14 +59,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.time.Duration;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.regex.Pattern;
-
 // Add Video: inspect a pasted link, sign direct-to-storage uploads, and create
 // the video record from either. Metadata the admin reviewed in the form is
 // taken as given; what identifies the media (platform, id, file) is always
@@ -69,12 +68,40 @@ import java.util.regex.Pattern;
 public class VideoIngestService {
 
     static final Map<String, String> VIDEO_TYPES = Map.of(
-            "mp4", "video/mp4", "m4v", "video/x-m4v", "webm", "video/webm", "mov", "video/quicktime",
-            "ogv", "video/ogg", "mkv", "video/x-matroska");
-    static final Map<String, String> IMAGE_TYPES = Map.of("jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png", "webp", "image/webp");
+            "mp4",
+            "video/mp4",
+            "m4v",
+            "video/x-m4v",
+            "webm",
+            "video/webm",
+            "mov",
+            "video/quicktime",
+            "ogv",
+            "video/ogg",
+            "mkv",
+            "video/x-matroska");
+    static final Map<String, String> IMAGE_TYPES =
+            Map.of("jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png", "webp", "image/webp");
     // Replacement sound and background music for audio edits (AudioEditRules.UPLOAD_PREFIX).
-    static final Map<String, String> AUDIO_TYPES = Map.of("mp3", "audio/mpeg", "m4a", "audio/mp4", "aac", "audio/aac", "wav", "audio/wav",
-            "ogg", "audio/ogg", "oga", "audio/ogg", "opus", "audio/opus", "flac", "audio/flac", "weba", "audio/webm");
+    static final Map<String, String> AUDIO_TYPES = Map.of(
+            "mp3",
+            "audio/mpeg",
+            "m4a",
+            "audio/mp4",
+            "aac",
+            "audio/aac",
+            "wav",
+            "audio/wav",
+            "ogg",
+            "audio/ogg",
+            "oga",
+            "audio/ogg",
+            "opus",
+            "audio/opus",
+            "flac",
+            "audio/flac",
+            "weba",
+            "audio/webm");
     private static final long MAX_THUMBNAIL_BYTES = 5L * 1024 * 1024;
     private static final Duration TICKET_TTL = Duration.ofHours(2);
     private static final Pattern UPLOADED_KEY = Pattern.compile("^videos/[0-9a-f-]{36}\\.[a-z0-9]{2,4}$");
@@ -110,8 +137,23 @@ public class VideoIngestService {
         LanguageGuess language = f.platformLanguage() != null
                 ? guess(f.platformLanguage(), 0.95, "platform")
                 : textGuess(f.title(), f.description());
-        return new InspectResponse(f.url(), link.source(), link.kind().name(), link.externalId(), link.embedUrl(), f.title(), f.description(),
-                f.durationSeconds(), f.thumbnailUrl(), f.width(), f.height(), f.author(), f.mimeType(), f.fileSize(), language, f.warnings(),
+        return new InspectResponse(
+                f.url(),
+                link.source(),
+                link.kind().name(),
+                link.externalId(),
+                link.embedUrl(),
+                f.title(),
+                f.description(),
+                f.durationSeconds(),
+                f.thumbnailUrl(),
+                f.width(),
+                f.height(),
+                f.author(),
+                f.mimeType(),
+                f.fileSize(),
+                language,
+                f.warnings(),
                 duplicates(link.source(), link.externalId(), f.url()));
     }
 
@@ -127,7 +169,10 @@ public class VideoIngestService {
     private LanguageGuess guess(String rawCode, double confidence, String source) {
         String code = rawCode.split("-")[0].toLowerCase(Locale.ROOT);
         // Prefer an exact regional match from the catalog (e.g. "pt-BR"), else the base language.
-        Language lang = languageRepository.findByCodeIgnoreCase(rawCode).or(() -> languageRepository.findByCodeIgnoreCase(code)).orElse(null);
+        Language lang = languageRepository
+                .findByCodeIgnoreCase(rawCode)
+                .or(() -> languageRepository.findByCodeIgnoreCase(code))
+                .orElse(null);
         if (lang == null) {
             return new LanguageGuess(code, null, confidence, source, false, false);
         }
@@ -137,7 +182,8 @@ public class VideoIngestService {
     private List<Duplicate> duplicates(VideoSource source, String externalId, String url) {
         // "" never matches a stored id (those are null or non-empty).
         return videoRepository.findDuplicates(source, externalId == null ? "" : externalId, url).stream()
-                .map(v -> new Duplicate(v.getId(), v.getTitle(), v.getDeletedAt() != null)).toList();
+                .map(v -> new Duplicate(v.getId(), v.getTitle(), v.getDeletedAt() != null))
+                .toList();
     }
 
     private static VideoLinks.Parsed parse(String url) {
@@ -158,7 +204,9 @@ public class VideoIngestService {
         boolean overlay = r.getKind().equals("OVERLAY");
         String ext = extension(r.getFileName());
         Map<String, String> types = video ? VIDEO_TYPES : audio ? AUDIO_TYPES : IMAGE_TYPES;
-        String declared = r.getContentType() == null ? "" : r.getContentType().split(";")[0].strip().toLowerCase(Locale.ROOT);
+        String declared = r.getContentType() == null
+                ? ""
+                : r.getContentType().split(";")[0].strip().toLowerCase(Locale.ROOT);
         // Browsers label WAV as audio/x-wav or audio/wave, and MP3 sometimes as audio/mp3.
         declared = switch (declared) {
             case "audio/x-wav", "audio/wave", "audio/vnd.wave" -> "audio/wav";
@@ -169,25 +217,54 @@ public class VideoIngestService {
         };
         String contentType = types.containsValue(declared) ? declared : types.get(ext);
         if (contentType == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, video
-                    ? "That file type isn't supported — upload MP4, WebM, MOV, M4V, OGV or MKV"
-                    : audio ? "That audio type isn't supported — upload MP3, M4A, AAC, WAV, OGG, Opus or FLAC"
-                    : overlay ? "Overlay images must be PNG, JPEG or WebP" : "Thumbnails must be JPEG, PNG or WebP images");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    video
+                            ? "That file type isn't supported — upload MP4, WebM, MOV, M4V, OGV or MKV"
+                            : audio
+                                    ? "That audio type isn't supported — upload MP3, M4A, AAC, WAV, OGG, Opus or FLAC"
+                                    : overlay
+                                            ? "Overlay images must be PNG, JPEG or WebP"
+                                            : "Thumbnails must be JPEG, PNG or WebP images");
         }
         long max = video || audio ? settings.video().maxVideoUploadMb() * 1024L * 1024L : MAX_THUMBNAIL_BYTES;
         if (r.getSize() > max) {
-            throw new AppException(HttpStatus.BAD_REQUEST, (video ? "Videos" : audio ? "Audio files" : "Thumbnails") + " can be at most "
-                    + (max / (1024 * 1024)) + " MB" + (video || audio ? " (Settings › Video)" : ""));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    (video ? "Videos" : audio ? "Audio files" : "Thumbnails") + " can be at most "
+                            + (max / (1024 * 1024)) + " MB" + (video || audio ? " (Settings › Video)" : ""));
         }
-        String fileExt = types.entrySet().stream().filter(e -> e.getValue().equals(contentType) && e.getKey().equals(ext)).map(Map.Entry::getKey)
-                .findFirst().orElseGet(() -> types.entrySet().stream().filter(e -> e.getValue().equals(contentType)).map(Map.Entry::getKey).sorted().findFirst().orElseThrow());
-        String key = (video ? "videos/" : audio ? AudioEditRules.UPLOAD_PREFIX : overlay ? OverlayRules.UPLOAD_PREFIX : "thumbnails/")
+        String fileExt = types.entrySet().stream()
+                .filter(e -> e.getValue().equals(contentType) && e.getKey().equals(ext))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseGet(() -> types.entrySet().stream()
+                        .filter(e -> e.getValue().equals(contentType))
+                        .map(Map.Entry::getKey)
+                        .sorted()
+                        .findFirst()
+                        .orElseThrow());
+        String key = (video
+                        ? "videos/"
+                        : audio ? AudioEditRules.UPLOAD_PREFIX : overlay ? OverlayRules.UPLOAD_PREFIX : "thumbnails/")
                 + UUID.randomUUID() + "." + fileExt;
         PresignedPutObjectRequest signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(TICKET_TTL)
-                .putObjectRequest(PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).contentLength(r.getSize()).build())
+                .putObjectRequest(PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .contentType(contentType)
+                        .contentLength(r.getSize())
+                        .build())
                 .build());
-        return new UploadTicket(key, signed.url().toString(), "PUT", Map.of("Content-Type", contentType), signed.expiration(), publicUrl(key), contentType);
+        return new UploadTicket(
+                key,
+                signed.url().toString(),
+                "PUT",
+                Map.of("Content-Type", contentType),
+                signed.expiration(),
+                publicUrl(key),
+                contentType);
     }
 
     // ── create ────────────────────────────────────────────────────────────
@@ -197,7 +274,8 @@ public class VideoIngestService {
         Video.VideoBuilder video = Video.builder()
                 .title(r.getTitle().strip())
                 .description(blankToNull(r.getDescription()))
-                .durationSeconds(r.getDurationSeconds() == null || r.getDurationSeconds() == 0 ? null : r.getDurationSeconds())
+                .durationSeconds(
+                        r.getDurationSeconds() == null || r.getDurationSeconds() == 0 ? null : r.getDurationSeconds())
                 .width(r.getWidth())
                 .height(r.getHeight())
                 .enabled(r.isEnabled())
@@ -217,10 +295,13 @@ public class VideoIngestService {
         Set<Long> resolved = categoryService.resolveForVideo(categories, Set.of());
         int maxCategories = settings.video().maxCategoriesPerVideo();
         if (resolved.size() > maxCategories) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
         }
         if (resolved.isEmpty() && settings.video().requireCategory()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
         }
         Video built = video.build();
         built.getCategoryIds().addAll(resolved);
@@ -240,33 +321,52 @@ public class VideoIngestService {
     public AudioToVideoResponse createFromAudio(AudioToVideoRequest r, String actor) {
         requireStorage();
         String cardText = blankToNull(r.getCardText());
-        List<AudioToVideoRules.Slide> slides = r.getSlides() == null ? List.of()
-                : r.getSlides().stream().map(x -> new AudioToVideoRules.Slide(x.key(), x.startMs())).toList();
-        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(r.getAudioKey(), blankToNull(r.getCoverKey()), blankToNull(r.getBackground()),
-                blankToNull(r.getResolution()), blankToNull(r.getWaveform()), blankToNull(r.getWaveColor()), r.isTitleCard(),
-                r.isTitleCard() && slides.isEmpty() && blankToNull(r.getCoverKey()) == null ? (cardText != null ? cardText : r.getTitle().strip()) : null,
-                r.isNormalize(), r.isDenoise(), slides);
+        List<AudioToVideoRules.Slide> slides = r.getSlides() == null
+                ? List.of()
+                : r.getSlides().stream()
+                        .map(x -> new AudioToVideoRules.Slide(x.key(), x.startMs()))
+                        .toList();
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(
+                r.getAudioKey(),
+                blankToNull(r.getCoverKey()),
+                blankToNull(r.getBackground()),
+                blankToNull(r.getResolution()),
+                blankToNull(r.getWaveform()),
+                blankToNull(r.getWaveColor()),
+                r.isTitleCard(),
+                r.isTitleCard() && slides.isEmpty() && blankToNull(r.getCoverKey()) == null
+                        ? (cardText != null ? cardText : r.getTitle().strip())
+                        : null,
+                r.isNormalize(),
+                r.isDenoise(),
+                slides);
         String problem = AudioToVideoRules.validate(spec);
         if (problem != null) {
             throw new AppException(HttpStatus.BAD_REQUEST, problem);
         }
         if (head(spec.audioKey()) == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
         }
         for (AudioToVideoRules.Slide slide : spec.slides()) {
             if (head(slide.key()) == null) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "A picture wasn't found — the upload may not have finished");
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST, "A picture wasn't found — the upload may not have finished");
             }
         }
 
         String language = blankToNull(r.getLanguage());
-        Set<Long> categories = categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
+        Set<Long> categories =
+                categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
         int maxCategories = settings.video().maxCategoriesPerVideo();
         if (categories.size() > maxCategories) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
         }
         if (categories.isEmpty() && settings.video().requireCategory()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
         }
 
         // Until the job finishes the row points at the sound, which is what there is to play.
@@ -289,7 +389,11 @@ public class VideoIngestService {
             params.put("coverKey", spec.coverKey());
         }
         if (spec.slides().size() > 1) {
-            params.put("slides", spec.slides().stream().map(x -> Map.of("key", x.key(), "startMs", x.startMs())).toList());
+            params.put(
+                    "slides",
+                    spec.slides().stream()
+                            .map(x -> Map.of("key", x.key(), "startMs", x.startMs()))
+                            .toList());
         }
         if (spec.background() != null) {
             params.put("background", spec.background());
@@ -324,21 +428,36 @@ public class VideoIngestService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
-        var job = jobService.enqueue(saved.getId(), ProcessingJobType.EDIT, json, AudioToVideoRules.describe(spec) + " requested by " + actor);
+        var job = jobService.enqueue(
+                saved.getId(),
+                ProcessingJobType.EDIT,
+                json,
+                AudioToVideoRules.describe(spec) + " requested by " + actor);
         return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
     }
 
     /** A short test render of a waveform look with the real sound, for the page's preview. See PipelineSteps.previewAudioToVideo. */
     public AudioPreviewResponse previewFromAudio(AudioPreviewRequest r) {
         requireStorage();
-        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(r.getAudioKey(), null, blankToNull(r.getBackground()), "360p", blankToNull(r.getWaveform()),
-                blankToNull(r.getWaveColor()), false, null, r.isNormalize(), r.isDenoise(), List.of());
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(
+                r.getAudioKey(),
+                null,
+                blankToNull(r.getBackground()),
+                "360p",
+                blankToNull(r.getWaveform()),
+                blankToNull(r.getWaveColor()),
+                false,
+                null,
+                r.isNormalize(),
+                r.isDenoise(),
+                List.of());
         String problem = AudioToVideoRules.validate(spec);
         if (problem != null) {
             throw new AppException(HttpStatus.BAD_REQUEST, problem);
         }
         if (head(spec.audioKey()) == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "The audio file wasn't found — the upload may not have finished");
         }
         try {
             return new AudioPreviewResponse(steps.previewAudioToVideo(spec), PipelineSteps.PREVIEW_MS / 1000);
@@ -367,32 +486,46 @@ public class VideoIngestService {
         // Each one must exist, be a stored file (a link has no file to join), and not be in the trash.
         List<Video> sources = new java.util.ArrayList<>();
         for (Long id : r.getVideoIds()) {
-            Video v = videoRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + id));
+            Video v = videoRepository
+                    .findById(id)
+                    .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + id));
             if (v.isDeleted()) {
-                throw new AppException(HttpStatus.CONFLICT, "\"" + v.getTitle() + "\" is in the trash — restore it or leave it out");
+                throw new AppException(
+                        HttpStatus.CONFLICT, "\"" + v.getTitle() + "\" is in the trash — restore it or leave it out");
             }
             if (v.getStorageKey() == null) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "\"" + v.getTitle() + "\" is a link, not a stored file — import it first");
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST,
+                        "\"" + v.getTitle() + "\" is a link, not a stored file — import it first");
             }
             sources.add(v);
         }
         // Lengths known up front save queueing a job that would only fail on the limit.
-        long knownMs = sources.stream().mapToLong(v -> v.getDurationSeconds() == null ? 0 : v.getDurationSeconds() * 1000L).sum();
+        long knownMs = sources.stream()
+                .mapToLong(v -> v.getDurationSeconds() == null ? 0 : v.getDurationSeconds() * 1000L)
+                .sum();
         if (knownMs > MergeRules.MAX_TOTAL_MS) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The joined video would be longer than " + (MergeRules.MAX_TOTAL_MS / 3_600_000) + " hours");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "The joined video would be longer than " + (MergeRules.MAX_TOTAL_MS / 3_600_000) + " hours");
         }
 
         String language = blankToNull(r.getLanguage());
-        if (language == null && sources.stream().map(Video::getLanguage).distinct().count() == 1) {
+        if (language == null
+                && sources.stream().map(Video::getLanguage).distinct().count() == 1) {
             language = sources.get(0).getLanguage(); // all the same language: the joined video is too
         }
-        Set<Long> categories = categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
+        Set<Long> categories =
+                categoryService.resolveForVideo(r.getCategoryIds() == null ? List.of() : r.getCategoryIds(), Set.of());
         int maxCategories = settings.video().maxCategoriesPerVideo();
         if (categories.size() > maxCategories) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST,
+                    "A video can be in at most " + maxCategories + " categor" + (maxCategories == 1 ? "y" : "ies"));
         }
         if (categories.isEmpty() && settings.video().requireCategory()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Choose at least one category — Settings › Video requires one");
         }
 
         // Until the job finishes the row points at the first video, so it has something to play.
@@ -433,7 +566,8 @@ public class VideoIngestService {
     @Transactional
     public VideoResponse replace(Long videoId, ReplaceRequest r, String actingUsername) {
         requireStorage();
-        Video video = videoRepository.findById(videoId)
+        Video video = videoRepository
+                .findById(videoId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + videoId));
         if (video.isDeleted()) {
             throw new AppException(HttpStatus.CONFLICT, "Restore the video before replacing its file");
@@ -444,7 +578,8 @@ public class VideoIngestService {
         }
         HeadObjectResponse head = head(key);
         if (head == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The uploaded file wasn't found — the upload may not have finished");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "The uploaded file wasn't found — the upload may not have finished");
         }
         versionService.snapshot(video, "Replaced by upload", actingUsername);
         video.setSource(VideoSource.UPLOAD);
@@ -486,8 +621,10 @@ public class VideoIngestService {
             List<Duplicate> dups = duplicates(link.source(), link.externalId(), url);
             if (!dups.isEmpty()) {
                 Duplicate d = dups.get(0);
-                throw new AppException(HttpStatus.CONFLICT, "This video was already added as “" + d.title() + "” (#" + d.id() + ")"
-                        + (d.trashed() ? " — it's in the trash" : ""));
+                throw new AppException(
+                        HttpStatus.CONFLICT,
+                        "This video was already added as “" + d.title() + "” (#" + d.id() + ")"
+                                + (d.trashed() ? " — it's in the trash" : ""));
             }
         }
         video.source(link.source())
@@ -505,9 +642,12 @@ public class VideoIngestService {
         }
         HeadObjectResponse head = head(key);
         if (head == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "The uploaded file wasn't found — the upload may not have finished");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "The uploaded file wasn't found — the upload may not have finished");
         }
-        if (videoRepository.findDuplicates(VideoSource.UPLOAD, "", publicUrl(key)).stream().findAny().isPresent()) {
+        if (videoRepository.findDuplicates(VideoSource.UPLOAD, "", publicUrl(key)).stream()
+                .findAny()
+                .isPresent()) {
             throw new AppException(HttpStatus.CONFLICT, "This upload is already attached to a video");
         }
         video.source(VideoSource.UPLOAD)
@@ -527,7 +667,8 @@ public class VideoIngestService {
         if (!bucket.isBlank() && t.startsWith(ourPrefix)) {
             String key = t.substring(ourPrefix.length());
             if (!THUMB_KEY.matcher(key).matches() || head(key) == null) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "The thumbnail upload wasn't found — try capturing it again");
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST, "The thumbnail upload wasn't found — try capturing it again");
             }
         }
         return t;
@@ -535,20 +676,24 @@ public class VideoIngestService {
 
     private HeadObjectResponse head(String key) {
         try {
-            return s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            return s3.headObject(
+                    HeadObjectRequest.builder().bucket(bucket).key(key).build());
         } catch (NoSuchKeyException e) {
             return null;
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 return null;
             }
-            throw new AppException(HttpStatus.BAD_GATEWAY, "Storage couldn't be reached: " + e.awsErrorDetails().errorMessage());
+            throw new AppException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Storage couldn't be reached: " + e.awsErrorDetails().errorMessage());
         }
     }
 
     private void requireStorage() {
         if (bucket == null || bucket.isBlank()) {
-            throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, "File storage isn't configured on the server (S3_BUCKET)");
+            throw new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "File storage isn't configured on the server (S3_BUCKET)");
         }
     }
 

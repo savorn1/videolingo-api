@@ -1,7 +1,6 @@
 package com.example.videolingo.pipeline;
 
 import com.example.videolingo.entity.ProcessingJobLog;
-
 import java.nio.file.Path;
 
 // What a running job step gets: where to put temporary files, and how to
@@ -57,7 +56,7 @@ public final class JobContext {
 
     /** Cancellation checkpoint without changing anything visible. */
     public void checkpoint() {
-        store.update(jobId, job -> { });
+        store.update(jobId, job -> {});
     }
 
     public void info(String message) {

@@ -10,20 +10,21 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // A saved copy of a subtitle track's or transcript's full content, taken
 // after every save that changes it (see RevisionService). The newest one
 // matches what's live; older ones can be compared and restored. `snapshot`
 // is JSON — RevisionService.SubtitleSnapshot / TranscriptSnapshot.
 @Entity
-@Table(name = "content_revisions", indexes = @Index(name = "idx_content_revisions_entity", columnList = "entity_type, entity_id, number"))
+@Table(
+        name = "content_revisions",
+        indexes = @Index(name = "idx_content_revisions_entity", columnList = "entity_type, entity_id, number"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,7 +32,10 @@ import java.time.LocalDateTime;
 @Builder
 public class ContentRevision {
 
-    public enum EntityType { SUBTITLE, TRANSCRIPT }
+    public enum EntityType {
+        SUBTITLE,
+        TRANSCRIPT
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

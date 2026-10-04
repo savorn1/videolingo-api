@@ -12,6 +12,11 @@ import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.TagService;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Subquery;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,12 +25,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,7 +41,9 @@ public class TagServiceImpl implements TagService {
     public PageResponse<TagResponse> list(TagFilterRequest filter) {
         List<Specification<Tag>> conditions = new ArrayList<>();
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(normalizeName(filter.getSearch()).toLowerCase()) + "%";
+            String pattern = "%"
+                    + TranscriptServiceImpl.escapeLike(
+                            normalizeName(filter.getSearch()).toLowerCase()) + "%";
             conditions.add((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
                     cb.like(cb.lower(root.get("slug")), pattern, '\\'),
@@ -55,7 +56,9 @@ public class TagServiceImpl implements TagService {
                 var video = used.from(Video.class);
                 var tagId = video.join("tagIds");
                 used.select(tagId.as(Long.class)).where(cb.isNull(video.get("deletedAt")));
-                return filter.getUnused() ? cb.not(root.get("id").in(used)) : root.get("id").in(used);
+                return filter.getUnused()
+                        ? cb.not(root.get("id").in(used))
+                        : root.get("id").in(used);
             });
         }
         String sortBy = SORTABLE.contains(filter.getSortBy()) ? filter.getSortBy() : "name";
@@ -76,7 +79,8 @@ public class TagServiceImpl implements TagService {
             pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         }
         Page<Tag> page = tagRepository.findAll(Specification.allOf(conditions), pageable);
-        Map<Long, Long> counts = countVideos(page.getContent().stream().map(Tag::getId).toList());
+        Map<Long, Long> counts =
+                countVideos(page.getContent().stream().map(Tag::getId).toList());
         return PageResponse.of(page.map(t -> toResponse(t, counts.getOrDefault(t.getId(), 0L))));
     }
 
@@ -86,7 +90,8 @@ public class TagServiceImpl implements TagService {
         String q = query == null ? "" : normalizeName(query).toLowerCase();
         int size = Math.max(1, Math.min(limit, 20));
         return tagRepository.suggest(TranscriptServiceImpl.escapeLike(q), PageRequest.of(0, size)).stream()
-                .map(t -> toResponse(t, null)).toList();
+                .map(t -> toResponse(t, null))
+                .toList();
     }
 
     @Override
@@ -154,19 +159,24 @@ public class TagServiceImpl implements TagService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Tag name can't be empty");
         }
         if (name.codePointCount(0, name.length()) > MAX_NAME_LENGTH) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Tag names can be at most " + MAX_NAME_LENGTH + " characters");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Tag names can be at most " + MAX_NAME_LENGTH + " characters");
         }
         return name;
     }
 
     private Tag find(Long id) {
-        return tagRepository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Tag not found with id: " + id));
+        return tagRepository
+                .findById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Tag not found with id: " + id));
     }
 
     private String chooseSlug(String requested, String name, Long selfId) {
         if (requested != null && !requested.isBlank()) {
             String slug = TranscriptServiceImpl.slug(requested);
-            boolean taken = selfId == null ? tagRepository.existsBySlug(slug) : tagRepository.existsBySlugAndIdNot(slug, selfId);
+            boolean taken = selfId == null
+                    ? tagRepository.existsBySlug(slug)
+                    : tagRepository.existsBySlugAndIdNot(slug, selfId);
             if (taken) {
                 throw new AppException(HttpStatus.CONFLICT, "The slug \"" + slug + "\" is already used by another tag");
             }

@@ -1,11 +1,10 @@
 package com.example.videolingo.dto;
 
+import java.util.List;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.domain.Page;
-
-import java.util.List;
-import java.util.UUID;
 
 @Getter
 @Setter

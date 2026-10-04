@@ -9,22 +9,25 @@ import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One video's place in a collection. A video appears at most once per
 // collection; `position` is 0..n-1 and is compacted after a removal.
 @Entity
-@Table(name = "collection_items",
-        uniqueConstraints = @UniqueConstraint(name = "uk_collection_items_collection_video", columnNames = {"collection_id", "video_id"}),
+@Table(
+        name = "collection_items",
+        uniqueConstraints =
+                @UniqueConstraint(
+                        name = "uk_collection_items_collection_video",
+                        columnNames = {"collection_id", "video_id"}),
         indexes = {
-                @Index(name = "idx_collection_items_order", columnList = "collection_id, position"),
-                @Index(name = "idx_collection_items_video", columnList = "video_id")
+            @Index(name = "idx_collection_items_order", columnList = "collection_id, position"),
+            @Index(name = "idx_collection_items_video", columnList = "video_id")
         })
 @Getter
 @Setter

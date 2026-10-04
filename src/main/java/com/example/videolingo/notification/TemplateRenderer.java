@@ -16,8 +16,7 @@ public final class TemplateRenderer {
     /** Filled per recipient by the server; a sender can't override them. */
     public static final List<String> BUILT_INS = List.of("username", "email", "role", "appName", "appUrl", "date");
 
-    private TemplateRenderer() {
-    }
+    private TemplateRenderer() {}
 
     /** Variable names used across the given texts, in order of first appearance. */
     public static Set<String> variables(String... texts) {

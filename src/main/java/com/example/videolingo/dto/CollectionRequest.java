@@ -4,14 +4,14 @@ import com.example.videolingo.entity.CollectionVisibility;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-
 import java.util.List;
+import lombok.Data;
 
 @Data
 public class CollectionRequest {
 
-    @NotBlank @Size(max = 200)
+    @NotBlank
+    @Size(max = 200)
     private String title;
 
     // Optional — generated from the title when blank (create), kept when blank (update).

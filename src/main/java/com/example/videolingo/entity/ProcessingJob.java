@@ -12,13 +12,12 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 // One unit of background work on a video (transcode, transcribe, …).
 //
@@ -32,10 +31,12 @@ import java.time.LocalDateTime;
 // @Version guards the admin-vs-worker race: a stale save from either side
 // fails instead of silently undoing the other's change.
 @Entity
-@Table(name = "processing_jobs", indexes = {
-        @Index(name = "idx_processing_jobs_video_id", columnList = "video_id"),
-        @Index(name = "idx_processing_jobs_status", columnList = "status")
-})
+@Table(
+        name = "processing_jobs",
+        indexes = {
+            @Index(name = "idx_processing_jobs_video_id", columnList = "video_id"),
+            @Index(name = "idx_processing_jobs_status", columnList = "status")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

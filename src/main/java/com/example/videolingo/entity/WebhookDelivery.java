@@ -8,19 +8,20 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One attempt to deliver one message to a Webhook. Retries of the same
 // message share `messageId`. Only the newest WebhookService.KEEP_DELIVERIES
 // per webhook are kept.
 @Entity
-@Table(name = "webhook_deliveries", indexes = @Index(name = "idx_webhook_deliveries_webhook", columnList = "webhook_id, id"))
+@Table(
+        name = "webhook_deliveries",
+        indexes = @Index(name = "idx_webhook_deliveries_webhook", columnList = "webhook_id, id"))
 @Getter
 @Setter
 @NoArgsConstructor

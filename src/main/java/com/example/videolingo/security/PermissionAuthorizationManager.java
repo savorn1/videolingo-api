@@ -6,6 +6,8 @@ import com.example.videolingo.entity.User;
 import com.example.videolingo.repository.RolePermissionRepository;
 import com.example.videolingo.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
@@ -13,9 +15,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
-import java.util.function.Supplier;
 
 // Gates every /api/admin/** request (wired in SecurityConfig). ADMIN always
 // passes. A USER-role account passes
@@ -36,13 +35,16 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Requ
     private final RolePermissionRepository rolePermissionRepository;
 
     @Override
-    public AuthorizationDecision authorize(Supplier<? extends Authentication> authenticationSupplier, RequestAuthorizationContext context) {
+    public AuthorizationDecision authorize(
+            Supplier<? extends Authentication> authenticationSupplier, RequestAuthorizationContext context) {
         Authentication authentication = authenticationSupplier.get();
         if (authentication == null || !authentication.isAuthenticated()) {
             return new AuthorizationDecision(false);
         }
 
-        List<String> authorities = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
+        List<String> authorities = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList();
         if (authorities.contains("ROLE_ADMIN")) {
             return new AuthorizationDecision(true);
         }

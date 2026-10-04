@@ -1,13 +1,12 @@
 package com.example.videolingo.learn;
 
-import com.example.videolingo.entity.Video;
-import com.example.videolingo.entity.VideoVisibility;
-import org.junit.jupiter.api.Test;
-
-import java.time.LocalDateTime;
-
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.example.videolingo.entity.Video;
+import com.example.videolingo.entity.VideoVisibility;
+import java.time.LocalDateTime;
+import org.junit.jupiter.api.Test;
 
 // The rule for "can this viewer open this video?", shared by the watch page and everything that lists videos to open
 // (Continue watching): a link must never lead to "Video not found".

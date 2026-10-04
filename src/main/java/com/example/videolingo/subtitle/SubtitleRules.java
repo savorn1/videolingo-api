@@ -8,7 +8,11 @@ public record SubtitleRules(int maxCharsPerLine, int maxLines, long minDurationM
     public static final SubtitleRules DEFAULT = new SubtitleRules(42, 2, 1000, 7000, 17.0);
 
     public SubtitleRules {
-        if (maxCharsPerLine < 10 || maxLines < 1 || minDurationMs < 0 || maxDurationMs <= minDurationMs || maxCps <= 0) {
+        if (maxCharsPerLine < 10
+                || maxLines < 1
+                || minDurationMs < 0
+                || maxDurationMs <= minDurationMs
+                || maxCps <= 0) {
             throw new IllegalArgumentException("Invalid subtitle rules");
         }
     }

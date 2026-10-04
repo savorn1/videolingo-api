@@ -1,13 +1,12 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 // A clip produced by an EDIT job — a trim/crop of the whole video, one
 // segment of a split, the video with re-rendered sound (AUDIO), or its sound
@@ -26,7 +25,11 @@ import java.time.LocalDateTime;
 public class VideoClip {
 
     public enum Operation {
-        TRIM, SPLIT, AUDIO, EXTRACT, OVERLAY;
+        TRIM,
+        SPLIT,
+        AUDIO,
+        EXTRACT,
+        OVERLAY;
 
         /** Promoting it swaps the video's own file. */
         public boolean replacesVideo() {
@@ -61,15 +64,19 @@ public class VideoClip {
 
     @Column(name = "crop_x")
     private Integer cropX;
+
     @Column(name = "crop_y")
     private Integer cropY;
+
     @Column(name = "crop_w")
     private Integer cropW;
+
     @Column(name = "crop_h")
     private Integer cropH;
 
     @Column(name = "scale_w")
     private Integer scaleW;
+
     @Column(name = "scale_h")
     private Integer scaleH;
 

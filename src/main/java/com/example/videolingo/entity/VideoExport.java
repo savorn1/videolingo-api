@@ -1,13 +1,12 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 // An MP4 prepared by a DOWNLOAD job for an admin to save — the video (from
 // its link or our storage), optionally with a voice-over as its sound. Kept

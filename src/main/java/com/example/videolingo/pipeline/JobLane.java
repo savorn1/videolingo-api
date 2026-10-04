@@ -1,7 +1,6 @@
 package com.example.videolingo.pipeline;
 
 import com.example.videolingo.entity.ProcessingJobType;
-
 import java.util.EnumSet;
 import java.util.Set;
 

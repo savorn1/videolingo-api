@@ -9,14 +9,13 @@ import com.example.videolingo.dto.ApiResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.security.CurrentUserResolver;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // API keys, module "api-keys" (GET = READ, the rest WRITE). A key is created
 // for, and acts as, whoever creates it. Admins see and can revoke every key.
@@ -32,18 +31,23 @@ public class ApiKeyController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<ApiKeyResponse>>> list(Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(apiKeyService.list(requireSignedIn(authentication), currentUser.isAdmin(authentication))));
+        return ResponseEntity.ok(ApiResponse.success(
+                apiKeyService.list(requireSignedIn(authentication), currentUser.isAdmin(authentication))));
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CreatedKey>> create(@Valid @RequestBody CreateRequest request, Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("API key created — copy it now, it won't be shown again",
-                apiKeyService.create(request, requireSignedIn(authentication))));
+    public ResponseEntity<ApiResponse<CreatedKey>> create(
+            @Valid @RequestBody CreateRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "API key created — copy it now, it won't be shown again",
+                        apiKeyService.create(request, requireSignedIn(authentication))));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<ApiKeyResponse>> revoke(@PathVariable Long id, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("API key revoked",
+        return ResponseEntity.ok(ApiResponse.success(
+                "API key revoked",
                 apiKeyService.revoke(id, requireSignedIn(authentication), currentUser.isAdmin(authentication))));
     }
 

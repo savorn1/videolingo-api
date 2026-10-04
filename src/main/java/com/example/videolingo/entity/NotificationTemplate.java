@@ -14,15 +14,14 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 // A reusable message ("Welcome", "New course available"). Subject and body may
 // contain {{variables}} — built-ins such as {{username}} are filled per

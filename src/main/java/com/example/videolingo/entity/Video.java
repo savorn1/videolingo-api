@@ -4,8 +4,8 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -14,16 +14,15 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
-
-import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 // A learning video. Two independent switches control visibility:
 //   enabled   — an admin's on/off toggle (e.g. pulled pending review); the
@@ -33,10 +32,12 @@ import java.util.Set;
 // Technical metadata (duration, resolution, size, format) is stored as
 // reported at upload time — it isn't re-probed from the file.
 @Entity
-@Table(name = "videos", indexes = {
-        @Index(name = "idx_videos_owner_id", columnList = "owner_id"),
-        @Index(name = "idx_videos_deleted_at", columnList = "deleted_at")
-})
+@Table(
+        name = "videos",
+        indexes = {
+            @Index(name = "idx_videos_owner_id", columnList = "owner_id"),
+            @Index(name = "idx_videos_deleted_at", columnList = "deleted_at")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

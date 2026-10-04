@@ -4,14 +4,13 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
-import java.util.List;
 
 // Signs a request in as an API key's owner. The key goes in X-API-Key, or in
 // "Authorization: Bearer vl_…" for tools that only speak Bearer tokens. A key
@@ -46,12 +45,15 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         if (owner.isEmpty()) {
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Invalid, revoked or expired API key\"}");
+            response.getWriter()
+                    .write("{\"error\":\"Unauthorized\",\"message\":\"Invalid, revoked or expired API key\"}");
             return;
         }
         var user = owner.get().user();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(new ApiKeyAuthenticationToken(user.getUsername(), owner.get().keyId(),
+        context.setAuthentication(new ApiKeyAuthenticationToken(
+                user.getUsername(),
+                owner.get().keyId(),
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))));
         SecurityContextHolder.setContext(context);
         chain.doFilter(request, response);

@@ -8,20 +8,21 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // A review comment on a subtitle track. Anchored to a point in time
 // (`atMs`) rather than a cue id, because cues are replaced wholesale on every
 // save — the editor shows it on whichever cue covers that moment. Null atMs
 // = about the whole track.
 @Entity
-@Table(name = "subtitle_comments", indexes = @Index(name = "idx_subtitle_comments_subtitle", columnList = "subtitle_id"))
+@Table(
+        name = "subtitle_comments",
+        indexes = @Index(name = "idx_subtitle_comments_subtitle", columnList = "subtitle_id"))
 @Getter
 @Setter
 @NoArgsConstructor

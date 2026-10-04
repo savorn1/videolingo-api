@@ -1,23 +1,31 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
 
 class WavMixerTest {
 
     private static byte[] wav(int rate, short... samples) {
         ByteBuffer b = ByteBuffer.allocate(44 + samples.length * 2).order(ByteOrder.LITTLE_ENDIAN);
-        b.put("RIFF".getBytes()).putInt(36 + samples.length * 2).put("WAVE".getBytes())
-                .put("fmt ".getBytes()).putInt(16).putShort((short) 1).putShort((short) 1)
-                .putInt(rate).putInt(rate * 2).putShort((short) 2).putShort((short) 16)
-                .put("data".getBytes()).putInt(samples.length * 2);
+        b.put("RIFF".getBytes())
+                .putInt(36 + samples.length * 2)
+                .put("WAVE".getBytes())
+                .put("fmt ".getBytes())
+                .putInt(16)
+                .putShort((short) 1)
+                .putShort((short) 1)
+                .putInt(rate)
+                .putInt(rate * 2)
+                .putShort((short) 2)
+                .putShort((short) 16)
+                .put("data".getBytes())
+                .putInt(samples.length * 2);
         for (short s : samples) {
             b.putShort(s);
         }

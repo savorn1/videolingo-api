@@ -1,14 +1,13 @@
 package com.example.videolingo.pipeline;
 
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.stereotype.Component;
 
 // Sends a request to OpenAI's API and retries it when the failure looks
 // transient — a connection problem, a rate limit (429) or a server error
@@ -22,14 +21,21 @@ import java.time.Duration;
 @Component
 class OpenAiHttpClient {
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private final HttpClient http =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
 
-    @Retryable(retryFor = TransientApiException.class, maxAttempts = 4, backoff = @Backoff(delay = 1500, multiplier = 2, maxDelay = 8000))
+    @Retryable(
+            retryFor = TransientApiException.class,
+            maxAttempts = 4,
+            backoff = @Backoff(delay = 1500, multiplier = 2, maxDelay = 8000))
     HttpResponse<byte[]> sendForBytes(HttpRequest request) {
         return send(request, HttpResponse.BodyHandlers.ofByteArray());
     }
 
-    @Retryable(retryFor = TransientApiException.class, maxAttempts = 4, backoff = @Backoff(delay = 1500, multiplier = 2, maxDelay = 8000))
+    @Retryable(
+            retryFor = TransientApiException.class,
+            maxAttempts = 4,
+            backoff = @Backoff(delay = 1500, multiplier = 2, maxDelay = 8000))
     HttpResponse<String> sendForText(HttpRequest request) {
         return send(request, HttpResponse.BodyHandlers.ofString());
     }

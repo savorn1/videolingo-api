@@ -4,8 +4,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 // Joining several videos into one, in order. Clips rarely match — different
@@ -16,25 +16,25 @@ import java.util.Set;
 // PipelineSteps.mergeJob.
 public final class MergeRules {
 
-    private MergeRules() {
-    }
+    private MergeRules() {}
 
     public static final int MIN_PARTS = 2;
     public static final int MAX_PARTS = 10;
     /** Re-encoding is slow, so the joined video is capped. */
     public static final long MAX_TOTAL_MS = 3L * 60 * 60 * 1000;
+
     public static final List<String> TRANSITIONS = List.of("NONE", "FADE", "FADE_WHITE", "DISSOLVE", "WIPE", "SLIDE");
     public static final double FADE_SECONDS = 0.5;
     /** The joint of an overlapping transition (DISSOLVE, WIPE, SLIDE); the two clips play over each other for this long. */
     public static final double OVERLAP_SECONDS = 0.6;
     /** The ffmpeg xfade effect behind each overlapping transition. */
     static final Map<String, String> OVERLAPS = Map.of("DISSOLVE", "fade", "WIPE", "wipeleft", "SLIDE", "slideleft");
+
     public static final int FPS = 30;
     public static final int SAMPLE_RATE = 48_000;
 
     /** What the job learned about one clip by looking at the file. */
-    public record Part(long durationMs, boolean hasAudio) {
-    }
+    public record Part(long durationMs, boolean hasAudio) {}
 
     /** Null = valid; a message otherwise. Checks the request, before any file is looked at. */
     public static String validate(List<Long> videoIds, String resolution, String transition) {
@@ -44,7 +44,8 @@ public final class MergeRules {
         if (videoIds.size() > MAX_PARTS) {
             return "At most " + MAX_PARTS + " videos can be joined at once";
         }
-        if (videoIds.stream().anyMatch(id -> id == null) || videoIds.stream().distinct().count() != videoIds.size()) {
+        if (videoIds.stream().anyMatch(id -> id == null)
+                || videoIds.stream().distinct().count() != videoIds.size()) {
             return "Each video can only be used once";
         }
         if (resolution != null && !AudioToVideoRules.RESOLUTIONS.contains(resolution)) {
@@ -66,7 +67,8 @@ public final class MergeRules {
             total += parts.get(i).durationMs();
         }
         if (total > MAX_TOTAL_MS) {
-            return "The joined video would be " + formatLength(total) + " long; the limit is " + formatLength(MAX_TOTAL_MS);
+            return "The joined video would be " + formatLength(total) + " long; the limit is "
+                    + formatLength(MAX_TOTAL_MS);
         }
         return null;
     }
@@ -92,7 +94,8 @@ public final class MergeRules {
             return total;
         }
         for (int i = 1; i < parts.size(); i++) {
-            total -= Math.round(overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs()) * 1000);
+            total -= Math.round(
+                    overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs()) * 1000);
         }
         return total;
     }
@@ -128,20 +131,31 @@ public final class MergeRules {
             double d = part.durationMs() / 1000.0;
             double f = fadeFor(part.durationMs());
 
-            StringBuilder video = new StringBuilder("[" + i + ":v]scale=" + size.w() + ":" + size.h() + ":force_original_aspect_ratio=decrease,pad="
-                    + size.w() + ":" + size.h() + ":(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=" + FPS + ",format=yuv420p");
+            StringBuilder video = new StringBuilder("[" + i + ":v]scale=" + size.w() + ":" + size.h()
+                    + ":force_original_aspect_ratio=decrease,pad=" + size.w() + ":" + size.h()
+                    + ":(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=" + FPS + ",format=yuv420p");
             // Sound: brought to one layout and rate, and held to exactly the clip's length so the joints don't drift.
-            StringBuilder audio = new StringBuilder(part.hasAudio()
-                    ? "[" + i + ":a]aresample=" + SAMPLE_RATE + ",aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=" + seconds(d)
-                            + ",atrim=duration=" + seconds(d) + ",asetpts=PTS-STARTPTS"
-                    : "anullsrc=r=" + SAMPLE_RATE + ":cl=stereo,atrim=duration=" + seconds(d) + ",asetpts=PTS-STARTPTS");
+            StringBuilder audio = new StringBuilder(
+                    part.hasAudio()
+                            ? "[" + i + ":a]aresample=" + SAMPLE_RATE
+                                    + ",aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=" + seconds(d)
+                                    + ",atrim=duration=" + seconds(d) + ",asetpts=PTS-STARTPTS"
+                            : "anullsrc=r=" + SAMPLE_RATE + ":cl=stereo,atrim=duration=" + seconds(d)
+                                    + ",asetpts=PTS-STARTPTS");
             if (fade && i > 0) {
                 video.append(",fade=t=in:st=0:d=").append(seconds(f)).append(dipColor);
                 audio.append(",afade=t=in:st=0:d=").append(seconds(f));
             }
             if (fade && i < n - 1) {
-                video.append(",fade=t=out:st=").append(seconds(d - f)).append(":d=").append(seconds(f)).append(dipColor);
-                audio.append(",afade=t=out:st=").append(seconds(d - f)).append(":d=").append(seconds(f));
+                video.append(",fade=t=out:st=")
+                        .append(seconds(d - f))
+                        .append(":d=")
+                        .append(seconds(f))
+                        .append(dipColor);
+                audio.append(",afade=t=out:st=")
+                        .append(seconds(d - f))
+                        .append(":d=")
+                        .append(seconds(f));
             }
             lines.add(video + "[v" + i + "]");
             lines.add(audio + "[a" + i + "]");
@@ -154,9 +168,11 @@ public final class MergeRules {
             String video = "[v0]";
             String audio = "[a0]";
             for (int i = 1; i < n; i++) {
-                double o = overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs());
+                double o =
+                        overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs());
                 boolean last = i == n - 1;
-                lines.add(video + "[v" + i + "]xfade=transition=" + effect + ":duration=" + seconds(o) + ":offset=" + seconds(length - o) + (last ? "[v]" : "[x" + i + "]"));
+                lines.add(video + "[v" + i + "]xfade=transition=" + effect + ":duration=" + seconds(o) + ":offset="
+                        + seconds(length - o) + (last ? "[v]" : "[x" + i + "]"));
                 lines.add(audio + "[a" + i + "]acrossfade=d=" + seconds(o) + (last ? "[a]" : "[y" + i + "]"));
                 length += parts.get(i).durationMs() / 1000.0 - o;
                 video = "[x" + i + "]";
@@ -168,13 +184,40 @@ public final class MergeRules {
         return String.join(";", lines);
     }
 
-    public static List<String> command(String ffmpeg, List<Path> inputs, List<Part> parts, AudioToVideoRules.Size size, String transition, Path out) {
+    public static List<String> command(
+            String ffmpeg,
+            List<Path> inputs,
+            List<Part> parts,
+            AudioToVideoRules.Size size,
+            String transition,
+            Path out) {
         List<String> cmd = new ArrayList<>(List.of(ffmpeg, "-hide_banner", "-loglevel", "error", "-y"));
         for (Path input : inputs) {
             cmd.addAll(List.of("-i", input.toString()));
         }
-        cmd.addAll(List.of("-filter_complex", filterGraph(parts, size, transition), "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast",
-                "-crf", "23", "-r", String.valueOf(FPS), "-c:a", "aac", "-b:a", "160k", "-ar", String.valueOf(SAMPLE_RATE), "-movflags", "+faststart",
+        cmd.addAll(List.of(
+                "-filter_complex",
+                filterGraph(parts, size, transition),
+                "-map",
+                "[v]",
+                "-map",
+                "[a]",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-r",
+                String.valueOf(FPS),
+                "-c:a",
+                "aac",
+                "-b:a",
+                "160k",
+                "-ar",
+                String.valueOf(SAMPLE_RATE),
+                "-movflags",
+                "+faststart",
                 out.toString()));
         return cmd;
     }
@@ -182,8 +225,7 @@ public final class MergeRules {
     // ── carrying transcripts over ─────────────────────────────────────────
 
     /** One transcript segment, as far as joining is concerned. */
-    public record Seg(long startMs, long endMs, String text, String speaker) {
-    }
+    public record Seg(long startMs, long endMs, String text, String speaker) {}
 
     /** Where each clip starts in the joined video: the total length of the clips before it. */
     public static List<Long> offsets(List<Part> parts) {
@@ -228,14 +270,15 @@ public final class MergeRules {
     /** A short line for the job log and the job list. */
     public static String describe(int count, String resolution, String transition) {
         AudioToVideoRules.Size size = AudioToVideoRules.size(resolution);
-        String joint = switch (transition == null ? "NONE" : transition) {
-            case "FADE" -> ", fades";
-            case "FADE_WHITE" -> ", fades through white";
-            case "DISSOLVE" -> ", dissolves";
-            case "WIPE" -> ", wipes";
-            case "SLIDE" -> ", slides";
-            default -> "";
-        };
+        String joint =
+                switch (transition == null ? "NONE" : transition) {
+                    case "FADE" -> ", fades";
+                    case "FADE_WHITE" -> ", fades through white";
+                    case "DISSOLVE" -> ", dissolves";
+                    case "WIPE" -> ", wipes";
+                    case "SLIDE" -> ", slides";
+                    default -> "";
+                };
         return "Join " + count + " videos (" + size.w() + "×" + size.h() + joint + ")";
     }
 }

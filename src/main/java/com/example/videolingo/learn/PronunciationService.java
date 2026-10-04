@@ -4,16 +4,15 @@ import com.example.videolingo.exception.AppException;
 import com.example.videolingo.pipeline.JobFailure;
 import com.example.videolingo.pipeline.PipelineProperties;
 import com.example.videolingo.pipeline.WhisperClient;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 // Shadowing practice: what speech-to-text heard in a learner's recording of
 // one line. The comparison with the line itself happens in the browser (the
@@ -25,8 +24,7 @@ public class PronunciationService {
     /** ~30 s of browser-recorded Opus/AAC is well under this. */
     static final long MAX_BYTES = 3L * 1024 * 1024;
 
-    public record Heard(String text) {
-    }
+    public record Heard(String text) {}
 
     private final WhisperClient whisper;
     private final PipelineProperties props;
@@ -50,8 +48,11 @@ public class PronunciationService {
             tmp = Files.createTempFile("pronunciation-", ext);
             file.transferTo(tmp);
             WhisperClient.Result result = whisper.transcribe(tmp, language);
-            String text = result.segments().stream().map(WhisperClient.Segment::text).map(String::strip)
-                    .filter(t -> !t.isEmpty()).collect(Collectors.joining(" "));
+            String text = result.segments().stream()
+                    .map(WhisperClient.Segment::text)
+                    .map(String::strip)
+                    .filter(t -> !t.isEmpty())
+                    .collect(Collectors.joining(" "));
             return new Heard(text);
         } catch (JobFailure e) {
             throw new AppException(HttpStatus.BAD_GATEWAY, e.getMessage());
@@ -70,7 +71,8 @@ public class PronunciationService {
 
     // Whisper tells formats apart by the file name.
     static String extension(String contentType) {
-        String type = contentType == null ? "" : contentType.split(";")[0].strip().toLowerCase(Locale.ROOT);
+        String type =
+                contentType == null ? "" : contentType.split(";")[0].strip().toLowerCase(Locale.ROOT);
         return switch (type) {
             case "audio/webm", "video/webm" -> ".webm";
             case "audio/ogg" -> ".ogg";

@@ -16,7 +16,9 @@ import lombok.Setter;
 // One cue of a subtitle track. Replaced wholesale on every save, so
 // `position` is 0..n-1 in start order. `text` keeps its '\n' line breaks.
 @Entity
-@Table(name = "subtitle_cues", indexes = @Index(name = "idx_subtitle_cues_subtitle", columnList = "subtitle_id, position"))
+@Table(
+        name = "subtitle_cues",
+        indexes = @Index(name = "idx_subtitle_cues_subtitle", columnList = "subtitle_id, position"))
 @Getter
 @Setter
 @NoArgsConstructor

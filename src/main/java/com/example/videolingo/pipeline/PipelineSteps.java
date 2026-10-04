@@ -24,6 +24,17 @@ import com.example.videolingo.subtitle.Cue;
 import com.example.videolingo.subtitle.SubtitleFiles;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -33,20 +44,8 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.charset.StandardCharsets;
-import java.net.URLEncoder;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 // What each job type does. Steps take a JobContext for progress, so they can
 // be chained: a DUB job transcribes and translates first when needed.
@@ -150,7 +149,8 @@ public class PipelineSteps {
         for (int i = 0; i < segments.size(); i++) {
             TranscriptSegment s = segments.get(i);
             if (i % 5 == 0) {
-                speak.progress(i * 100 / segments.size(), "Recording voice (" + (i + 1) + " of " + segments.size() + ")");
+                speak.progress(
+                        i * 100 / segments.size(), "Recording voice (" + (i + 1) + " of " + segments.size() + ")");
             }
             String line = s.getText().replace('\n', ' ').strip();
             if (line.isEmpty()) {
@@ -228,8 +228,10 @@ public class PipelineSteps {
         // 2. The sound: keep it, or swap in a voice-over.
         String output = input;
         if (audio != null) {
-            VideoDub dub = dubRepository.findByVideoIdAndLanguage(video.getId(), audio)
-                    .orElseThrow(() -> new JobFailure("There's no " + translator.name(audio) + " voice-over for this video any more"));
+            VideoDub dub = dubRepository
+                    .findByVideoIdAndLanguage(video.getId(), audio)
+                    .orElseThrow(() -> new JobFailure(
+                            "There's no " + translator.name(audio) + " voice-over for this video any more"));
             ctx.progress(65, "Adding the " + translator.name(audio) + " voice-over");
             Path dubFile = fetch(dub.getStorageKey(), "dub-audio", ctx);
             output = media.replaceAudio(input, dubFile, ctx).toString();
@@ -239,11 +241,13 @@ public class PipelineSteps {
         String subtitleLabel = null;
         String subtitleLanguage = null;
         if (subtitleId != null && !importing) {
-            Subtitle track = subtitleRepository.findById(subtitleId)
+            Subtitle track = subtitleRepository
+                    .findById(subtitleId)
                     .filter(s -> s.getVideoId().equals(video.getId()))
                     .orElseThrow(() -> new JobFailure("That subtitle track no longer exists"));
             List<Cue> cues = cueRepository.findBySubtitleIdOrderByPositionAsc(track.getId()).stream()
-                    .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText())).toList();
+                    .map(c -> new Cue(c.getStartMs(), c.getEndMs(), c.getText()))
+                    .toList();
             if (cues.isEmpty()) {
                 throw new JobFailure("The subtitle track “" + track.getLabel() + "” has no cues");
             }
@@ -282,7 +286,8 @@ public class PipelineSteps {
             upload(key, file, "video/mp4", null);
             ctx.checkpoint();
             importInto(video.getId(), key, size);
-            ctx.info("Imported into storage (" + (size / (1024 * 1024)) + " MB) — the video now plays from your storage");
+            ctx.info("Imported into storage (" + (size / (1024 * 1024))
+                    + " MB) — the video now plays from your storage");
         } else {
             String key = "exports/" + video.getId() + "/" + job.getId() + ".mp4";
             upload(key, file, "video/mp4", fileName);
@@ -297,7 +302,8 @@ public class PipelineSteps {
                     .sizeBytes(size)
                     .expiresAt(LocalDateTime.now().plusHours(EXPORT_HOURS))
                     .build());
-            ctx.info("Download ready: " + fileName + " (" + (size / (1024 * 1024)) + " MB), available for " + EXPORT_HOURS + " hours");
+            ctx.info("Download ready: " + fileName + " (" + (size / (1024 * 1024)) + " MB), available for "
+                    + EXPORT_HOURS + " hours");
         }
     }
 
@@ -394,8 +400,18 @@ public class PipelineSteps {
             if (!probe.hasAudio() || probe.durationMs() == null || probe.durationMs() <= 0) {
                 throw new JobFailure("That file has no audio in it, or its length can't be read");
             }
-            AudioToVideoRules.Spec shown = new AudioToVideoRules.Spec(spec.audioKey(), null, spec.background(), "360p", spec.waveform(), spec.waveColor(), false, null,
-                    spec.normalize(), spec.denoise(), List.of());
+            AudioToVideoRules.Spec shown = new AudioToVideoRules.Spec(
+                    spec.audioKey(),
+                    null,
+                    spec.background(),
+                    "360p",
+                    spec.waveform(),
+                    spec.waveColor(),
+                    false,
+                    null,
+                    spec.normalize(),
+                    spec.denoise(),
+                    List.of());
             Path out = media.audioToVideoQuick(shown, audio, Math.min(PREVIEW_MS, probe.durationMs()), dir);
             String key = OverlayRules.UPLOAD_PREFIX + "preview-" + java.util.UUID.randomUUID() + ".mp4";
             upload(key, out, "video/mp4", null);
@@ -427,10 +443,21 @@ public class PipelineSteps {
 
     private void audioToVideoJob(Video video, ProcessingJob job, JsonNode p, JobContext ctx) {
         List<AudioToVideoRules.Slide> requested = new ArrayList<>();
-        p.path("slides").forEach(n -> requested.add(new AudioToVideoRules.Slide(n.path("key").asText(""), n.path("startMs").asLong(0))));
-        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(text(p, "audioKey", null), text(p, "coverKey", null), text(p, "background", null),
-                text(p, "resolution", null), text(p, "waveform", null), text(p, "waveColor", null), p.path("titleCard").asBoolean(false),
-                text(p, "titleText", null), p.path("normalize").asBoolean(false), p.path("denoise").asBoolean(false), requested);
+        p.path("slides")
+                .forEach(n -> requested.add(new AudioToVideoRules.Slide(
+                        n.path("key").asText(""), n.path("startMs").asLong(0))));
+        AudioToVideoRules.Spec spec = new AudioToVideoRules.Spec(
+                text(p, "audioKey", null),
+                text(p, "coverKey", null),
+                text(p, "background", null),
+                text(p, "resolution", null),
+                text(p, "waveform", null),
+                text(p, "waveColor", null),
+                p.path("titleCard").asBoolean(false),
+                text(p, "titleText", null),
+                p.path("normalize").asBoolean(false),
+                p.path("denoise").asBoolean(false),
+                requested);
         String problem = AudioToVideoRules.validate(spec);
         if (problem != null) {
             throw new JobFailure(problem);
@@ -445,13 +472,18 @@ public class PipelineSteps {
             throw new JobFailure("Couldn't read how long the audio is");
         }
         // Only pictures that appear before the sound ends are fetched (the same choice the command makes).
-        List<AudioToVideoRules.Slide> shown = spec.slides().isEmpty() ? List.of() : AudioToVideoRules.usableSlides(spec.slides(), probe.durationMs());
+        List<AudioToVideoRules.Slide> shown =
+                spec.slides().isEmpty() ? List.of() : AudioToVideoRules.usableSlides(spec.slides(), probe.durationMs());
         if (shown.size() < spec.slides().size()) {
             ctx.info((spec.slides().size() - shown.size()) + " picture(s) start after the sound ends and are left out");
         }
         List<Path> covers = new ArrayList<>();
         for (int i = 0; i < shown.size(); i++) {
-            ctx.progress(6 + i * 6 / shown.size(), shown.size() > 1 ? "Fetching picture " + (i + 1) + " of " + shown.size() : "Fetching the cover picture");
+            ctx.progress(
+                    6 + i * 6 / shown.size(),
+                    shown.size() > 1
+                            ? "Fetching picture " + (i + 1) + " of " + shown.size()
+                            : "Fetching the cover picture");
             covers.add(fetch(shown.get(i).key(), "cover-" + i, ctx));
         }
         Path cover = covers.isEmpty() ? null : covers.get(0);
@@ -464,8 +496,24 @@ public class PipelineSteps {
             int fontPx = Math.max(6, (int) Math.round(frame.h() * 0.07));
             int maxChars = Math.max(8, (int) (frame.w() * 0.8 / (fontPx * 0.55)));
             String wrapped = String.join("\n", AudioToVideoRules.wrapTitle(spec.titleText(), maxChars, 4));
-            OverlayRules.Layer layer = new OverlayRules.Layer("TEXT", wrapped, "SansSerif", 700, 7.0, AudioToVideoRules.contrastColor(spec.background()),
-                    null, 0.0, "CENTER", null, 0.0, 0.5, 0.5, 1.0, 0L, null, "NONE");
+            OverlayRules.Layer layer = new OverlayRules.Layer(
+                    "TEXT",
+                    wrapped,
+                    "SansSerif",
+                    700,
+                    7.0,
+                    AudioToVideoRules.contrastColor(spec.background()),
+                    null,
+                    0.0,
+                    "CENTER",
+                    null,
+                    0.0,
+                    0.5,
+                    0.5,
+                    1.0,
+                    0L,
+                    null,
+                    "NONE");
             titlePng = ctx.workDir().resolve("title.png");
             TextRenderer.write(TextRenderer.render(layer, frame.h()), titlePng);
         }
@@ -499,7 +547,8 @@ public class PipelineSteps {
         // The video is already made, so a transcript that can't be made must not fail the job.
         if (p.path("transcribe").asBoolean(false)) {
             if (video.getLanguage() == null) {
-                ctx.warn("No spoken language is set, so no transcript was made. Set it and transcribe from the video's page.");
+                ctx.warn(
+                        "No spoken language is set, so no transcript was made. Set it and transcribe from the video's page.");
             } else {
                 try {
                     transcribe(video, video.getLanguage(), job.getId(), ctx.slice(94, 100));
@@ -526,7 +575,9 @@ public class PipelineSteps {
         List<MergeRules.Part> parts = new ArrayList<>();
         List<Video> sources = new ArrayList<>();
         for (int i = 0; i < ids.size(); i++) {
-            Video source = videoRepository.findById(ids.get(i)).orElseThrow(() -> new JobFailure("A video to join no longer exists"));
+            Video source = videoRepository
+                    .findById(ids.get(i))
+                    .orElseThrow(() -> new JobFailure("A video to join no longer exists"));
             sources.add(source);
             if (source.isDeleted()) {
                 throw new JobFailure("\"" + source.getTitle() + "\" is in the trash — restore it or leave it out");
@@ -586,7 +637,8 @@ public class PipelineSteps {
     // Transcripts the joined videos all have come along, each clip's text moved to where the clip now sits.
     // Only languages every video has: a video without one would leave a hole. The video is already made,
     // so nothing here may fail the job.
-    private void carryTranscripts(Video video, List<Video> sources, List<MergeRules.Part> parts, ProcessingJob job, JobContext ctx) {
+    private void carryTranscripts(
+            Video video, List<Video> sources, List<MergeRules.Part> parts, ProcessingJob job, JobContext ctx) {
         try {
             List<java.util.Map<String, Transcript>> perVideo = new ArrayList<>();
             for (Video source : sources) {
@@ -598,7 +650,8 @@ public class PipelineSteps {
                 }
                 perVideo.add(byLanguage);
             }
-            List<String> languages = MergeRules.commonLanguages(perVideo.stream().map(m -> (Set<String>) m.keySet()).toList());
+            List<String> languages = MergeRules.commonLanguages(
+                    perVideo.stream().map(m -> (Set<String>) m.keySet()).toList());
             if (languages.isEmpty()) {
                 return;
             }
@@ -606,17 +659,30 @@ public class PipelineSteps {
             for (String language : languages) {
                 List<TranscriptSegmentDto> merged = new ArrayList<>();
                 for (int i = 0; i < sources.size(); i++) {
-                    List<MergeRules.Seg> segs = segmentRepository.findByTranscriptIdOrderByPositionAsc(perVideo.get(i).get(language).getId()).stream()
-                            .map(x -> new MergeRules.Seg(x.getStartMs(), x.getEndMs(), x.getText(), x.getSpeaker())).toList();
-                    for (MergeRules.Seg s : MergeRules.shift(segs, offsets.get(i), parts.get(i).durationMs())) {
-                        merged.add(TranscriptSegmentDto.builder().startMs(s.startMs()).endMs(s.endMs()).text(s.text()).speaker(s.speaker()).build());
+                    List<MergeRules.Seg> segs =
+                            segmentRepository
+                                    .findByTranscriptIdOrderByPositionAsc(
+                                            perVideo.get(i).get(language).getId())
+                                    .stream()
+                                    .map(x -> new MergeRules.Seg(
+                                            x.getStartMs(), x.getEndMs(), x.getText(), x.getSpeaker()))
+                                    .toList();
+                    for (MergeRules.Seg s :
+                            MergeRules.shift(segs, offsets.get(i), parts.get(i).durationMs())) {
+                        merged.add(TranscriptSegmentDto.builder()
+                                .startMs(s.startMs())
+                                .endMs(s.endMs())
+                                .text(s.text())
+                                .speaker(s.speaker())
+                                .build());
                     }
                 }
                 if (!merged.isEmpty()) {
                     transcriptService.saveGenerated(video.getId(), language, merged, job.getId(), ACTOR);
                 }
             }
-            ctx.info("Carried over the " + String.join(", ", languages) + " transcript" + (languages.size() == 1 ? "" : "s") + " of the joined videos");
+            ctx.info("Carried over the " + String.join(", ", languages) + " transcript"
+                    + (languages.size() == 1 ? "" : "s") + " of the joined videos");
         } catch (RuntimeException e) {
             ctx.warn("The transcripts could not be carried over: " + e.getMessage());
         }
@@ -639,8 +705,7 @@ public class PipelineSteps {
     }
 
     /** What an audio render made: the file and how long it is after any speed change. */
-    private record AudioRender(Path file, long outMs) {
-    }
+    private record AudioRender(Path file, long outMs) {}
 
     /** Renders `spec`'s sound onto `input` (the shared part of an AUDIO job and a trim with added audio). */
     private AudioRender renderAudio(AudioEditRules.Spec spec, String input, JobContext ctx) {
@@ -670,13 +735,23 @@ public class PipelineSteps {
         }
 
         boolean mono = replacementProbe != null ? replacementProbe.mono() : source.mono();
-        AudioEditRules.Inputs inputs = new AudioEditRules.Inputs(source.durationMs(), source.hasAudio(), mono,
+        AudioEditRules.Inputs inputs = new AudioEditRules.Inputs(
+                source.durationMs(),
+                source.hasAudio(),
+                mono,
                 replacementProbe != null ? replacementProbe.durationMs() : source.durationMs());
         AudioEditRules.Graph graph = AudioEditRules.build(spec, inputs);
         long outMs = Math.round(source.durationMs() / spec.speed());
 
         ctx.progress(25, graph.picture() ? "Rendering the sound and re-timing the picture" : "Rendering the sound");
-        Path out = media.editAudio(input, replacement, music, spec.music() != null && spec.music().loop(), graph, outMs, ctx.slice(25, 90));
+        Path out = media.editAudio(
+                input,
+                replacement,
+                music,
+                spec.music() != null && spec.music().loop(),
+                graph,
+                outMs,
+                ctx.slice(25, 90));
         return new AudioRender(out, outMs);
     }
 
@@ -698,12 +773,18 @@ public class PipelineSteps {
         upload(key, out, "video/mp4", null);
         ctx.checkpoint();
         clipRepository.save(VideoClip.builder()
-                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.AUDIO)
-                .startMs(0).endMs(null)
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.AUDIO)
+                .startMs(0)
+                .endMs(null)
                 .durationSeconds((int) (outMs / 1000))
-                .width(video.getWidth()).height(video.getHeight())
+                .width(video.getWidth())
+                .height(video.getHeight())
                 .summary(text(p, "summary", AudioEditRules.describe(spec)))
-                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .storageKey(key)
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Audio edit ready — listen to it, then replace the original video or discard it");
@@ -749,12 +830,18 @@ public class PipelineSteps {
         upload(key, out, "video/mp4", null);
         ctx.checkpoint();
         clipRepository.save(VideoClip.builder()
-                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.OVERLAY)
-                .startMs(0).endMs(null)
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.OVERLAY)
+                .startMs(0)
+                .endMs(null)
                 .durationSeconds((int) (probe.durationMs() / 1000))
-                .width(probe.width()).height(probe.height())
+                .width(probe.width())
+                .height(probe.height())
                 .summary(text(p, "summary", OverlayRules.describe(spec)))
-                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .storageKey(key)
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Text & overlay ready — preview it, then replace the original video or discard it");
@@ -771,11 +858,16 @@ public class PipelineSteps {
         upload(key, out, wav ? "audio/wav" : "audio/mpeg", downloadName);
         ctx.checkpoint();
         clipRepository.save(VideoClip.builder()
-                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.EXTRACT)
-                .startMs(0).endMs(null)
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.EXTRACT)
+                .startMs(0)
+                .endMs(null)
                 .durationSeconds(video.getDurationSeconds())
                 .summary(wav ? "WAV · 16-bit PCM" : "MP3 · 192 kbps")
-                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .storageKey(key)
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Audio extracted as " + downloadName);
@@ -800,7 +892,18 @@ public class PipelineSteps {
                 throw new JobFailure("The job's look settings aren't valid: " + e.getMessage());
             }
         }
-        Path out = media.trim(input, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, ctx.slice(20, p.has("audio") ? 60 : 90));
+        Path out = media.trim(
+                input,
+                startMs,
+                endMs,
+                crop,
+                scale,
+                rotate,
+                flipH,
+                flipV,
+                padMs,
+                look,
+                ctx.slice(20, p.has("audio") ? 60 : 90));
         String audioSummary = null;
         if (p.hasNonNull("audio")) {
             AudioEditRules.Spec audio;
@@ -821,22 +924,36 @@ public class PipelineSteps {
         // Boxed on every branch on purpose: mixing a primitive int (crop.w()/scale.w())
         // with an Integer (video.getWidth()) in a ternary makes Java auto-unbox the
         // Integer branch, which NPEs when the video has no recorded width/height.
-        // A quarter turn swaps the sides of the picture that was cropped (or the whole one); a resize is already the final size.
+        // A quarter turn swaps the sides of the picture that was cropped (or the whole one); a resize is already the
+        // final size.
         boolean swap = VideoEditRules.swapsSides(rotate);
         Integer baseW = crop != null ? Integer.valueOf(crop.w()) : video.getWidth();
         Integer baseH = crop != null ? Integer.valueOf(crop.h()) : video.getHeight();
         Integer width = scale != null ? Integer.valueOf(scale.w()) : swap ? baseH : baseW;
         Integer height = scale != null ? Integer.valueOf(scale.h()) : swap ? baseW : baseH;
         clipRepository.save(VideoClip.builder()
-                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.TRIM)
-                .startMs(startMs).endMs(endMs)
-                .cropX(crop != null ? crop.x() : null).cropY(crop != null ? crop.y() : null)
-                .cropW(crop != null ? crop.w() : null).cropH(crop != null ? crop.h() : null)
-                .scaleW(scale != null ? scale.w() : null).scaleH(scale != null ? scale.h() : null)
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.TRIM)
+                .startMs(startMs)
+                .endMs(endMs)
+                .cropX(crop != null ? crop.x() : null)
+                .cropY(crop != null ? crop.y() : null)
+                .cropW(crop != null ? crop.w() : null)
+                .cropH(crop != null ? crop.h() : null)
+                .scaleW(scale != null ? scale.w() : null)
+                .scaleH(scale != null ? scale.h() : null)
                 .durationSeconds(clipSeconds(startMs, endMs, video))
-                .width(width).height(height)
-                .summary(joinSummary(joinSummary(VideoEditRules.describeOrientation(rotate, flipH, flipV), VideoEditRules.describeLook(look)), audioSummary))
-                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .width(width)
+                .height(height)
+                .summary(joinSummary(
+                        joinSummary(
+                                VideoEditRules.describeOrientation(rotate, flipH, flipV),
+                                VideoEditRules.describeLook(look)),
+                        audioSummary))
+                .storageKey(key)
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Trim ready — review it, then replace the original video or discard it");
@@ -848,12 +965,17 @@ public class PipelineSteps {
 
     private void cutJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
         List<VideoEditRules.Segment> cuts = new ArrayList<>();
-        p.path("cuts").forEach(c -> cuts.add(new VideoEditRules.Segment(c.path("startMs").asLong(0), c.hasNonNull("endMs") ? c.get("endMs").asLong() : null)));
+        p.path("cuts")
+                .forEach(c -> cuts.add(new VideoEditRules.Segment(
+                        c.path("startMs").asLong(0),
+                        c.hasNonNull("endMs") ? c.get("endMs").asLong() : null)));
         if (cuts.isEmpty()) {
             throw new JobFailure("The job has no cuts");
         }
         MediaTools.Probe probe = media.probe(input, ctx.workDir());
-        Long totalMs = probe.durationMs() != null ? probe.durationMs() : video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null;
+        Long totalMs = probe.durationMs() != null
+                ? probe.durationMs()
+                : video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null;
         long removedMs = 0;
         for (VideoEditRules.Segment c : cuts) {
             Long end = c.endMs() != null ? c.endMs() : totalMs;
@@ -870,12 +992,19 @@ public class PipelineSteps {
 
         // Stored as a TRIM result, so it can replace the original or become a new video like any trim.
         clipRepository.save(VideoClip.builder()
-                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.TRIM)
-                .startMs(0).endMs(null)
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.TRIM)
+                .startMs(0)
+                .endMs(null)
                 .durationSeconds(keptMs == null ? null : (int) (keptMs / 1000))
-                .width(video.getWidth()).height(video.getHeight())
-                .summary("Cut out " + cuts.size() + (cuts.size() == 1 ? " range" : " ranges") + (removedMs > 0 ? " (" + removedMs / 1000 + " s)" : ""))
-                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .width(video.getWidth())
+                .height(video.getHeight())
+                .summary("Cut out " + cuts.size() + (cuts.size() == 1 ? " range" : " ranges")
+                        + (removedMs > 0 ? " (" + removedMs / 1000 + " s)" : ""))
+                .storageKey(key)
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Cut ready — review it, then replace the original video or add it as a new one");
@@ -899,11 +1028,18 @@ public class PipelineSteps {
             upload(key, out, "video/mp4", null);
             ctx.checkpoint();
             clipRepository.save(VideoClip.builder()
-                    .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.SPLIT).segmentIndex(i)
-                    .startMs(startMs).endMs(endMs)
+                    .videoId(video.getId())
+                    .jobId(job.getId())
+                    .operation(VideoClip.Operation.SPLIT)
+                    .segmentIndex(i)
+                    .startMs(startMs)
+                    .endMs(endMs)
                     .durationSeconds(clipSeconds(startMs, endMs, video))
-                    .width(video.getWidth()).height(video.getHeight())
-                    .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                    .width(video.getWidth())
+                    .height(video.getHeight())
+                    .storageKey(key)
+                    .url(publicUrl(key))
+                    .sizeBytes(size(out))
                     .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                     .build());
         }
@@ -911,7 +1047,9 @@ public class PipelineSteps {
     }
 
     private static Integer clipSeconds(long startMs, Long endMs, Video video) {
-        Long end = endMs != null ? endMs : (video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null);
+        Long end = endMs != null
+                ? endMs
+                : (video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null);
         return end == null ? null : (int) Math.max(0, (end - startMs) / 1000);
     }
 
@@ -919,7 +1057,11 @@ public class PipelineSteps {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return null;
         }
-        return new MediaTools.CropRect(node.path("x").asInt(0), node.path("y").asInt(0), node.path("w").asInt(), node.path("h").asInt());
+        return new MediaTools.CropRect(
+                node.path("x").asInt(0),
+                node.path("y").asInt(0),
+                node.path("w").asInt(),
+                node.path("h").asInt());
     }
 
     private static MediaTools.ScaleSize scale(JsonNode node) {
@@ -965,16 +1107,19 @@ public class PipelineSteps {
      * every OS. Burned-in subtitles add "(en subs)" / "(km, en subs)".
      */
     static String fileName(String title, String audio, String subtitles) {
-        String base = (title == null ? "video" : title).replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ").replaceAll("\\s+", " ").strip();
+        String base = (title == null ? "video" : title)
+                .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ")
+                .replaceAll("\\s+", " ")
+                .strip();
         if (base.isEmpty()) {
             base = "video";
         }
         if (base.length() > 120) {
             base = base.substring(0, 120).strip();
         }
-        String marks = audio != null && subtitles != null ? " (" + audio + ", " + subtitles + " subs)"
-                : audio != null ? " (" + audio + ")"
-                : subtitles != null ? " (" + subtitles + " subs)" : "";
+        String marks = audio != null && subtitles != null
+                ? " (" + audio + ", " + subtitles + " subs)"
+                : audio != null ? " (" + audio + ")" : subtitles != null ? " (" + subtitles + " subs)" : "";
         return base + marks + ".mp4";
     }
 
@@ -990,13 +1135,16 @@ public class PipelineSteps {
         List<TranscriptSegmentDto> segments = new ArrayList<>();
         String languageName = translator.name(language);
         if (WhisperClient.needsAutoDetect(language)) {
-            ctx.info("OpenAI speech-to-text can't be told to expect " + languageName + ", so it detects the language itself");
+            ctx.info("OpenAI speech-to-text can't be told to expect " + languageName
+                    + ", so it detects the language itself");
         }
         Set<String> heard = new LinkedHashSet<>();
         for (int i = 0; i < chunks.size(); i++) {
-            ctx.progress(30 + i * 65 / chunks.size(), chunks.size() > 1
-                    ? "Transcribing (part " + (i + 1) + " of " + chunks.size() + ")"
-                    : "Transcribing");
+            ctx.progress(
+                    30 + i * 65 / chunks.size(),
+                    chunks.size() > 1
+                            ? "Transcribing (part " + (i + 1) + " of " + chunks.size() + ")"
+                            : "Transcribing");
             long offset = (long) i * MediaTools.CHUNK_SECONDS * 1000;
             WhisperClient.Result result = whisper.transcribe(chunks.get(i), language);
             if (result.detectedLanguage() != null) {
@@ -1015,7 +1163,9 @@ public class PipelineSteps {
         }
         // The model names what it heard ("khmer"); say so if that isn't the video's language.
         String expected = languageName.toLowerCase(Locale.ROOT);
-        List<String> other = heard.stream().filter(h -> !expected.contains(h) && !h.contains(expected)).toList();
+        List<String> other = heard.stream()
+                .filter(h -> !expected.contains(h) && !h.contains(expected))
+                .toList();
         if (!other.isEmpty()) {
             ctx.warn("Speech-to-text heard " + String.join(", ", other) + " rather than " + languageName
                     + " — check the transcript, and the video's spoken language");
@@ -1028,11 +1178,18 @@ public class PipelineSteps {
     private void translate(Video video, String from, String to, boolean forSpeech, long jobId, JobContext ctx) {
         Transcript source = withText(video.getId(), from);
         if (source == null) {
-            throw new JobFailure("There's no " + translator.name(from) + " transcript with text to translate from — transcribe the video first");
+            throw new JobFailure("There's no " + translator.name(from)
+                    + " transcript with text to translate from — transcribe the video first");
         }
         List<TranscriptSegment> rows = segmentRepository.findByTranscriptIdOrderByPositionAsc(source.getId());
-        List<String> translated = translator.translate(rows.stream().map(TranscriptSegment::getText).toList(),
-                from, to, forSpeech, video.getId(), source.getId(), ctx.slice(0, 95));
+        List<String> translated = translator.translate(
+                rows.stream().map(TranscriptSegment::getText).toList(),
+                from,
+                to,
+                forSpeech,
+                video.getId(),
+                source.getId(),
+                ctx.slice(0, 95));
         List<TranscriptSegmentDto> segments = new ArrayList<>(rows.size());
         for (int i = 0; i < rows.size(); i++) {
             String text = translated.get(i);
@@ -1048,8 +1205,16 @@ public class PipelineSteps {
         ctx.info("Translated " + segments.size() + " segments into " + translator.name(to) + " transcript #" + id);
     }
 
-    private void store(Video video, String language, String voice, Long transcriptId, Path file, String mime,
-                       long durationMs, long jobId, JobContext ctx) {
+    private void store(
+            Video video,
+            String language,
+            String voice,
+            Long transcriptId,
+            Path file,
+            String mime,
+            long durationMs,
+            long jobId,
+            JobContext ctx) {
         requireBucket();
         String ext = mime.equals("audio/mpeg") ? "mp3" : "wav";
         String key = "dubs/" + video.getId() + "/" + language + "-" + jobId + "." + ext;
@@ -1062,10 +1227,15 @@ public class PipelineSteps {
         upload(key, file, mime, null);
         ctx.checkpoint();
 
-        VideoDub dub = dubRepository.findByVideoIdAndLanguage(video.getId(), language).orElse(null);
+        VideoDub dub =
+                dubRepository.findByVideoIdAndLanguage(video.getId(), language).orElse(null);
         String oldKey = dub != null ? dub.getStorageKey() : null;
         if (dub == null) {
-            dub = VideoDub.builder().videoId(video.getId()).language(language).createdBy(ACTOR).build();
+            dub = VideoDub.builder()
+                    .videoId(video.getId())
+                    .language(language)
+                    .createdBy(ACTOR)
+                    .build();
         }
         dub.setVoice(voice);
         dub.setTranscriptId(transcriptId);
@@ -1096,7 +1266,8 @@ public class PipelineSteps {
 
     // `downloadName` makes browsers save the file under that name instead of playing it.
     private void upload(String key, Path file, String contentType, String downloadName) {
-        PutObjectRequest.Builder req = PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType);
+        PutObjectRequest.Builder req =
+                PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType);
         if (downloadName != null) {
             String ascii = downloadName.replaceAll("[^A-Za-z0-9 ._()-]", "_");
             req.contentDisposition("attachment; filename=\"" + ascii + "\"; filename*=UTF-8''"
@@ -1120,8 +1291,11 @@ public class PipelineSteps {
         } catch (NoSuchKeyException e) {
             // Files uploaded only for one edit are removed after a while, so a retry can find them gone.
             if (isEditUpload(key)) {
-                throw new JobFailure("An uploaded file for this job (" + key.substring(key.lastIndexOf('/') + 1) + ") is no longer in storage — files uploaded for an edit "
-                        + "are kept for " + CLIP_HOURS + " hours. Start the job again with a fresh upload.", e);
+                throw new JobFailure(
+                        "An uploaded file for this job (" + key.substring(key.lastIndexOf('/') + 1)
+                                + ") is no longer in storage — files uploaded for an edit " + "are kept for "
+                                + CLIP_HOURS + " hours. Start the job again with a fresh upload.",
+                        e);
             }
             throw new JobFailure("Couldn't read " + key + " from storage: it is missing", e);
         } catch (RuntimeException e) {
@@ -1132,7 +1306,8 @@ public class PipelineSteps {
 
     /** Whether this key is one of the temporary uploads made for an edit (audio, music or pictures). */
     static boolean isEditUpload(String key) {
-        return key != null && (key.startsWith(AudioEditRules.UPLOAD_PREFIX) || key.startsWith(OverlayRules.UPLOAD_PREFIX));
+        return key != null
+                && (key.startsWith(AudioEditRules.UPLOAD_PREFIX) || key.startsWith(OverlayRules.UPLOAD_PREFIX));
     }
 
     /** One of our objects copied into `dir` (outside any job). */
@@ -1159,7 +1334,11 @@ public class PipelineSteps {
         }
         int deleted = 0;
         try {
-            for (S3Object o : s3.listObjectsV2Paginator(ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build()).contents()) {
+            for (S3Object o : s3.listObjectsV2Paginator(ListObjectsV2Request.builder()
+                            .bucket(bucket)
+                            .prefix(prefix)
+                            .build())
+                    .contents()) {
                 if (o.lastModified() != null && o.lastModified().isBefore(cutoff)) {
                     deleteObject(o.key());
                     deleted++;
@@ -1174,7 +1353,8 @@ public class PipelineSteps {
 
     void deleteObject(String key) {
         try {
-            s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+            s3.deleteObject(
+                    DeleteObjectRequest.builder().bucket(bucket).key(key).build());
         } catch (RuntimeException ignored) {
             // An orphaned file costs a little storage; not worth failing over.
         }
@@ -1183,13 +1363,15 @@ public class PipelineSteps {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private Transcript withText(Long videoId, String language) {
-        return transcriptRepository.findByVideoIdAndLanguage(videoId, language)
+        return transcriptRepository
+                .findByVideoIdAndLanguage(videoId, language)
                 .filter(t -> t.getSegmentCount() > 0)
                 .orElse(null);
     }
 
     private Video video(ProcessingJob job) {
-        Video video = videoRepository.findById(job.getVideoId())
+        Video video = videoRepository
+                .findById(job.getVideoId())
                 .orElseThrow(() -> new JobFailure("The video no longer exists"));
         if (video.isDeleted()) {
             throw new JobFailure("The video is in the trash — restore it first");
@@ -1199,7 +1381,9 @@ public class PipelineSteps {
 
     private JsonNode params(ProcessingJob job) {
         try {
-            return job.getParameters() == null ? objectMapper.createObjectNode() : objectMapper.readTree(job.getParameters());
+            return job.getParameters() == null
+                    ? objectMapper.createObjectNode()
+                    : objectMapper.readTree(job.getParameters());
         } catch (IOException e) {
             throw new JobFailure("The job's parameters aren't valid JSON");
         }

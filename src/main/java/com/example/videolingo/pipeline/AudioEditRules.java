@@ -1,7 +1,6 @@
 package com.example.videolingo.pipeline;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -25,29 +24,39 @@ public final class AudioEditRules {
     public static final long MAX_FADE_MS = 60_000;
     /** Uploaded audio lives under this prefix; nothing else in the bucket may be named in a request. */
     public static final String UPLOAD_PREFIX = "audio-uploads/";
+
     static final int RATE = 48_000;
 
     public static final Set<String> DENOISE = Set.of("OFF", "LIGHT", "STRONG");
     public static final Set<String> CHANNELS = Set.of("KEEP", "MONO", "STEREO");
 
     /** A piece of the source sound [srcStartMs, srcEndMs), placed at atMs on the video's timeline. */
-    public record Clip(long srcStartMs, long srcEndMs, long atMs, double gain) {
-    }
+    public record Clip(long srcStartMs, long srcEndMs, long atMs, double gain) {}
 
-    public record Range(long startMs, long endMs) {
-    }
+    public record Range(long startMs, long endMs) {}
 
-    public record Music(String key, double volume, boolean loop, boolean duck, long startMs) {
-    }
+    public record Music(String key, double volume, boolean loop, boolean duck, long startMs) {}
 
     /**
      * A complete edit, with defaults filled in. clips empty = the source sound
      * as-is, from 0. Times are on the video's own (1×) timeline; speed then
      * scales the whole result, picture included.
      */
-    public record Spec(String replaceKey, List<Clip> clips, List<Range> mutes, double volume, long fadeInMs, long fadeOutMs,
-                       boolean normalize, String denoise, boolean enhanceVoice, double speed, double pitchSemitones, double balance,
-                       String channels, Music music) {
+    public record Spec(
+            String replaceKey,
+            List<Clip> clips,
+            List<Range> mutes,
+            double volume,
+            long fadeInMs,
+            long fadeOutMs,
+            boolean normalize,
+            String denoise,
+            boolean enhanceVoice,
+            double speed,
+            double pitchSemitones,
+            double balance,
+            String channels,
+            Music music) {
 
         public Spec {
             clips = clips == null ? List.of() : List.copyOf(clips);
@@ -65,24 +74,35 @@ public final class AudioEditRules {
         @JsonIgnore
         public boolean isNoop() {
             boolean identityClips = clips.isEmpty()
-                    || (clips.size() == 1 && clips.get(0).srcStartMs() == 0 && clips.get(0).atMs() == 0 && clips.get(0).gain() == 1
-                    && clips.get(0).srcEndMs() == Long.MAX_VALUE);
-            return replaceKey == null && identityClips && mutes.isEmpty() && volume == 1 && fadeInMs == 0 && fadeOutMs == 0
-                    && !normalize && "OFF".equals(denoise) && !enhanceVoice && speed == 1 && pitchSemitones == 0 && balance == 0
-                    && "KEEP".equals(channels) && music == null;
+                    || (clips.size() == 1
+                            && clips.get(0).srcStartMs() == 0
+                            && clips.get(0).atMs() == 0
+                            && clips.get(0).gain() == 1
+                            && clips.get(0).srcEndMs() == Long.MAX_VALUE);
+            return replaceKey == null
+                    && identityClips
+                    && mutes.isEmpty()
+                    && volume == 1
+                    && fadeInMs == 0
+                    && fadeOutMs == 0
+                    && !normalize
+                    && "OFF".equals(denoise)
+                    && !enhanceVoice
+                    && speed == 1
+                    && pitchSemitones == 0
+                    && balance == 0
+                    && "KEEP".equals(channels)
+                    && music == null;
         }
     }
 
     /** What ffmpeg found in the inputs. sourceDurationMs: the sound clips are cut from (video or replacement). */
-    public record Inputs(long videoDurationMs, boolean videoHasAudio, boolean sourceMono, Long sourceDurationMs) {
-    }
+    public record Inputs(long videoDurationMs, boolean videoHasAudio, boolean sourceMono, Long sourceDurationMs) {}
 
     /** filter_complex, and whether the picture goes through it too ([vout]) or is copied. */
-    public record Graph(String filter, boolean picture) {
-    }
+    public record Graph(String filter, boolean picture) {}
 
-    private AudioEditRules() {
-    }
+    private AudioEditRules() {}
 
     // ── validation ───────────────────────────────────────────────────────
 
@@ -162,7 +182,10 @@ public final class AudioEditRules {
     }
 
     public static boolean isUploadKey(String key) {
-        return key != null && key.startsWith(UPLOAD_PREFIX) && !key.contains("..") && key.length() > UPLOAD_PREFIX.length();
+        return key != null
+                && key.startsWith(UPLOAD_PREFIX)
+                && !key.contains("..")
+                && key.length() > UPLOAD_PREFIX.length();
     }
 
     /** What the edit changes, in a line, for the review list ("Volume 150%, fade out 2 s, mono"). */
@@ -196,7 +219,8 @@ public final class AudioEditRules {
             parts.add("voice enhanced");
         }
         if (s.music() != null) {
-            parts.add("background music " + Math.round(s.music().volume() * 100) + "%" + (s.music().duck() ? " (ducked)" : ""));
+            parts.add("background music " + Math.round(s.music().volume() * 100) + "%"
+                    + (s.music().duck() ? " (ducked)" : ""));
         }
         if (s.balance() != 0) {
             parts.add("balance " + (s.balance() < 0 ? "L " : "R ") + Math.round(Math.abs(s.balance()) * 100) + "%");
@@ -260,7 +284,8 @@ public final class AudioEditRules {
             for (int i = 0; i < n; i++) {
                 Clip c = clips.get(i);
                 List<String> f = new ArrayList<>();
-                f.add("atrim=start=" + sec(c.srcStartMs()) + (c.srcEndMs() == Long.MAX_VALUE ? "" : ":end=" + sec(c.srcEndMs())));
+                f.add("atrim=start=" + sec(c.srcStartMs())
+                        + (c.srcEndMs() == Long.MAX_VALUE ? "" : ":end=" + sec(c.srcEndMs())));
                 f.add("asetpts=PTS-STARTPTS");
                 if (c.gain() != 1) {
                     f.add("volume=" + num(c.gain()));
@@ -285,8 +310,7 @@ public final class AudioEditRules {
         switch (s.denoise()) {
             case "LIGHT" -> main.add("afftdn=nr=12:nf=-40");
             case "STRONG" -> main.add("afftdn=nr=30:nf=-35");
-            default -> {
-            }
+            default -> {}
         }
         if (s.enhanceVoice()) {
             // Cut rumble and hiss, lift presence (~3 kHz), even out the level.

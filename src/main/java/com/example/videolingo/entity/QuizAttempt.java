@@ -8,21 +8,22 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // One go at an AI-generated quiz (an AiGeneration of type QUIZ) by a learner,
 // graded on the server so the answers never have to reach the browser first.
 @Entity
-@Table(name = "quiz_attempts", indexes = {
-        @Index(name = "idx_quiz_attempts_user", columnList = "user_id, video_id"),
-        @Index(name = "idx_quiz_attempts_generation", columnList = "generation_id")
-})
+@Table(
+        name = "quiz_attempts",
+        indexes = {
+            @Index(name = "idx_quiz_attempts_user", columnList = "user_id, video_id"),
+            @Index(name = "idx_quiz_attempts_generation", columnList = "generation_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

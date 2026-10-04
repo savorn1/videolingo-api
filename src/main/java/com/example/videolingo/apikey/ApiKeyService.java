@@ -9,36 +9,41 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
 @Service
 @RequiredArgsConstructor
 public class ApiKeyService {
 
-    public record CreateRequest(@NotBlank @Size(max = 100) String name,
-                                // Null = never expires.
-                                @Min(1) @Max(3650) Integer expiresInDays) {
-    }
+    public record CreateRequest(
+            @NotBlank @Size(max = 100) String name,
+            // Null = never expires.
+            @Min(1) @Max(3650) Integer expiresInDays) {}
 
-    public record ApiKeyResponse(Long id, String name, String prefix, String username, LocalDateTime createdAt, LocalDateTime lastUsedAt,
-                                 LocalDateTime expiresAt, LocalDateTime revokedAt, String revokedBy, boolean active) {
-    }
+    public record ApiKeyResponse(
+            Long id,
+            String name,
+            String prefix,
+            String username,
+            LocalDateTime createdAt,
+            LocalDateTime lastUsedAt,
+            LocalDateTime expiresAt,
+            LocalDateTime revokedAt,
+            String revokedBy,
+            boolean active) {}
 
     // The only time the full key is ever returned.
-    public record CreatedKey(ApiKeyResponse key, String secret) {
-    }
+    public record CreatedKey(ApiKeyResponse key, String secret) {}
 
     /** Resolved owner of a valid key. */
-    public record KeyOwner(Long keyId, User user) {
-    }
+    public record KeyOwner(Long keyId, User user) {}
 
     // lastUsedAt is refreshed at most this often, so busy integrations don't write on every call.
     private static final long TOUCH_EVERY_SECONDS = 60;
@@ -50,7 +55,8 @@ public class ApiKeyService {
     @Transactional(readOnly = true)
     public List<ApiKeyResponse> list(String username, boolean isAdmin) {
         Sort newest = Sort.by(Sort.Direction.DESC, "id");
-        List<ApiKey> keys = isAdmin ? repository.findAll(newest)
+        List<ApiKey> keys = isAdmin
+                ? repository.findAll(newest)
                 : repository.findAll((root, q, cb) -> cb.equal(root.get("username"), username), newest);
         LocalDateTime now = LocalDateTime.now();
         return keys.stream().map(k -> toResponse(k, now)).toList();
@@ -58,7 +64,8 @@ public class ApiKeyService {
 
     @Transactional
     public CreatedKey create(CreateRequest request, String username) {
-        User owner = userRepository.findByUsername(username)
+        User owner = userRepository
+                .findByUsername(username)
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "User not found"));
         String secret = ApiKeys.generate();
         ApiKey key = repository.save(ApiKey.builder()
@@ -67,14 +74,18 @@ public class ApiKeyService {
                 .keyHash(ApiKeys.hash(secret))
                 .userId(owner.getId())
                 .username(owner.getUsername())
-                .expiresAt(request.expiresInDays() == null ? null : LocalDateTime.now().plusDays(request.expiresInDays()))
+                .expiresAt(
+                        request.expiresInDays() == null
+                                ? null
+                                : LocalDateTime.now().plusDays(request.expiresInDays()))
                 .build());
         return new CreatedKey(toResponse(key, LocalDateTime.now()), secret);
     }
 
     @Transactional
     public ApiKeyResponse revoke(Long id, String actor, boolean isAdmin) {
-        ApiKey key = repository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "API key not found"));
+        ApiKey key =
+                repository.findById(id).orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "API key not found"));
         if (!isAdmin && !key.getUsername().equals(actor)) {
             throw new AppException(HttpStatus.NOT_FOUND, "API key not found");
         }
@@ -93,19 +104,33 @@ public class ApiKeyService {
             return Optional.empty();
         }
         LocalDateTime now = LocalDateTime.now();
-        return repository.findByKeyHash(ApiKeys.hash(rawKey))
+        return repository
+                .findByKeyHash(ApiKeys.hash(rawKey))
                 .filter(k -> k.isActive(now))
-                .flatMap(k -> userRepository.findById(k.getUserId()).filter(User::isEnabled).map(u -> {
-                    if (k.getLastUsedAt() == null || k.getLastUsedAt().isBefore(now.minusSeconds(TOUCH_EVERY_SECONDS))) {
-                        k.setLastUsedAt(now);
-                        repository.save(k);
-                    }
-                    return new KeyOwner(k.getId(), u);
-                }));
+                .flatMap(k -> userRepository
+                        .findById(k.getUserId())
+                        .filter(User::isEnabled)
+                        .map(u -> {
+                            if (k.getLastUsedAt() == null
+                                    || k.getLastUsedAt().isBefore(now.minusSeconds(TOUCH_EVERY_SECONDS))) {
+                                k.setLastUsedAt(now);
+                                repository.save(k);
+                            }
+                            return new KeyOwner(k.getId(), u);
+                        }));
     }
 
     private static ApiKeyResponse toResponse(ApiKey k, LocalDateTime now) {
-        return new ApiKeyResponse(k.getId(), k.getName(), k.getPrefix(), k.getUsername(), k.getCreatedAt(), k.getLastUsedAt(), k.getExpiresAt(),
-                k.getRevokedAt(), k.getRevokedBy(), k.isActive(now));
+        return new ApiKeyResponse(
+                k.getId(),
+                k.getName(),
+                k.getPrefix(),
+                k.getUsername(),
+                k.getCreatedAt(),
+                k.getLastUsedAt(),
+                k.getExpiresAt(),
+                k.getRevokedAt(),
+                k.getRevokedBy(),
+                k.isActive(now));
     }
 }

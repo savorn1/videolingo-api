@@ -5,8 +5,7 @@ import com.example.videolingo.entity.AiFeature;
 // Human names for AI features, for messages shown to admins.
 public final class AiFeatureNames {
 
-    private AiFeatureNames() {
-    }
+    private AiFeatureNames() {}
 
     public static String label(AiFeature feature) {
         return switch (feature) {

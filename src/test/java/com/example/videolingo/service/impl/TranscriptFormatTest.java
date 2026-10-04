@@ -1,17 +1,21 @@
 package com.example.videolingo.service.impl;
 
-import com.example.videolingo.entity.TranscriptSegment;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import com.example.videolingo.entity.TranscriptSegment;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 // Pure formatting helpers behind transcript export and stats — no Spring context.
 class TranscriptFormatTest {
 
     private static TranscriptSegment seg(long start, long end, String text, String speaker) {
-        return TranscriptSegment.builder().startMs(start).endMs(end).text(text).speaker(speaker).build();
+        return TranscriptSegment.builder()
+                .startMs(start)
+                .endMs(end)
+                .text(text)
+                .speaker(speaker)
+                .build();
     }
 
     @Test
@@ -35,7 +39,9 @@ class TranscriptFormatTest {
 
     @Test
     void plainTextPrefixesSpeakers() {
-        assertEquals("Ana: Hi\nBye\n", TranscriptServiceImpl.toText(List.of(seg(0, 1, "Hi", "Ana"), seg(1, 2, "Bye", null))));
+        assertEquals(
+                "Ana: Hi\nBye\n",
+                TranscriptServiceImpl.toText(List.of(seg(0, 1, "Hi", "Ana"), seg(1, 2, "Bye", null))));
         assertEquals("", TranscriptServiceImpl.toText(List.of()));
     }
 
@@ -55,7 +61,10 @@ class TranscriptFormatTest {
 
     @Test
     void slugsAreFilenameSafe() {
-        assertEquals("ordering-coffee-in-japanese", TranscriptServiceImpl.slug("[TEST] Ordering coffee — in Japanese!").replace("test-", ""));
+        assertEquals(
+                "ordering-coffee-in-japanese",
+                TranscriptServiceImpl.slug("[TEST] Ordering coffee — in Japanese!")
+                        .replace("test-", ""));
         assertEquals("transcript", TranscriptServiceImpl.slug("!!!"));
         assertEquals("ភាសាខ្មែរ", TranscriptServiceImpl.slug("ភាសាខ្មែរ"));
     }

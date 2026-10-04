@@ -21,23 +21,14 @@ import com.example.videolingo.repository.ProcessingJobRepository;
 import com.example.videolingo.repository.TranscriptRepository;
 import com.example.videolingo.repository.TranscriptSegmentRepository;
 import com.example.videolingo.repository.VideoRepository;
+import com.example.videolingo.revision.RevisionService;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.TranscriptService;
-import com.example.videolingo.revision.RevisionService;
 import com.example.videolingo.util.PageableUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.criteria.Subquery;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -51,21 +42,28 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class TranscriptServiceImpl implements TranscriptService {
 
-    private static final Set<String> SORTABLE = Set.of(
-            "id", "language", "source", "segmentCount", "wordCount", "durationMs", "createdAt", "updatedAt");
+    private static final Set<String> SORTABLE =
+            Set.of("id", "language", "source", "segmentCount", "wordCount", "durationMs", "createdAt", "updatedAt");
     // Scripts written without spaces between words count one "word" per
     // character; everything else counts runs of letters/digits.
     // ー (U+30FC, long-vowel mark) and 々 (U+3005, repetition mark) belong to
     // the Common script, not Katakana/Han, so they're listed explicitly —
     // otherwise they'd start a letter run that swallows the rest of the line.
     private static final String CJK = "\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\u30FC\\u3005";
-    private static final Pattern WORD = Pattern.compile(
-            "[" + CJK + "]|[[\\p{L}\\p{M}\\p{N}'’]&&[^" + CJK + "]]+");
+    private static final Pattern WORD = Pattern.compile("[" + CJK + "]|[[\\p{L}\\p{M}\\p{N}'’]&&[^" + CJK + "]]+");
     private static final int MIN_SEARCH_LENGTH = 2;
 
     private final TranscriptRepository transcriptRepository;
@@ -107,14 +105,25 @@ public class TranscriptServiceImpl implements TranscriptService {
         Page<Transcript> page = transcriptRepository.findAll(Specification.allOf(conditions), pageable);
 
         List<Transcript> content = page.getContent();
-        Map<Long, Video> videos = videoRepository.findAllById(content.stream().map(Transcript::getVideoId).distinct().toList())
-                .stream().collect(Collectors.toMap(Video::getId, Function.identity()));
-        Map<Long, ProcessingJob> jobs = jobRepository.findAllById(
-                content.stream().map(Transcript::getLastJobId).filter(Objects::nonNull).distinct().toList()
-        ).stream().collect(Collectors.toMap(ProcessingJob::getId, Function.identity()));
+        Map<Long, Video> videos =
+                videoRepository
+                        .findAllById(content.stream()
+                                .map(Transcript::getVideoId)
+                                .distinct()
+                                .toList())
+                        .stream()
+                        .collect(Collectors.toMap(Video::getId, Function.identity()));
+        Map<Long, ProcessingJob> jobs = jobRepository
+                .findAllById(content.stream()
+                        .map(Transcript::getLastJobId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(ProcessingJob::getId, Function.identity()));
 
-        return PageResponse.of(page.map(t -> toResponse(t, videos.get(t.getVideoId()),
-                t.getLastJobId() == null ? null : jobs.get(t.getLastJobId()), null)));
+        return PageResponse.of(page.map(t -> toResponse(
+                t, videos.get(t.getVideoId()), t.getLastJobId() == null ? null : jobs.get(t.getLastJobId()), null)));
     }
 
     @Override
@@ -128,16 +137,21 @@ public class TranscriptServiceImpl implements TranscriptService {
     @Override
     @Transactional
     public TranscriptResponse createTranscript(CreateTranscriptRequest request, String actingUsername) {
-        Video video = videoRepository.findById(request.getVideoId())
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Video not found with id: " + request.getVideoId()));
+        Video video = videoRepository
+                .findById(request.getVideoId())
+                .orElseThrow(() ->
+                        new AppException(HttpStatus.BAD_REQUEST, "Video not found with id: " + request.getVideoId()));
         if (video.isDeleted()) {
             throw new AppException(HttpStatus.CONFLICT, "Restore the video before adding a transcript to it");
         }
         String language = languageService.resolve(request.getLanguage(), true);
         if (transcriptRepository.existsByVideoIdAndLanguage(video.getId(), language)) {
-            throw new AppException(HttpStatus.CONFLICT, "This video already has a " + language + " transcript — edit that one instead");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "This video already has a " + language + " transcript — edit that one instead");
         }
-        TranscriptSource source = request.getSource() == TranscriptSource.IMPORTED ? TranscriptSource.IMPORTED : TranscriptSource.MANUAL;
+        TranscriptSource source =
+                request.getSource() == TranscriptSource.IMPORTED ? TranscriptSource.IMPORTED : TranscriptSource.MANUAL;
         List<TranscriptSegmentDto> segments = validateAndSort(request.getSegments());
 
         Transcript transcript = transcriptRepository.save(Transcript.builder()
@@ -158,12 +172,14 @@ public class TranscriptServiceImpl implements TranscriptService {
     public TranscriptResponse updateTranscript(Long id, UpdateTranscriptRequest request, String actingUsername) {
         Transcript transcript = findTranscript(id);
         if (!Objects.equals(transcript.getVersion(), request.getVersion())) {
-            throw new AppException(HttpStatus.CONFLICT,
+            throw new AppException(
+                    HttpStatus.CONFLICT,
                     "This transcript changed since you opened it (maybe a regeneration finished). Reload it, then re-apply your edits.");
         }
         // Keeping the language it already has is allowed even if that language
         // was disabled since; switching to a different one requires it enabled.
-        boolean unchanged = request.getLanguage() != null && request.getLanguage().strip().equalsIgnoreCase(transcript.getLanguage());
+        boolean unchanged = request.getLanguage() != null
+                && request.getLanguage().strip().equalsIgnoreCase(transcript.getLanguage());
         String language = languageService.resolve(request.getLanguage(), !unchanged);
         if (transcriptRepository.existsByVideoIdAndLanguageAndIdNot(transcript.getVideoId(), language, id)) {
             throw new AppException(HttpStatus.CONFLICT, "This video already has a " + language + " transcript");
@@ -191,7 +207,8 @@ public class TranscriptServiceImpl implements TranscriptService {
     @Transactional(readOnly = true)
     public RevisionService.RevisionDetail<RevisionService.TranscriptSnapshot> revision(Long id, Long revisionId) {
         findTranscript(id);
-        return revisions.get(ContentRevision.EntityType.TRANSCRIPT, id, revisionId, RevisionService.TranscriptSnapshot.class);
+        return revisions.get(
+                ContentRevision.EntityType.TRANSCRIPT, id, revisionId, RevisionService.TranscriptSnapshot.class);
     }
 
     // Brings back that revision's segments as a new save; the language stays.
@@ -200,15 +217,21 @@ public class TranscriptServiceImpl implements TranscriptService {
     public TranscriptResponse restoreRevision(Long id, Long revisionId, Long version, String actingUsername) {
         Transcript transcript = findTranscript(id);
         if (version != null && !Objects.equals(transcript.getVersion(), version)) {
-            throw new AppException(HttpStatus.CONFLICT, "This transcript changed since you opened it. Reload it, then try again.");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "This transcript changed since you opened it. Reload it, then try again.");
         }
         ProcessingJob job = activeJob(transcript);
         if (job != null) {
-            throw new AppException(HttpStatus.CONFLICT, "Regeneration job #" + job.getId() + " is still " + job.getStatus().name().toLowerCase()
-                    + " — wait for it or cancel it first");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Regeneration job #" + job.getId() + " is still "
+                            + job.getStatus().name().toLowerCase() + " — wait for it or cancel it first");
         }
-        var revision = revisions.get(ContentRevision.EntityType.TRANSCRIPT, id, revisionId, RevisionService.TranscriptSnapshot.class);
-        List<TranscriptSegmentDto> segments = revision.snapshot().segments() == null ? List.of() : revision.snapshot().segments();
+        var revision = revisions.get(
+                ContentRevision.EntityType.TRANSCRIPT, id, revisionId, RevisionService.TranscriptSnapshot.class);
+        List<TranscriptSegmentDto> segments = revision.snapshot().segments() == null
+                ? List.of()
+                : revision.snapshot().segments();
         transcript.setSource(TranscriptSource.MANUAL);
         transcript.setUpdatedBy(actingUsername);
         replaceSegments(transcript, validateAndSort(segments));
@@ -223,8 +246,10 @@ public class TranscriptServiceImpl implements TranscriptService {
         Transcript transcript = findTranscript(id);
         ProcessingJob job = activeJob(transcript);
         if (job != null) {
-            throw new AppException(HttpStatus.CONFLICT, "Regeneration job #" + job.getId() + " is still " + job.getStatus().name().toLowerCase()
-                    + " — cancel it before deleting this transcript");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Regeneration job #" + job.getId() + " is still "
+                            + job.getStatus().name().toLowerCase() + " — cancel it before deleting this transcript");
         }
         segmentRepository.deleteByTranscriptId(id);
         revisions.deleteAll(ContentRevision.EntityType.TRANSCRIPT, id);
@@ -237,19 +262,25 @@ public class TranscriptServiceImpl implements TranscriptService {
     @Transactional
     public ProcessingJobResponse regenerate(Long id, String actingUsername) {
         Transcript transcript = findTranscript(id);
-        Video video = videoRepository.findById(transcript.getVideoId())
-                .orElseThrow(() -> new AppException(HttpStatus.CONFLICT, "The video for this transcript no longer exists"));
+        Video video = videoRepository
+                .findById(transcript.getVideoId())
+                .orElseThrow(
+                        () -> new AppException(HttpStatus.CONFLICT, "The video for this transcript no longer exists"));
         if (video.isDeleted()) {
             throw new AppException(HttpStatus.CONFLICT, "Restore the video before regenerating its transcript");
         }
         ProcessingJob active = activeJob(transcript);
         if (active != null) {
-            throw new AppException(HttpStatus.CONFLICT, "Already regenerating — job #" + active.getId() + " is " + active.getStatus().name().toLowerCase());
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "Already regenerating — job #" + active.getId() + " is "
+                            + active.getStatus().name().toLowerCase());
         }
 
         // Same language as the video → transcribe the audio; otherwise translate
         // from the spoken-language transcript.
-        boolean isTranslation = video.getLanguage() != null && !video.getLanguage().equals(transcript.getLanguage());
+        boolean isTranslation =
+                video.getLanguage() != null && !video.getLanguage().equals(transcript.getLanguage());
         ProcessingJobType type = isTranslation ? ProcessingJobType.TRANSLATE : ProcessingJobType.TRANSCRIBE;
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("transcriptId", transcript.getId());
@@ -260,8 +291,12 @@ public class TranscriptServiceImpl implements TranscriptService {
             params.put("language", transcript.getLanguage());
         }
 
-        ProcessingJob job = processingJobService.enqueue(video.getId(), type, toJson(params, false),
-                "Regeneration of transcript #" + transcript.getId() + " (" + transcript.getLanguage() + ") requested by " + actingUsername);
+        ProcessingJob job = processingJobService.enqueue(
+                video.getId(),
+                type,
+                toJson(params, false),
+                "Regeneration of transcript #" + transcript.getId() + " (" + transcript.getLanguage()
+                        + ") requested by " + actingUsername);
         transcript.setLastJobId(job.getId());
         transcriptRepository.save(transcript);
         return processingJobService.getJob(job.getId());
@@ -269,8 +304,10 @@ public class TranscriptServiceImpl implements TranscriptService {
 
     @Override
     @Transactional
-    public Long saveGenerated(Long videoId, String language, List<TranscriptSegmentDto> segments, Long jobId, String actor) {
-        Transcript transcript = transcriptRepository.findByVideoIdAndLanguage(videoId, language)
+    public Long saveGenerated(
+            Long videoId, String language, List<TranscriptSegmentDto> segments, Long jobId, String actor) {
+        Transcript transcript = transcriptRepository
+                .findByVideoIdAndLanguage(videoId, language)
                 .orElseGet(() -> transcriptRepository.save(Transcript.builder()
                         .videoId(videoId)
                         .language(language)
@@ -294,10 +331,13 @@ public class TranscriptServiceImpl implements TranscriptService {
         if (q.length() < MIN_SEARCH_LENGTH) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Search for at least " + MIN_SEARCH_LENGTH + " characters");
         }
-        String language = request.getLanguage() == null || request.getLanguage().isBlank() ? null : request.getLanguage();
+        String language =
+                request.getLanguage() == null || request.getLanguage().isBlank() ? null : request.getLanguage();
         int size = Math.max(1, Math.min(request.getSize(), 100));
         Page<TranscriptSegmentRepository.SearchHit> hits = segmentRepository.search(
-                "%" + escapeLike(q.toLowerCase()) + "%", request.getVideoId(), language,
+                "%" + escapeLike(q.toLowerCase()) + "%",
+                request.getVideoId(),
+                language,
                 PageRequest.of(Math.max(request.getPage() - 1, 0), size));
         return PageResponse.of(hits.map(h -> TranscriptSearchHit.builder()
                 .transcriptId(h.getTranscriptId())
@@ -318,22 +358,28 @@ public class TranscriptServiceImpl implements TranscriptService {
         Transcript transcript = findTranscript(id);
         Video video = videoRepository.findById(transcript.getVideoId()).orElse(null);
         List<TranscriptSegment> segments = segmentRepository.findByTranscriptIdOrderByPositionAsc(id);
-        String base = slug(video != null ? video.getTitle() : "video-" + transcript.getVideoId()) + "." + transcript.getLanguage();
+        String base = slug(video != null ? video.getTitle() : "video-" + transcript.getVideoId()) + "."
+                + transcript.getLanguage();
 
         String fmt = format == null ? "srt" : format.toLowerCase();
         return switch (fmt) {
             case "srt" -> new ExportedFile(base + ".srt", "application/x-subrip; charset=utf-8", utf8(toSrt(segments)));
             case "vtt" -> new ExportedFile(base + ".vtt", "text/vtt; charset=utf-8", utf8(toVtt(segments)));
             case "txt" -> new ExportedFile(base + ".txt", "text/plain; charset=utf-8", utf8(toText(segments)));
-            case "json" -> new ExportedFile(base + ".json", "application/json", utf8(toJson(exportJson(transcript, video, segments))));
-            default -> throw new AppException(HttpStatus.BAD_REQUEST, "Unknown export format '" + format + "' — use srt, vtt, txt or json");
+            case "json" ->
+                new ExportedFile(
+                        base + ".json", "application/json", utf8(toJson(exportJson(transcript, video, segments))));
+            default ->
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST, "Unknown export format '" + format + "' — use srt, vtt, txt or json");
         };
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
 
     private Transcript findTranscript(Long id) {
-        return transcriptRepository.findById(id)
+        return transcriptRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Transcript not found with id: " + id));
     }
 
@@ -341,7 +387,10 @@ public class TranscriptServiceImpl implements TranscriptService {
         if (transcript.getLastJobId() == null) {
             return null;
         }
-        return jobRepository.findById(transcript.getLastJobId()).filter(j -> j.getStatus().isActive()).orElse(null);
+        return jobRepository
+                .findById(transcript.getLastJobId())
+                .filter(j -> j.getStatus().isActive())
+                .orElse(null);
     }
 
     // Bean validation covers each field; this covers the relationships between
@@ -351,7 +400,8 @@ public class TranscriptServiceImpl implements TranscriptService {
         for (int i = 0; i < segments.size(); i++) {
             TranscriptSegmentDto s = segments.get(i);
             if (s.getEndMs() <= s.getStartMs()) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "Segment " + (i + 1) + ": end time must be after start time");
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST, "Segment " + (i + 1) + ": end time must be after start time");
             }
         }
         List<TranscriptSegmentDto> sorted = new ArrayList<>(segments);
@@ -374,7 +424,10 @@ public class TranscriptServiceImpl implements TranscriptService {
                     .startMs(s.getStartMs())
                     .endMs(s.getEndMs())
                     .text(text)
-                    .speaker(s.getSpeaker() == null || s.getSpeaker().isBlank() ? null : s.getSpeaker().strip())
+                    .speaker(
+                            s.getSpeaker() == null || s.getSpeaker().isBlank()
+                                    ? null
+                                    : s.getSpeaker().strip())
                     .build());
             words += countWords(text);
             end = Math.max(end, s.getEndMs());
@@ -390,11 +443,22 @@ public class TranscriptServiceImpl implements TranscriptService {
     }
 
     private void snapshot(Transcript transcript, String summary, String actor) {
-        List<TranscriptSegmentDto> segments = segmentRepository.findByTranscriptIdOrderByPositionAsc(transcript.getId()).stream()
-                .map(s -> TranscriptSegmentDto.builder().startMs(s.getStartMs()).endMs(s.getEndMs()).text(s.getText()).speaker(s.getSpeaker()).build())
-                .toList();
-        revisions.record(ContentRevision.EntityType.TRANSCRIPT, transcript.getId(),
-                new RevisionService.TranscriptSnapshot(transcript.getLanguage(), segments), segments.size(), summary, actor);
+        List<TranscriptSegmentDto> segments =
+                segmentRepository.findByTranscriptIdOrderByPositionAsc(transcript.getId()).stream()
+                        .map(s -> TranscriptSegmentDto.builder()
+                                .startMs(s.getStartMs())
+                                .endMs(s.getEndMs())
+                                .text(s.getText())
+                                .speaker(s.getSpeaker())
+                                .build())
+                        .toList();
+        revisions.record(
+                ContentRevision.EntityType.TRANSCRIPT,
+                transcript.getId(),
+                new RevisionService.TranscriptSnapshot(transcript.getLanguage(), segments),
+                segments.size(),
+                summary,
+                actor);
     }
 
     static int countWords(String text) {
@@ -417,7 +481,8 @@ public class TranscriptServiceImpl implements TranscriptService {
     // Pretty for files people open (exports); compact for values stored in the DB.
     private String toJson(Object value, boolean pretty) {
         try {
-            return (pretty ? objectMapper.writerWithDefaultPrettyPrinter() : objectMapper.writer()).writeValueAsString(value);
+            return (pretty ? objectMapper.writerWithDefaultPrettyPrinter() : objectMapper.writer())
+                    .writeValueAsString(value);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Could not serialise to JSON", e);
         }
@@ -449,9 +514,14 @@ public class TranscriptServiceImpl implements TranscriptService {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < segments.size(); i++) {
             TranscriptSegment s = segments.get(i);
-            out.append(i + 1).append('\n')
-                    .append(timestamp(s.getStartMs(), ',')).append(" --> ").append(timestamp(s.getEndMs(), ',')).append('\n')
-                    .append(s.getText()).append("\n\n");
+            out.append(i + 1)
+                    .append('\n')
+                    .append(timestamp(s.getStartMs(), ','))
+                    .append(" --> ")
+                    .append(timestamp(s.getEndMs(), ','))
+                    .append('\n')
+                    .append(s.getText())
+                    .append("\n\n");
         }
         return out.toString();
     }
@@ -459,17 +529,23 @@ public class TranscriptServiceImpl implements TranscriptService {
     static String toVtt(List<TranscriptSegment> segments) {
         StringBuilder out = new StringBuilder("WEBVTT\n\n");
         for (TranscriptSegment s : segments) {
-            out.append(timestamp(s.getStartMs(), '.')).append(" --> ").append(timestamp(s.getEndMs(), '.')).append('\n');
+            out.append(timestamp(s.getStartMs(), '.'))
+                    .append(" --> ")
+                    .append(timestamp(s.getEndMs(), '.'))
+                    .append('\n');
             // WebVTT voice tag carries the speaker, if there is one.
-            out.append(s.getSpeaker() != null ? "<v " + s.getSpeaker() + ">" : "").append(s.getText()).append("\n\n");
+            out.append(s.getSpeaker() != null ? "<v " + s.getSpeaker() + ">" : "")
+                    .append(s.getText())
+                    .append("\n\n");
         }
         return out.toString();
     }
 
     static String toText(List<TranscriptSegment> segments) {
         return segments.stream()
-                .map(s -> (s.getSpeaker() != null ? s.getSpeaker() + ": " : "") + s.getText())
-                .collect(Collectors.joining("\n")) + (segments.isEmpty() ? "" : "\n");
+                        .map(s -> (s.getSpeaker() != null ? s.getSpeaker() + ": " : "") + s.getText())
+                        .collect(Collectors.joining("\n"))
+                + (segments.isEmpty() ? "" : "\n");
     }
 
     private static Map<String, Object> exportJson(Transcript t, Video video, List<TranscriptSegment> segments) {
@@ -479,35 +555,43 @@ public class TranscriptServiceImpl implements TranscriptService {
         root.put("videoTitle", video != null ? video.getTitle() : null);
         root.put("language", t.getLanguage());
         root.put("source", t.getSource().name());
-        root.put("segments", segments.stream().map(s -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("start", s.getStartMs() / 1000.0);
-            m.put("end", s.getEndMs() / 1000.0);
-            m.put("text", s.getText());
-            if (s.getSpeaker() != null) {
-                m.put("speaker", s.getSpeaker());
-            }
-            return m;
-        }).toList());
+        root.put(
+                "segments",
+                segments.stream()
+                        .map(s -> {
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            m.put("start", s.getStartMs() / 1000.0);
+                            m.put("end", s.getEndMs() / 1000.0);
+                            m.put("text", s.getText());
+                            if (s.getSpeaker() != null) {
+                                m.put("speaker", s.getSpeaker());
+                            }
+                            return m;
+                        })
+                        .toList());
         return root;
     }
 
     private TranscriptResponse toDetailResponse(Transcript transcript) {
         Video video = videoRepository.findById(transcript.getVideoId()).orElse(null);
-        ProcessingJob job = transcript.getLastJobId() == null ? null : jobRepository.findById(transcript.getLastJobId()).orElse(null);
-        List<TranscriptSegmentDto> segments = segmentRepository.findByTranscriptIdOrderByPositionAsc(transcript.getId()).stream()
-                .map(s -> TranscriptSegmentDto.builder()
-                        .id(s.getId())
-                        .startMs(s.getStartMs())
-                        .endMs(s.getEndMs())
-                        .text(s.getText())
-                        .speaker(s.getSpeaker())
-                        .build())
-                .toList();
+        ProcessingJob job = transcript.getLastJobId() == null
+                ? null
+                : jobRepository.findById(transcript.getLastJobId()).orElse(null);
+        List<TranscriptSegmentDto> segments =
+                segmentRepository.findByTranscriptIdOrderByPositionAsc(transcript.getId()).stream()
+                        .map(s -> TranscriptSegmentDto.builder()
+                                .id(s.getId())
+                                .startMs(s.getStartMs())
+                                .endMs(s.getEndMs())
+                                .text(s.getText())
+                                .speaker(s.getSpeaker())
+                                .build())
+                        .toList();
         return toResponse(transcript, video, job, segments);
     }
 
-    private TranscriptResponse toResponse(Transcript t, Video video, ProcessingJob job, List<TranscriptSegmentDto> segments) {
+    private TranscriptResponse toResponse(
+            Transcript t, Video video, ProcessingJob job, List<TranscriptSegmentDto> segments) {
         return TranscriptResponse.builder()
                 .id(t.getId())
                 .videoId(t.getVideoId())

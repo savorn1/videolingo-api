@@ -2,9 +2,6 @@ package com.example.videolingo.pipeline;
 
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoSource;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -16,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 // Runs yt-dlp and ffmpeg. Audio for speech-to-text is always normalised to
 // mono 16 kHz 32 kbps MP3 — plenty for speech, and ~14 MB per hour, well
@@ -41,9 +40,28 @@ public class MediaTools {
         }
         ctx.progress(60, "Converting audio");
         int maxSeconds = props.maxMinutes() * 60;
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", input,
-                "-t", String.valueOf(maxSeconds), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", out.toString()),
-                Duration.ofMinutes(30), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        input,
+                        "-t",
+                        String.valueOf(maxSeconds),
+                        "-vn",
+                        "-ac",
+                        "1",
+                        "-ar",
+                        "16000",
+                        "-b:a",
+                        "32k",
+                        out.toString()),
+                Duration.ofMinutes(30),
+                ctx,
+                "ffmpeg");
         if (!Files.exists(out) || size(out) < 1000) {
             throw new JobFailure("The video has no audio track that could be read");
         }
@@ -58,11 +76,29 @@ public class MediaTools {
         } catch (IOException e) {
             throw new JobFailure("Couldn't create a temporary folder: " + e.getMessage(), e);
         }
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", audio.toString(),
-                "-f", "segment", "-segment_time", String.valueOf(CHUNK_SECONDS), "-c", "copy",
-                dir.resolve("chunk_%03d.mp3").toString()), Duration.ofMinutes(10), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        audio.toString(),
+                        "-f",
+                        "segment",
+                        "-segment_time",
+                        String.valueOf(CHUNK_SECONDS),
+                        "-c",
+                        "copy",
+                        dir.resolve("chunk_%03d.mp3").toString()),
+                Duration.ofMinutes(10),
+                ctx,
+                "ffmpeg");
         try (Stream<Path> files = Files.list(dir)) {
-            List<Path> chunks = files.filter(p -> p.getFileName().toString().startsWith("chunk_")).sorted().toList();
+            List<Path> chunks = files.filter(p -> p.getFileName().toString().startsWith("chunk_"))
+                    .sorted()
+                    .toList();
             return chunks.isEmpty() ? List.of(audio) : chunks;
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the split audio: " + e.getMessage(), e);
@@ -72,8 +108,23 @@ public class MediaTools {
     /** WAV → MP3 (mono, 64 kbps) for the dub track. */
     public Path encodeMp3(Path wav, JobContext ctx) {
         Path out = ctx.workDir().resolve("dub.mp3");
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", wav.toString(),
-                "-ac", "1", "-b:a", "64k", out.toString()), Duration.ofMinutes(10), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        wav.toString(),
+                        "-ac",
+                        "1",
+                        "-b:a",
+                        "64k",
+                        out.toString()),
+                Duration.ofMinutes(10),
+                ctx,
+                "ffmpeg");
         return out;
     }
 
@@ -85,13 +136,26 @@ public class MediaTools {
         ctx.progress(5, "Downloading the video from " + label(video.getSource()));
         String template = ctx.workDir().resolve("video.%(ext)s").toString();
         String h = String.valueOf(MAX_HEIGHT);
-        List<String> command = new ArrayList<>(List.of(props.ytDlp(), "--no-playlist", "--no-progress", "--quiet", "--no-warnings",
+        List<String> command = new ArrayList<>(List.of(
+                props.ytDlp(),
+                "--no-playlist",
+                "--no-progress",
+                "--quiet",
+                "--no-warnings",
                 // Prefer MP4/M4A (plays everywhere); else anything ≤ 720p, remuxed to MP4.
-                "-f", "bv*[height<=" + h + "][ext=mp4]+ba[ext=m4a]/b[height<=" + h + "][ext=mp4]/bv*[height<=" + h + "]+ba/b[height<=" + h + "]/b",
-                "--merge-output-format", "mp4", "--remux-video", "mp4",
-                "--max-filesize", maxMb + "M",
-                "--match-filter", "duration < " + (props.maxMinutes() * 60),
-                "-o", template));
+                "-f",
+                "bv*[height<=" + h + "][ext=mp4]+ba[ext=m4a]/b[height<=" + h + "][ext=mp4]/bv*[height<=" + h
+                        + "]+ba/b[height<=" + h + "]/b",
+                "--merge-output-format",
+                "mp4",
+                "--remux-video",
+                "mp4",
+                "--max-filesize",
+                maxMb + "M",
+                "--match-filter",
+                "duration < " + (props.maxMinutes() * 60),
+                "-o",
+                template));
         if (!props.ffmpeg().equals("ffmpeg")) {
             command.addAll(List.of("--ffmpeg-location", props.ffmpeg()));
         }
@@ -100,8 +164,10 @@ public class MediaTools {
         try (Stream<Path> files = Files.list(ctx.workDir())) {
             return files.filter(p -> p.getFileName().toString().equals("video.mp4"))
                     .findFirst()
-                    .orElseThrow(() -> new JobFailure("yt-dlp didn't produce a video — it may be private, removed, age-restricted, "
-                            + "larger than " + maxMb + " MB, or longer than " + props.maxMinutes() + " minutes"));
+                    .orElseThrow(() -> new JobFailure(
+                            "yt-dlp didn't produce a video — it may be private, removed, age-restricted, "
+                                    + "larger than " + maxMb + " MB, or longer than " + props.maxMinutes()
+                                    + " minutes"));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the download: " + e.getMessage(), e);
         }
@@ -116,10 +182,37 @@ public class MediaTools {
      */
     public Path burnSubtitles(String video, Path srt, JobContext ctx) {
         Path out = ctx.workDir().resolve("with-subtitles.mp4");
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video,
-                "-vf", "subtitles=" + filterPath(srt), "-map", "0:v:0", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac", "-b:a", "128k",
-                "-movflags", "+faststart", out.toString()), Duration.ofMinutes(120), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        video,
+                        "-vf",
+                        "subtitles=" + filterPath(srt),
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "0:a?",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "22",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "128k",
+                        "-movflags",
+                        "+faststart",
+                        out.toString()),
+                Duration.ofMinutes(120),
+                ctx,
+                "ffmpeg");
         return out;
     }
 
@@ -128,11 +221,9 @@ public class MediaTools {
         return path.toString().replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'");
     }
 
-    public record CropRect(int x, int y, int w, int h) {
-    }
+    public record CropRect(int x, int y, int w, int h) {}
 
-    public record ScaleSize(int w, int h) {
-    }
+    public record ScaleSize(int w, int h) {}
 
     /**
      * A [startMs, endMs) range of `video` (endMs null = to the end), optionally
@@ -147,7 +238,16 @@ public class MediaTools {
      * Same, and the picture can be turned (clockwise, in 90° steps) and flipped. The crop is on the original
      * picture, then the turn and flips, then the resize — so a resize is the size of the finished picture.
      */
-    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, JobContext ctx) {
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            JobContext ctx) {
         return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, 0, ctx);
     }
 
@@ -155,17 +255,36 @@ public class MediaTools {
      * Same, and when `padMs` > 0 the result runs that long past the end of the video: the last frame is held and the
      * sound is silent there (the end time still caps the length, so a little extra padding is harmless).
      */
-    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, long padMs,
-                     JobContext ctx) {
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            long padMs,
+            JobContext ctx) {
         return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, null, ctx);
     }
 
     /** Same, and the picture gets a look (see VideoEditRules.Look) after the crop, turn and resize. */
-    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, long padMs,
-                     VideoEditRules.Look look, JobContext ctx) {
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            long padMs,
+            VideoEditRules.Look look,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
-        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
-                "-i", video, "-ss", millis(startMs)));
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video, "-ss", millis(startMs)));
         if (endMs != null) {
             command.addAll(List.of("-to", millis(endMs)));
         }
@@ -180,17 +299,34 @@ public class MediaTools {
         if (padMs > 0 && probe(video, ctx.workDir()).hasAudio()) {
             command.addAll(List.of("-af", "apad"));
         }
-        command.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
-                "-movflags", "+faststart", out.toString()));
+        command.addAll(List.of(
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "20",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", endMs == null ? null : endMs - startMs);
         return out;
     }
 
     /** ffmpeg expression that is true for the moments inside any of the (merged) cuts, in seconds. */
     static String cutExpression(List<VideoEditRules.Segment> cuts) {
-        return cuts.stream().map(c -> c.endMs() == null
+        return cuts.stream()
+                .map(c -> c.endMs() == null
                         ? String.format(java.util.Locale.ROOT, "gte(t,%.3f)", c.startMs() / 1000.0)
-                        : String.format(java.util.Locale.ROOT, "gte(t,%.3f)*lt(t,%.3f)", c.startMs() / 1000.0, c.endMs() / 1000.0))
+                        : String.format(
+                                java.util.Locale.ROOT,
+                                "gte(t,%.3f)*lt(t,%.3f)",
+                                c.startMs() / 1000.0,
+                                c.endMs() / 1000.0))
                 .collect(java.util.stream.Collectors.joining("+"));
     }
 
@@ -198,15 +334,35 @@ public class MediaTools {
     public Path cut(String video, List<VideoEditRules.Segment> cuts, boolean hasAudio, Long keptMs, JobContext ctx) {
         Path out = ctx.workDir().resolve("cut.mp4");
         String drop = cutExpression(cuts);
-        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video,
-                "-vf", "select='not(" + drop + ")',setpts=N/FRAME_RATE/TB"));
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-vf",
+                "select='not(" + drop + ")',setpts=N/FRAME_RATE/TB"));
         if (hasAudio) {
             command.addAll(List.of("-af", "aselect='not(" + drop + ")',asetpts=N/SR/TB"));
         } else {
             command.add("-an");
         }
-        command.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
-                "-movflags", "+faststart", out.toString()));
+        command.addAll(List.of(
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "20",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", keptMs);
         return out;
     }
@@ -219,7 +375,12 @@ public class MediaTools {
         }
         double saturation = look.grayscale() ? 0 : look.saturation();
         if (look.brightness() != 0 || look.contrast() != 1 || saturation != 1) {
-            filters.add(String.format(java.util.Locale.ROOT, "eq=brightness=%.3f:contrast=%.3f:saturation=%.3f", look.brightness(), look.contrast(), saturation));
+            filters.add(String.format(
+                    java.util.Locale.ROOT,
+                    "eq=brightness=%.3f:contrast=%.3f:saturation=%.3f",
+                    look.brightness(),
+                    look.contrast(),
+                    saturation));
         }
         if (look.sepia() && !look.grayscale()) {
             filters.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0:0:0:0:1");
@@ -249,8 +410,7 @@ public class MediaTools {
                 case 90 -> filters.add("transpose=1");
                 case 180 -> filters.add("hflip,vflip");
                 case 270 -> filters.add("transpose=2");
-                default -> {
-                }
+                default -> {}
             }
         }
         if (flipH) {
@@ -275,15 +435,39 @@ public class MediaTools {
 
     public Path replaceAudio(String video, Path audio, JobContext ctx) {
         Path out = ctx.workDir().resolve("with-voice.mp4");
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video, "-i", audio.toString(),
-                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                "-movflags", "+faststart", out.toString()), Duration.ofMinutes(60), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        video,
+                        "-i",
+                        audio.toString(),
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "128k",
+                        "-movflags",
+                        "+faststart",
+                        out.toString()),
+                Duration.ofMinutes(60),
+                ctx,
+                "ffmpeg");
         return out;
     }
 
     /** What ffmpeg reports about a file. durationMs null when it can't tell (e.g. a live stream). */
-    public record Probe(Long durationMs, boolean hasVideo, boolean hasAudio, boolean mono, Integer width, Integer height) {
-    }
+    public record Probe(
+            Long durationMs, boolean hasVideo, boolean hasAudio, boolean mono, Integer width, Integer height) {}
 
     private static final Pattern FRAME_SIZE = Pattern.compile(", (\\d{2,5})x(\\d{2,5})[ ,\\[]");
 
@@ -294,7 +478,9 @@ public class MediaTools {
         Path logFile = workDir.resolve("probe-" + Integer.toHexString(input.hashCode()) + ".log");
         try {
             Process process = new ProcessBuilder(props.ffmpeg(), "-hide_banner", "-i", input)
-                    .redirectErrorStream(true).redirectOutput(logFile.toFile()).start();
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile.toFile())
+                    .start();
             if (!process.waitFor(2, TimeUnit.MINUTES)) {
                 process.destroyForcibly();
                 throw new JobFailure("ffmpeg took too long to read " + input);
@@ -302,7 +488,8 @@ public class MediaTools {
             // Exit code 1 is expected: no output file was named.
             return parseProbe(Files.readString(logFile, StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new JobFailure("ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+            throw new JobFailure(
+                    "ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new JobFailure("Interrupted while reading " + input, e);
@@ -313,7 +500,10 @@ public class MediaTools {
         Long durationMs = null;
         Matcher m = DURATION.matcher(text);
         if (m.find()) {
-            durationMs = Math.round((Long.parseLong(m.group(1)) * 3600 + Long.parseLong(m.group(2)) * 60 + Double.parseDouble(m.group(3))) * 1000);
+            durationMs = Math.round((Long.parseLong(m.group(1)) * 3600
+                            + Long.parseLong(m.group(2)) * 60
+                            + Double.parseDouble(m.group(3)))
+                    * 1000);
         }
         boolean video = false;
         boolean audio = false;
@@ -345,9 +535,17 @@ public class MediaTools {
      * The video with its sound re-rendered by `graph` (AudioEditRules). The
      * picture is copied as-is unless the graph changes it (speed).
      */
-    public Path editAudio(String video, Path replacement, Path music, boolean loopMusic, AudioEditRules.Graph graph, long outMs, JobContext ctx) {
+    public Path editAudio(
+            String video,
+            Path replacement,
+            Path music,
+            boolean loopMusic,
+            AudioEditRules.Graph graph,
+            long outMs,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("audio-edit.mp4");
-        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video));
+        List<String> command =
+                new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video));
         if (replacement != null) {
             command.addAll(List.of("-i", replacement.toString()));
         }
@@ -363,7 +561,18 @@ public class MediaTools {
         } else {
             command.addAll(List.of("-map", "0:v:0?", "-c:v", "copy"));
         }
-        command.addAll(List.of("-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-t", millis(outMs), "-movflags", "+faststart", out.toString()));
+        command.addAll(List.of(
+                "-map",
+                "[aout]",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-t",
+                millis(outMs),
+                "-movflags",
+                "+faststart",
+                out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", outMs);
         return out;
     }
@@ -372,7 +581,8 @@ public class MediaTools {
     public Path exportAudio(String input, String format, JobContext ctx) {
         boolean wav = "WAV".equals(format);
         Path out = ctx.workDir().resolve(wav ? "audio.wav" : "audio-export.mp3");
-        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", input, "-vn", "-map", "0:a:0"));
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", input, "-vn", "-map", "0:a:0"));
         command.addAll(wav ? List.of("-c:a", "pcm_s16le") : List.of("-c:a", "libmp3lame", "-b:a", "192k"));
         command.add(out.toString());
         run(command, Duration.ofMinutes(30), ctx, "ffmpeg");
@@ -384,6 +594,7 @@ public class MediaTools {
 
     /** 10 ms blocks at 4 kHz: plenty for drawing, and ~3.5 MB/hour of decoded audio read through a pipe. */
     static final int PEAK_RATE = 4000;
+
     static final int PEAK_BLOCK = 40;
 
     /**
@@ -391,18 +602,33 @@ public class MediaTools {
      * of `input` — what a waveform is drawn from. Decoded as mono 4 kHz PCM
      * and read straight from ffmpeg's output. Empty when there's no sound.
      */
-    public record Peaks(float[] values, long durationMs) {
-    }
+    public record Peaks(float[] values, long durationMs) {}
 
     public Peaks peaks(String input, int points, Path workDir) {
         Path logFile = workDir.resolve("peaks.log");
         List<Float> blocks = new ArrayList<>();
         Process process;
         try {
-            process = new ProcessBuilder(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-i", input, "-vn", "-ac", "1",
-                    "-ar", String.valueOf(PEAK_RATE), "-f", "s16le", "-").redirectError(logFile.toFile()).start();
+            process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-loglevel",
+                            "error",
+                            "-i",
+                            input,
+                            "-vn",
+                            "-ac",
+                            "1",
+                            "-ar",
+                            String.valueOf(PEAK_RATE),
+                            "-f",
+                            "s16le",
+                            "-")
+                    .redirectError(logFile.toFile())
+                    .start();
         } catch (IOException e) {
-            throw new JobFailure("ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+            throw new JobFailure(
+                    "ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
         }
         try (var in = new java.io.BufferedInputStream(process.getInputStream(), 1 << 16)) {
             int max = 0;
@@ -462,6 +688,7 @@ public class MediaTools {
 
     /** Grid used for the "Auto-center" motion heatmap: fine enough to be useful, coarse enough to decode fast. */
     static final int MOTION_COLS = 24;
+
     static final int MOTION_ROWS = 14;
     /** Never look at more than this much of the video — a stable centroid doesn't need the whole thing. */
     static final int MOTION_MAX_SECONDS = 90;
@@ -477,11 +704,27 @@ public class MediaTools {
         Path logFile = workDir.resolve("motion.log");
         Process process;
         try {
-            process = new ProcessBuilder(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-t", String.valueOf(MOTION_MAX_SECONDS), "-i", input,
-                    "-vf", "fps=2,scale=" + MOTION_COLS + ":" + MOTION_ROWS, "-f", "rawvideo", "-pix_fmt", "rgb24", "-")
-                    .redirectError(logFile.toFile()).start();
+            process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-loglevel",
+                            "error",
+                            "-t",
+                            String.valueOf(MOTION_MAX_SECONDS),
+                            "-i",
+                            input,
+                            "-vf",
+                            "fps=2,scale=" + MOTION_COLS + ":" + MOTION_ROWS,
+                            "-f",
+                            "rawvideo",
+                            "-pix_fmt",
+                            "rgb24",
+                            "-")
+                    .redirectError(logFile.toFile())
+                    .start();
         } catch (IOException e) {
-            throw new JobFailure("ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+            throw new JobFailure(
+                    "ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
         }
         int frameBytes = MOTION_COLS * MOTION_ROWS * 3;
         float[] heat = new float[MOTION_COLS * MOTION_ROWS];
@@ -546,13 +789,33 @@ public class MediaTools {
      */
     public Path overlay(String video, List<Path> layers, OverlayRules.Graph graph, long durationMs, JobContext ctx) {
         Path out = ctx.workDir().resolve("overlay.mp4");
-        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video));
+        List<String> command =
+                new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video));
         for (Path layer : layers) {
             command.addAll(List.of("-loop", "1", "-framerate", "25", "-t", millis(durationMs), "-i", layer.toString()));
         }
-        command.addAll(List.of("-filter_complex", graph.filter(), "-map", "[vout]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy",
-                "-t", millis(durationMs), "-movflags", "+faststart", out.toString()));
+        command.addAll(List.of(
+                "-filter_complex",
+                graph.filter(),
+                "-map",
+                "[vout]",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "copy",
+                "-t",
+                millis(durationMs),
+                "-movflags",
+                "+faststart",
+                out.toString()));
         run(command, Duration.ofMinutes(120), ctx, "ffmpeg", durationMs);
         return out;
     }
@@ -562,10 +825,20 @@ public class MediaTools {
      * background colour, or `titlePng` written over it, with the sound as `audio`
      * and an optional moving waveform. See AudioToVideoRules.
      */
-    public Path audioToVideo(AudioToVideoRules.Spec spec, Path audio, List<Path> covers, Path titlePng, AudioToVideoRules.Size frame, long durationMs,
-                             JobContext ctx) {
+    public Path audioToVideo(
+            AudioToVideoRules.Spec spec,
+            Path audio,
+            List<Path> covers,
+            Path titlePng,
+            AudioToVideoRules.Size frame,
+            long durationMs,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("audio-video.mp4");
-        run(AudioToVideoRules.command(props.ffmpeg(), spec, audio, covers, titlePng, frame, durationMs, out), Duration.ofMinutes(120), ctx, "ffmpeg",
+        run(
+                AudioToVideoRules.command(props.ffmpeg(), spec, audio, covers, titlePng, frame, durationMs, out),
+                Duration.ofMinutes(120),
+                ctx,
+                "ffmpeg",
                 durationMs);
         return out;
     }
@@ -576,7 +849,11 @@ public class MediaTools {
      */
     public Path audioToVideoQuick(AudioToVideoRules.Spec spec, Path audio, long durationMs, Path workDir) {
         Path out = workDir.resolve("preview.mp4");
-        runQuick(AudioToVideoRules.command(props.ffmpeg(), spec, audio, List.of(), null, AudioToVideoRules.size("360p"), durationMs, out), Duration.ofSeconds(90), workDir);
+        runQuick(
+                AudioToVideoRules.command(
+                        props.ffmpeg(), spec, audio, List.of(), null, AudioToVideoRules.size("360p"), durationMs, out),
+                Duration.ofSeconds(90),
+                workDir);
         return out;
     }
 
@@ -584,14 +861,19 @@ public class MediaTools {
         Path logFile = workDir.resolve("quick.log");
         Process process;
         try {
-            process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(logFile.toFile()).start();
+            process = new ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile.toFile())
+                    .start();
         } catch (IOException e) {
-            throw new JobFailure("ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+            throw new JobFailure(
+                    "ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
         }
         try {
             if (!process.waitFor(timeout.toSeconds(), TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                throw new JobFailure("The test render took longer than " + timeout.toSeconds() + " seconds and was stopped");
+                throw new JobFailure(
+                        "The test render took longer than " + timeout.toSeconds() + " seconds and was stopped");
             }
         } catch (InterruptedException e) {
             process.destroyForcibly();
@@ -604,17 +886,44 @@ public class MediaTools {
     }
 
     /** Several videos joined into one, in order. See MergeRules. */
-    public Path merge(List<Path> inputs, List<MergeRules.Part> parts, AudioToVideoRules.Size frame, String transition, JobContext ctx) {
+    public Path merge(
+            List<Path> inputs,
+            List<MergeRules.Part> parts,
+            AudioToVideoRules.Size frame,
+            String transition,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("merged.mp4");
-        run(MergeRules.command(props.ffmpeg(), inputs, parts, frame, transition, out), Duration.ofMinutes(180), ctx, "ffmpeg", MergeRules.totalMs(parts, transition));
+        run(
+                MergeRules.command(props.ffmpeg(), inputs, parts, frame, transition, out),
+                Duration.ofMinutes(180),
+                ctx,
+                "ffmpeg",
+                MergeRules.totalMs(parts, transition));
         return out;
     }
 
     /** One frame of a video as a JPEG, for a thumbnail. */
     public Path frame(Path video, long atMs, JobContext ctx) {
         Path out = ctx.workDir().resolve("frame-" + atMs + ".jpg");
-        run(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-ss", millis(atMs), "-i", video.toString(), "-frames:v", "1", "-q:v", "3",
-                out.toString()), Duration.ofMinutes(2), ctx, "ffmpeg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-ss",
+                        millis(atMs),
+                        "-i",
+                        video.toString(),
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        "3",
+                        out.toString()),
+                Duration.ofMinutes(2),
+                ctx,
+                "ffmpeg");
         return out;
     }
 
@@ -622,14 +931,29 @@ public class MediaTools {
     private Path download(Video video, JobContext ctx) {
         ctx.progress(5, "Downloading audio from " + label(video.getSource()));
         String template = ctx.workDir().resolve("source.%(ext)s").toString();
-        run(List.of(props.ytDlp(), "--no-playlist", "--no-progress", "--quiet", "--no-warnings",
-                "-f", "bestaudio/best", "--match-filter", "duration < " + (props.maxMinutes() * 60),
-                "-o", template, video.getVideoUrl()), Duration.ofMinutes(30), ctx, "yt-dlp");
+        run(
+                List.of(
+                        props.ytDlp(),
+                        "--no-playlist",
+                        "--no-progress",
+                        "--quiet",
+                        "--no-warnings",
+                        "-f",
+                        "bestaudio/best",
+                        "--match-filter",
+                        "duration < " + (props.maxMinutes() * 60),
+                        "-o",
+                        template,
+                        video.getVideoUrl()),
+                Duration.ofMinutes(30),
+                ctx,
+                "yt-dlp");
         try (Stream<Path> files = Files.list(ctx.workDir())) {
             return files.filter(p -> p.getFileName().toString().startsWith("source."))
                     .findFirst()
-                    .orElseThrow(() -> new JobFailure("yt-dlp didn't download anything — the video may be private, removed, "
-                            + "age-restricted, or longer than " + props.maxMinutes() + " minutes"));
+                    .orElseThrow(
+                            () -> new JobFailure("yt-dlp didn't download anything — the video may be private, removed, "
+                                    + "age-restricted, or longer than " + props.maxMinutes() + " minutes"));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the download: " + e.getMessage(), e);
         }
@@ -659,10 +983,15 @@ public class MediaTools {
         }
         Process process;
         try {
-            process = new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(logFile.toFile()).start();
+            process = new ProcessBuilder(cmd)
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile.toFile())
+                    .start();
         } catch (IOException e) {
             String setting = tool.equals("yt-dlp") ? "YT_DLP_PATH" : "FFMPEG_PATH";
-            throw new JobFailure(tool + " isn't installed on the server (or isn't on the PATH). Install it, or set " + setting + ".", e);
+            throw new JobFailure(
+                    tool + " isn't installed on the server (or isn't on the PATH). Install it, or set " + setting + ".",
+                    e);
         }
         long started = System.nanoTime();
         long deadline = started + timeout.toNanos();
@@ -673,7 +1002,8 @@ public class MediaTools {
                 long now = System.nanoTime();
                 if (now > deadline) {
                     process.destroyForcibly();
-                    throw new JobFailure(tool + " took longer than " + timeout.toMinutes() + " minutes and was stopped");
+                    throw new JobFailure(
+                            tool + " took longer than " + timeout.toMinutes() + " minutes and was stopped");
                 }
                 if (progressFile != null) {
                     Long us = lastOutTimeUs(tailOf(progressFile));
@@ -685,8 +1015,9 @@ public class MediaTools {
                         }
                     } else if (now - lastMove > stall.toNanos()) {
                         process.destroyForcibly();
-                        throw new JobFailure("ffmpeg stopped making progress" + (lastPosition >= 0 ? " at " + clock(lastPosition / 1000) : "")
-                                + " for " + describe(stall) + " and was stopped");
+                        throw new JobFailure("ffmpeg stopped making progress"
+                                + (lastPosition >= 0 ? " at " + clock(lastPosition / 1000) : "") + " for "
+                                + describe(stall) + " and was stopped");
                     }
                 }
                 try {

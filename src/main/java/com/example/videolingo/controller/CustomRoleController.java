@@ -33,11 +33,13 @@ public class CustomRoleController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<CustomRoleResponse>> create(@Valid @RequestBody CustomRoleRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Custom role created", customRoleService.create(request)));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Custom role created", customRoleService.create(request)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<CustomRoleResponse>> update(@PathVariable Long id, @Valid @RequestBody CustomRoleRequest request) {
+    public ResponseEntity<ApiResponse<CustomRoleResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody CustomRoleRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Custom role updated", customRoleService.update(id, request)));
     }
 

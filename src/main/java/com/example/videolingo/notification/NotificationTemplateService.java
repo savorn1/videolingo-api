@@ -11,17 +11,16 @@ import com.example.videolingo.repository.NotificationBatchRepository;
 import com.example.videolingo.repository.NotificationTemplateRepository;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.JoinType;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -37,7 +36,9 @@ public class NotificationTemplateService {
         List<Specification<NotificationTemplate>> c = new ArrayList<>();
         if (f.getSearch() != null && !f.getSearch().isBlank()) {
             String p = NotificationService.likePattern(f.getSearch());
-            c.add((r, q, cb) -> cb.or(cb.like(cb.lower(r.get("code")), p, '\\'), cb.like(cb.lower(r.get("name")), p, '\\'),
+            c.add((r, q, cb) -> cb.or(
+                    cb.like(cb.lower(r.get("code")), p, '\\'),
+                    cb.like(cb.lower(r.get("name")), p, '\\'),
                     cb.like(cb.lower(r.get("subject")), p, '\\')));
         }
         if (f.getChannel() != null) {
@@ -47,8 +48,12 @@ public class NotificationTemplateService {
             });
         }
         String sortBy = SORTABLE.contains(f.getSortBy()) ? f.getSortBy() : "name";
-        return PageResponse.of(templateRepository.findAll(Specification.allOf(c),
-                PageableUtils.of(f.getPage(), Math.min(Math.max(f.getSize(), 1), 100), sortBy, f.getSortOrder())).map(this::toResponse));
+        return PageResponse.of(templateRepository
+                .findAll(
+                        Specification.allOf(c),
+                        PageableUtils.of(
+                                f.getPage(), Math.min(Math.max(f.getSize(), 1), 100), sortBy, f.getSortOrder()))
+                .map(this::toResponse));
     }
 
     @Transactional(readOnly = true)
@@ -73,7 +78,9 @@ public class NotificationTemplateService {
     public TemplateResponse update(Long id, TemplateRequest request, String actor) {
         NotificationTemplate t = find(id);
         if (templateRepository.existsByCodeIgnoreCaseAndIdNot(request.getCode().trim(), id)) {
-            throw new AppException(HttpStatus.CONFLICT, "A template with code '" + request.getCode().trim() + "' already exists");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "A template with code '" + request.getCode().trim() + "' already exists");
         }
         apply(t, request);
         t.setUpdatedBy(actor);
@@ -87,23 +94,41 @@ public class NotificationTemplateService {
     }
 
     NotificationTemplate find(Long id) {
-        return templateRepository.findById(id)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Notification template not found with id: " + id));
+        return templateRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new AppException(HttpStatus.NOT_FOUND, "Notification template not found with id: " + id));
     }
 
     private static void apply(NotificationTemplate t, TemplateRequest r) {
         t.setCode(r.getCode().trim());
         t.setName(r.getName().trim());
-        t.setDescription(r.getDescription() == null || r.getDescription().isBlank() ? null : r.getDescription().trim());
+        t.setDescription(
+                r.getDescription() == null || r.getDescription().isBlank()
+                        ? null
+                        : r.getDescription().trim());
         t.setSubject(r.getSubject().trim());
         t.setBody(r.getBody().strip());
         t.setDefaultChannels(new LinkedHashSet<>(r.getDefaultChannels()));
     }
 
     private TemplateResponse toResponse(NotificationTemplate t) {
-        List<NotificationChannel> channels = t.getDefaultChannels().stream().sorted(Comparator.comparing(Enum::ordinal)).toList();
-        return new TemplateResponse(t.getId(), t.getCode(), t.getName(), t.getDescription(), t.getSubject(), t.getBody(), channels,
-                List.copyOf(TemplateRenderer.customVariables(t.getSubject(), t.getBody())), batchRepository.countByTemplateId(t.getId()),
-                t.getCreatedBy(), t.getUpdatedBy(), t.getCreatedAt(), t.getUpdatedAt());
+        List<NotificationChannel> channels = t.getDefaultChannels().stream()
+                .sorted(Comparator.comparing(Enum::ordinal))
+                .toList();
+        return new TemplateResponse(
+                t.getId(),
+                t.getCode(),
+                t.getName(),
+                t.getDescription(),
+                t.getSubject(),
+                t.getBody(),
+                channels,
+                List.copyOf(TemplateRenderer.customVariables(t.getSubject(), t.getBody())),
+                batchRepository.countByTemplateId(t.getId()),
+                t.getCreatedBy(),
+                t.getUpdatedBy(),
+                t.getCreatedAt(),
+                t.getUpdatedAt());
     }
 }

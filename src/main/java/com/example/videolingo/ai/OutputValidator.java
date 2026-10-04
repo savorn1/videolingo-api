@@ -5,7 +5,6 @@ import com.example.videolingo.ai.schema.KeyPointsOutput;
 import com.example.videolingo.ai.schema.QuestionsOutput;
 import com.example.videolingo.ai.schema.QuizOutput;
 import com.example.videolingo.ai.schema.SummaryOutput;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -19,11 +18,9 @@ import java.util.Set;
 // warning rather than failing the whole generation.
 public final class OutputValidator {
 
-    private OutputValidator() {
-    }
+    private OutputValidator() {}
 
-    public record Checked<T>(T value, List<String> warnings) {
-    }
+    public record Checked<T>(T value, List<String> warnings) {}
 
     static int clampSeconds(int seconds, long durationMs) {
         int max = durationMs > 0 ? (int) (durationMs / 1000) : Integer.MAX_VALUE;
@@ -39,9 +36,15 @@ public final class OutputValidator {
         if (blank(in.summary())) {
             warnings.add("The summary came back empty");
         }
-        List<String> topics = in.topics() == null ? List.of()
-                : in.topics().stream().filter(t -> !blank(t)).map(String::strip).distinct().toList();
-        return new Checked<>(new SummaryOutput(strip(in.tldr()), strip(in.summary()), topics, in.estimatedLevel()), warnings);
+        List<String> topics = in.topics() == null
+                ? List.of()
+                : in.topics().stream()
+                        .filter(t -> !blank(t))
+                        .map(String::strip)
+                        .distinct()
+                        .toList();
+        return new Checked<>(
+                new SummaryOutput(strip(in.tldr()), strip(in.summary()), topics, in.estimatedLevel()), warnings);
     }
 
     public static Checked<ChaptersOutput> chapters(ChaptersOutput in, long durationMs) {
@@ -79,12 +82,14 @@ public final class OutputValidator {
     public static Checked<KeyPointsOutput> keyPoints(KeyPointsOutput in, long durationMs) {
         List<String> warnings = new ArrayList<>();
         List<KeyPointsOutput.KeyPoint> out = new ArrayList<>();
-        for (KeyPointsOutput.KeyPoint k : in.keyPoints() == null ? List.<KeyPointsOutput.KeyPoint>of() : in.keyPoints()) {
+        for (KeyPointsOutput.KeyPoint k :
+                in.keyPoints() == null ? List.<KeyPointsOutput.KeyPoint>of() : in.keyPoints()) {
             if (blank(k.point())) {
                 warnings.add("Dropped an empty key point");
                 continue;
             }
-            out.add(new KeyPointsOutput.KeyPoint(k.point().strip(), strip(k.explanation()), clampSeconds(k.timestampSeconds(), durationMs)));
+            out.add(new KeyPointsOutput.KeyPoint(
+                    k.point().strip(), strip(k.explanation()), clampSeconds(k.timestampSeconds(), durationMs)));
         }
         return new Checked<>(new KeyPointsOutput(out), warnings);
     }
@@ -92,13 +97,17 @@ public final class OutputValidator {
     public static Checked<QuestionsOutput> questions(QuestionsOutput in, long durationMs) {
         List<String> warnings = new ArrayList<>();
         List<QuestionsOutput.Question> out = new ArrayList<>();
-        for (QuestionsOutput.Question q : in.questions() == null ? List.<QuestionsOutput.Question>of() : in.questions()) {
+        for (QuestionsOutput.Question q :
+                in.questions() == null ? List.<QuestionsOutput.Question>of() : in.questions()) {
             if (blank(q.question()) || blank(q.answer())) {
                 warnings.add("Dropped a question without " + (blank(q.question()) ? "text" : "an answer"));
                 continue;
             }
-            out.add(new QuestionsOutput.Question(q.question().strip(), q.answer().strip(),
-                    q.difficulty() == null ? QuestionsOutput.Difficulty.MEDIUM : q.difficulty(), clampSeconds(q.timestampSeconds(), durationMs)));
+            out.add(new QuestionsOutput.Question(
+                    q.question().strip(),
+                    q.answer().strip(),
+                    q.difficulty() == null ? QuestionsOutput.Difficulty.MEDIUM : q.difficulty(),
+                    clampSeconds(q.timestampSeconds(), durationMs)));
         }
         return new Checked<>(new QuestionsOutput(out), warnings);
     }
@@ -113,7 +122,9 @@ public final class OutputValidator {
                 warnings.add("Quiz question " + n + " dropped: no question text");
                 continue;
             }
-            List<String> options = q.options() == null ? List.of() : q.options().stream().map(o -> o == null ? "" : o.strip()).toList();
+            List<String> options = q.options() == null
+                    ? List.of()
+                    : q.options().stream().map(o -> o == null ? "" : o.strip()).toList();
             if (options.size() < 2 || options.stream().anyMatch(String::isEmpty)) {
                 warnings.add("Quiz question " + n + " dropped: it needs at least two non-empty options");
                 continue;
@@ -127,7 +138,11 @@ public final class OutputValidator {
                 warnings.add("Quiz question " + n + " dropped: its correct answer doesn't match any option");
                 continue;
             }
-            out.add(new QuizOutput.QuizQuestion(q.question().strip(), options, q.correctOptionIndex(), strip(q.explanation()),
+            out.add(new QuizOutput.QuizQuestion(
+                    q.question().strip(),
+                    options,
+                    q.correctOptionIndex(),
+                    strip(q.explanation()),
                     clampSeconds(q.timestampSeconds(), durationMs)));
         }
         return new Checked<>(new QuizOutput(out), warnings);

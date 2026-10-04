@@ -15,8 +15,7 @@ public final class GlossaryPrompt {
     // this only bites on a batch that mentions hundreds of distinct terms.
     static final int MAX_TERMS = 200;
 
-    private GlossaryPrompt() {
-    }
+    private GlossaryPrompt() {}
 
     /** The terms whose source text occurs somewhere in `lines`, first occurrence of each source wins. */
     public static List<GlossaryEntry> relevant(List<GlossaryEntry> terms, List<String> lines) {
@@ -40,13 +39,18 @@ public final class GlossaryPrompt {
         if (terms.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("- Follow this glossary exactly, even where another wording would read more naturally:\n");
+        StringBuilder sb = new StringBuilder(
+                "- Follow this glossary exactly, even where another wording would read more naturally:\n");
         for (GlossaryEntry t : terms) {
             sb.append("  - ");
             if (t.doNotTranslate()) {
                 sb.append("Keep \"").append(t.source()).append("\" as it is — don't translate or transliterate it");
             } else {
-                sb.append('"').append(t.source()).append("\" → \"").append(t.target()).append('"');
+                sb.append('"')
+                        .append(t.source())
+                        .append("\" → \"")
+                        .append(t.target())
+                        .append('"');
             }
             if (t.note() != null && !t.note().isBlank()) {
                 sb.append(" (").append(t.note().strip()).append(')');
@@ -86,7 +90,8 @@ public final class GlossaryPrompt {
             return true;
         }
         Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
-        return script == Character.UnicodeScript.LATIN || script == Character.UnicodeScript.CYRILLIC
+        return script == Character.UnicodeScript.LATIN
+                || script == Character.UnicodeScript.CYRILLIC
                 || script == Character.UnicodeScript.GREEK;
     }
 }

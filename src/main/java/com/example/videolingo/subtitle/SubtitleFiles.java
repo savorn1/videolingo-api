@@ -8,11 +8,9 @@ import java.util.regex.Pattern;
 // Reading and writing SRT / WebVTT.
 public final class SubtitleFiles {
 
-    private SubtitleFiles() {
-    }
+    private SubtitleFiles() {}
 
-    public record Parsed(String format, List<Cue> cues, List<String> warnings) {
-    }
+    public record Parsed(String format, List<Cue> cues, List<String> warnings) {}
 
     private static final Pattern TIMING = Pattern.compile("^\\s*(\\S+)\\s+-->\\s+(\\S+)");
     private static final Pattern TIMESTAMP = Pattern.compile("^(?:(\\d+):)?(\\d{1,2}):(\\d{1,2})[.,](\\d{1,3})$");
@@ -91,21 +89,31 @@ public final class SubtitleFiles {
     private static String cleanLine(String line) {
         return line.replaceAll("<[^>]*>", "")
                 .replaceAll("\\{\\\\[^}]*}", "")
-                .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&nbsp;", " ")
                 .strip();
     }
 
     public static String timestamp(long ms, char fractionSeparator) {
-        return String.format("%02d:%02d:%02d%c%03d", ms / 3_600_000, (ms % 3_600_000) / 60_000, (ms % 60_000) / 1000, fractionSeparator, ms % 1000);
+        return String.format(
+                "%02d:%02d:%02d%c%03d",
+                ms / 3_600_000, (ms % 3_600_000) / 60_000, (ms % 60_000) / 1000, fractionSeparator, ms % 1000);
     }
 
     public static String toSrt(List<Cue> cues) {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < cues.size(); i++) {
             Cue c = cues.get(i);
-            out.append(i + 1).append('\n')
-                    .append(timestamp(c.startMs(), ',')).append(" --> ").append(timestamp(c.endMs(), ',')).append('\n')
-                    .append(c.text()).append("\n\n");
+            out.append(i + 1)
+                    .append('\n')
+                    .append(timestamp(c.startMs(), ','))
+                    .append(" --> ")
+                    .append(timestamp(c.endMs(), ','))
+                    .append('\n')
+                    .append(c.text())
+                    .append("\n\n");
         }
         return out.toString();
     }
@@ -113,9 +121,13 @@ public final class SubtitleFiles {
     public static String toVtt(List<Cue> cues) {
         StringBuilder out = new StringBuilder("WEBVTT\n\n");
         for (Cue c : cues) {
-            out.append(timestamp(c.startMs(), '.')).append(" --> ").append(timestamp(c.endMs(), '.')).append('\n')
+            out.append(timestamp(c.startMs(), '.'))
+                    .append(" --> ")
+                    .append(timestamp(c.endMs(), '.'))
+                    .append('\n')
                     // "-->" can't appear in VTT cue text; & and < must be escaped.
-                    .append(c.text().replace("&", "&amp;").replace("<", "&lt;").replace("-->", "--&gt;")).append("\n\n");
+                    .append(c.text().replace("&", "&amp;").replace("<", "&lt;").replace("-->", "--&gt;"))
+                    .append("\n\n");
         }
         return out.toString();
     }

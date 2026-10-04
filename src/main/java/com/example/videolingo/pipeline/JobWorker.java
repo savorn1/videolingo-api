@@ -4,14 +4,6 @@ import com.example.videolingo.entity.ProcessingJob;
 import com.example.videolingo.entity.ProcessingJobLog;
 import com.example.videolingo.entity.ProcessingJobStatus;
 import com.example.videolingo.entity.ProcessingJobType;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,8 +18,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 
-// Runs queued processing jobs in the background, per lane (see JobLane) — one at a time unless configured otherwise. Only the
+// Runs queued processing jobs in the background, per lane (see JobLane) — one at a time unless configured otherwise.
+// Only the
 // types below are handled here; others (TRANSCODE, …) stay queued for
 // whatever handles them.
 @Component
@@ -36,8 +36,12 @@ import java.util.stream.Stream;
 public class JobWorker {
 
     // public: ProcessingJobServiceImpl reuses it to compute a queued job's position.
-    public static final Set<ProcessingJobType> HANDLED = EnumSet.of(ProcessingJobType.TRANSCRIBE, ProcessingJobType.TRANSLATE, ProcessingJobType.DUB,
-            ProcessingJobType.DOWNLOAD, ProcessingJobType.EDIT);
+    public static final Set<ProcessingJobType> HANDLED = EnumSet.of(
+            ProcessingJobType.TRANSCRIBE,
+            ProcessingJobType.TRANSLATE,
+            ProcessingJobType.DUB,
+            ProcessingJobType.DOWNLOAD,
+            ProcessingJobType.EDIT);
 
     private final JobStore store;
     private final PipelineProperties props;
@@ -45,7 +49,8 @@ public class JobWorker {
     private final ApplicationEventPublisher events;
 
     // A pool and a counter of running jobs per lane, so a slow job in one lane doesn't hold up the other. A lane
-    // runs one job at a time unless pipeline.media-concurrency / ai-concurrency say otherwise; jobs still start in order.
+    // runs one job at a time unless pipeline.media-concurrency / ai-concurrency say otherwise; jobs still start in
+    // order.
     private final Map<JobLane, ExecutorService> executors = new ConcurrentHashMap<>();
     private final Map<JobLane, LaneSlots> slots = new EnumMap<>(JobLane.class);
 
@@ -149,7 +154,8 @@ public class JobWorker {
             announce(job, ProcessingJobStatus.FAILED, e.getMessage());
         } catch (Exception e) {
             log.error("Processing job #{} failed", job.getId(), e);
-            String message = "Unexpected error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            String message = "Unexpected error: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
             store.log(job.getId(), ProcessingJobLog.Level.ERROR, message);
             store.finish(job.getId(), ProcessingJobStatus.FAILED, message);
             announce(job, ProcessingJobStatus.FAILED, message);

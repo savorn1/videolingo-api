@@ -6,5 +6,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface CustomRoleRepository extends JpaRepository<CustomRole, Long>, JpaSpecificationExecutor<CustomRole> {
     boolean existsByName(String name);
+
     boolean existsByNameAndIdNot(String name, Long id);
 }

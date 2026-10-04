@@ -1,24 +1,27 @@
 package com.example.videolingo.notification;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
 
 class TemplateRendererTest {
 
     @Test
     void findsVariablesInOrderAcrossTexts() {
-        assertEquals(List.of("username", "course", "date"),
-                List.copyOf(TemplateRenderer.variables("Hi {{ username }}", "New: {{course}} on {{date}} — {{course}}")));
+        assertEquals(
+                List.of("username", "course", "date"),
+                List.copyOf(
+                        TemplateRenderer.variables("Hi {{ username }}", "New: {{course}} on {{date}} — {{course}}")));
     }
 
     @Test
     void customVariablesExcludeBuiltIns() {
-        assertEquals(Set.of("course"), TemplateRenderer.customVariables("Hi {{username}}, {{course}} is live at {{appUrl}}"));
+        assertEquals(
+                Set.of("course"),
+                TemplateRenderer.customVariables("Hi {{username}}, {{course}} is live at {{appUrl}}"));
     }
 
     @Test
@@ -28,8 +31,11 @@ class TemplateRendererTest {
 
     @Test
     void rendersKnownAndKeepsUnknownAndSpecialCharacters() {
-        assertEquals("Price $5 \\o/ for ann — {{other}}",
-                TemplateRenderer.render("Price {{price}} for {{ username }} — {{other}}", Map.of("price", "$5 \\o/", "username", "ann")));
+        assertEquals(
+                "Price $5 \\o/ for ann — {{other}}",
+                TemplateRenderer.render(
+                        "Price {{price}} for {{ username }} — {{other}}",
+                        Map.of("price", "$5 \\o/", "username", "ann")));
     }
 
     @Test

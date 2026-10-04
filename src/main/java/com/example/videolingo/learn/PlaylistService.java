@@ -9,13 +9,12 @@ import com.example.videolingo.entity.VideoCollection;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.VideoCollectionRepository;
 import com.example.videolingo.service.CollectionService;
+import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Objects;
 
 // A learner's own playlists — private collections they own, built on top of
 // CollectionService (which already knows how to manage a collection's
@@ -80,7 +79,8 @@ public class PlaylistService {
     }
 
     private VideoCollection requireOwned(Long id, Long userId) {
-        VideoCollection c = collectionRepository.findById(id)
+        VideoCollection c = collectionRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Playlist not found"));
         if (!Objects.equals(c.getOwnerId(), userId)) {
             throw new AppException(HttpStatus.FORBIDDEN, "That's not your playlist");

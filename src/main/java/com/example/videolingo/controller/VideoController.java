@@ -43,21 +43,22 @@ public class VideoController {
     }
 
     @GetMapping("/{id}/statistics")
-    public ResponseEntity<ApiResponse<VideoStatisticsResponse>> statistics(@PathVariable Long id,
-                                                                           @RequestParam(defaultValue = "30") int days) {
+    public ResponseEntity<ApiResponse<VideoStatisticsResponse>> statistics(
+            @PathVariable Long id, @RequestParam(defaultValue = "30") int days) {
         return ResponseEntity.ok(ApiResponse.success(videoService.getStatistics(id, days)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<VideoResponse>> update(@PathVariable Long id,
-                                                             @Valid @RequestBody UpdateVideoRequest request) {
+    public ResponseEntity<ApiResponse<VideoResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody UpdateVideoRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Video updated", videoService.updateVideo(id, request)));
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<VideoResponse>> updateStatus(@PathVariable Long id,
-                                                                   @Valid @RequestBody UpdateVideoStatusRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(request.getEnabled() ? "Video enabled" : "Video disabled",
+    public ResponseEntity<ApiResponse<VideoResponse>> updateStatus(
+            @PathVariable Long id, @Valid @RequestBody UpdateVideoStatusRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                request.getEnabled() ? "Video enabled" : "Video disabled",
                 videoService.updateStatus(id, request.getEnabled())));
     }
 
@@ -69,7 +70,8 @@ public class VideoController {
 
     // Assign Tag to Video — adds one or more existing tags.
     @PostMapping("/{id}/tags")
-    public ResponseEntity<ApiResponse<VideoResponse>> assignTags(@PathVariable Long id, @Valid @RequestBody AssignTagsRequest request) {
+    public ResponseEntity<ApiResponse<VideoResponse>> assignTags(
+            @PathVariable Long id, @Valid @RequestBody AssignTagsRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Tags added", videoService.assignTags(id, request.getTagIds())));
     }
 
@@ -97,7 +99,9 @@ public class VideoController {
     @DeleteMapping("/trash")
     public ResponseEntity<ApiResponse<Void>> clearTrash() {
         int purged = videoService.purgeTrash();
-        return ResponseEntity.ok(ApiResponse.success(purged == 0 ? "Trash was already empty" : "Trash cleared — " + purged + " video(s) permanently deleted", null));
+        return ResponseEntity.ok(ApiResponse.success(
+                purged == 0 ? "Trash was already empty" : "Trash cleared — " + purged + " video(s) permanently deleted",
+                null));
     }
 
     @PostMapping("/{id}/archive")
@@ -111,21 +115,24 @@ public class VideoController {
     }
 
     @PutMapping("/{id}/owner")
-    public ResponseEntity<ApiResponse<VideoResponse>> moveOwner(@PathVariable Long id, @Valid @RequestBody MoveVideoOwnerRequest request) {
+    public ResponseEntity<ApiResponse<VideoResponse>> moveOwner(
+            @PathVariable Long id, @Valid @RequestBody MoveVideoOwnerRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Video moved", videoService.moveOwner(id, request.getOwnerId())));
     }
 
     @PostMapping("/{id}/duplicate")
     public ResponseEntity<ApiResponse<VideoResponse>> duplicate(@PathVariable Long id, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Video duplicated", videoService.duplicate(id, requireUsername(authentication))));
+                .body(ApiResponse.success(
+                        "Video duplicated", videoService.duplicate(id, requireUsername(authentication))));
     }
 
     // Swaps the video's file for a freshly uploaded one; the old file is kept as a version.
     @PostMapping("/{id}/replace")
-    public ResponseEntity<ApiResponse<VideoResponse>> replace(@PathVariable Long id, @Valid @RequestBody ReplaceRequest request,
-                                                               Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Video file replaced", ingestService.replace(id, request, requireUsername(authentication))));
+    public ResponseEntity<ApiResponse<VideoResponse>> replace(
+            @PathVariable Long id, @Valid @RequestBody ReplaceRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Video file replaced", ingestService.replace(id, request, requireUsername(authentication))));
     }
 
     private String requireUsername(Authentication authentication) {

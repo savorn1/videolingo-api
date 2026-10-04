@@ -13,21 +13,65 @@ import java.util.Set;
 public final class LanguageDetector {
 
     /** {@code confidence} is 0–1. */
-    public record Guess(String code, double confidence) {
-    }
+    public record Guess(String code, double confidence) {}
 
     private static final Map<String, Set<String>> STOPWORDS = Map.ofEntries(
-            Map.entry("en", Set.of("the", "and", "you", "to", "of", "is", "in", "it", "for", "with", "this", "that", "how", "what", "are", "my", "your", "i", "we", "on", "a", "an", "be", "learn", "can", "do", "at", "from")),
-            Map.entry("fr", Set.of("le", "la", "les", "des", "et", "est", "une", "un", "pour", "dans", "avec", "que", "qui", "pas", "vous", "je", "nous", "du", "sur", "au", "ce", "comment", "sont", "mon", "votre")),
-            Map.entry("es", Set.of("el", "la", "los", "las", "y", "es", "una", "un", "para", "en", "con", "que", "por", "no", "del", "como", "más", "mi", "tu", "se", "lo", "al", "está", "cómo", "qué")),
-            Map.entry("de", Set.of("der", "die", "das", "und", "ist", "ein", "eine", "nicht", "mit", "für", "auf", "den", "dem", "zu", "ich", "sie", "wir", "wie", "was", "auch", "im", "von", "sich", "mein", "du")),
-            Map.entry("it", Set.of("il", "lo", "la", "gli", "le", "e", "è", "un", "una", "per", "con", "che", "non", "di", "del", "della", "come", "sono", "mio", "io", "noi", "nel", "questo")),
-            Map.entry("pt", Set.of("o", "a", "os", "as", "e", "é", "um", "uma", "para", "com", "que", "não", "do", "da", "dos", "como", "em", "no", "na", "eu", "você", "meu", "está", "são")),
-            Map.entry("nl", Set.of("de", "het", "een", "en", "is", "van", "voor", "met", "niet", "dat", "ik", "je", "we", "op", "hoe", "wat", "zijn", "mijn")),
-            Map.entry("id", Set.of("dan", "yang", "di", "ke", "dari", "ini", "itu", "dengan", "untuk", "tidak", "saya", "kamu", "kita", "ada", "cara", "belajar", "bahasa", "apa")),
-            Map.entry("vi", Set.of("và", "của", "là", "có", "không", "cho", "người", "những", "một", "các", "với", "này", "được", "trong", "tôi", "bạn", "học", "tiếng", "cách")),
-            Map.entry("tr", Set.of("ve", "bir", "bu", "için", "ile", "da", "de", "ne", "nasıl", "çok", "ben", "sen", "biz", "var", "yok", "değil")),
-            Map.entry("pl", Set.of("i", "w", "na", "z", "nie", "to", "jest", "się", "jak", "do", "że", "co", "ja", "ty", "czy", "dla")));
+            Map.entry(
+                    "en",
+                    Set.of(
+                            "the", "and", "you", "to", "of", "is", "in", "it", "for", "with", "this", "that", "how",
+                            "what", "are", "my", "your", "i", "we", "on", "a", "an", "be", "learn", "can", "do", "at",
+                            "from")),
+            Map.entry(
+                    "fr",
+                    Set.of(
+                            "le", "la", "les", "des", "et", "est", "une", "un", "pour", "dans", "avec", "que", "qui",
+                            "pas", "vous", "je", "nous", "du", "sur", "au", "ce", "comment", "sont", "mon", "votre")),
+            Map.entry(
+                    "es",
+                    Set.of(
+                            "el", "la", "los", "las", "y", "es", "una", "un", "para", "en", "con", "que", "por", "no",
+                            "del", "como", "más", "mi", "tu", "se", "lo", "al", "está", "cómo", "qué")),
+            Map.entry(
+                    "de",
+                    Set.of(
+                            "der", "die", "das", "und", "ist", "ein", "eine", "nicht", "mit", "für", "auf", "den",
+                            "dem", "zu", "ich", "sie", "wir", "wie", "was", "auch", "im", "von", "sich", "mein", "du")),
+            Map.entry(
+                    "it",
+                    Set.of(
+                            "il", "lo", "la", "gli", "le", "e", "è", "un", "una", "per", "con", "che", "non", "di",
+                            "del", "della", "come", "sono", "mio", "io", "noi", "nel", "questo")),
+            Map.entry(
+                    "pt",
+                    Set.of(
+                            "o", "a", "os", "as", "e", "é", "um", "uma", "para", "com", "que", "não", "do", "da", "dos",
+                            "como", "em", "no", "na", "eu", "você", "meu", "está", "são")),
+            Map.entry(
+                    "nl",
+                    Set.of(
+                            "de", "het", "een", "en", "is", "van", "voor", "met", "niet", "dat", "ik", "je", "we", "op",
+                            "hoe", "wat", "zijn", "mijn")),
+            Map.entry(
+                    "id",
+                    Set.of(
+                            "dan", "yang", "di", "ke", "dari", "ini", "itu", "dengan", "untuk", "tidak", "saya", "kamu",
+                            "kita", "ada", "cara", "belajar", "bahasa", "apa")),
+            Map.entry(
+                    "vi",
+                    Set.of(
+                            "và", "của", "là", "có", "không", "cho", "người", "những", "một", "các", "với", "này",
+                            "được", "trong", "tôi", "bạn", "học", "tiếng", "cách")),
+            Map.entry(
+                    "tr",
+                    Set.of(
+                            "ve", "bir", "bu", "için", "ile", "da", "de", "ne", "nasıl", "çok", "ben", "sen", "biz",
+                            "var", "yok", "değil")),
+            Map.entry(
+                    "pl",
+                    Set.of(
+                            "i", "w", "na", "z", "nie", "to", "jest", "się", "jak", "do", "że", "co", "ja", "ty", "czy",
+                            "dla")));
 
     // Letters that only one of the Latin languages above uses.
     private static final Map<String, String> MARKERS = Map.of(
@@ -39,8 +83,7 @@ public final class LanguageDetector {
             "pl", "ąęłńśźż",
             "fr", "œç");
 
-    private LanguageDetector() {
-    }
+    private LanguageDetector() {}
 
     public static Guess detect(String... parts) {
         StringBuilder sb = new StringBuilder();
@@ -73,26 +116,27 @@ public final class LanguageDetector {
             }
             letters++;
             Character.UnicodeScript script = Character.UnicodeScript.of(cp);
-            String code = switch (script) {
-                case KHMER -> "km";
-                case THAI -> "th";
-                case LAO -> "lo";
-                case MYANMAR -> "my";
-                case HANGUL -> "ko";
-                case HIRAGANA, KATAKANA -> "ja";
-                case HAN -> "han";
-                case ARABIC -> "ar";
-                case HEBREW -> "he";
-                case GREEK -> "el";
-                case CYRILLIC -> "ru";
-                case DEVANAGARI -> "hi";
-                case BENGALI -> "bn";
-                case TAMIL -> "ta";
-                case TELUGU -> "te";
-                case GEORGIAN -> "ka";
-                case ARMENIAN -> "hy";
-                default -> null;
-            };
+            String code =
+                    switch (script) {
+                        case KHMER -> "km";
+                        case THAI -> "th";
+                        case LAO -> "lo";
+                        case MYANMAR -> "my";
+                        case HANGUL -> "ko";
+                        case HIRAGANA, KATAKANA -> "ja";
+                        case HAN -> "han";
+                        case ARABIC -> "ar";
+                        case HEBREW -> "he";
+                        case GREEK -> "el";
+                        case CYRILLIC -> "ru";
+                        case DEVANAGARI -> "hi";
+                        case BENGALI -> "bn";
+                        case TAMIL -> "ta";
+                        case TELUGU -> "te";
+                        case GEORGIAN -> "ka";
+                        case ARMENIAN -> "hy";
+                        default -> null;
+                    };
             if (code != null) {
                 counts.merge(code, 1, Integer::sum);
             }
@@ -110,7 +154,8 @@ public final class LanguageDetector {
         if (han > 0) {
             counts.put("zh", counts.remove("han"));
         }
-        Map.Entry<String, Integer> top = counts.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow();
+        Map.Entry<String, Integer> top =
+                counts.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow();
         // Only trust a script that makes up at least 40% of the letters (a Latin
         // title with one Thai word stays undecided here and goes to the word check).
         if (top.getValue() * 10 < letters * 4) {
@@ -147,7 +192,9 @@ public final class LanguageDetector {
         if (counted < 3 || scores.isEmpty()) {
             return null;
         }
-        List<Map.Entry<String, Double>> ranked = scores.entrySet().stream().sorted(Map.Entry.<String, Double>comparingByValue().reversed()).toList();
+        List<Map.Entry<String, Double>> ranked = scores.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .toList();
         double best = ranked.get(0).getValue();
         double second = ranked.size() > 1 ? ranked.get(1).getValue() : 0;
         if (best < 2 || best - second < 1) {

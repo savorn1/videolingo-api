@@ -10,22 +10,23 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // A learner's flashcard: a word saved from a subtitle, or an AI key point.
 // Scheduled for review by spaced repetition (learn/Srs): the better it's
 // remembered, the longer until it's shown again.
 @Entity
-@Table(name = "study_cards", indexes = {
-        @Index(name = "idx_study_cards_user_due", columnList = "user_id, due_at"),
-        @Index(name = "idx_study_cards_user_front", columnList = "user_id, front_key")
-})
+@Table(
+        name = "study_cards",
+        indexes = {
+            @Index(name = "idx_study_cards_user_due", columnList = "user_id, due_at"),
+            @Index(name = "idx_study_cards_user_front", columnList = "user_id, front_key")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -33,7 +34,11 @@ import java.time.LocalDateTime;
 @Builder
 public class StudyCard {
 
-    public enum Source { WORD, KEY_POINT, MANUAL }
+    public enum Source {
+        WORD,
+        KEY_POINT,
+        MANUAL
+    }
 
     /** A new card's ease (learn/Srs adjusts it with every review). */
     public static final double START_EASE = 2.5;

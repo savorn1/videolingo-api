@@ -36,24 +36,31 @@ public class CategoryController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<CategoryResponse>> create(@Valid @RequestBody CategoryRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Category created", categoryService.create(request)));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Category created", categoryService.create(request)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<CategoryResponse>> update(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
+    public ResponseEntity<ApiResponse<CategoryResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Category updated", categoryService.update(id, request)));
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<CategoryResponse>> updateStatus(@PathVariable Long id, @Valid @RequestBody UpdateStatusRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(request.getEnabled() ? "Category enabled" : "Category disabled",
+    public ResponseEntity<ApiResponse<CategoryResponse>> updateStatus(
+            @PathVariable Long id, @Valid @RequestBody UpdateStatusRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                request.getEnabled() ? "Category enabled" : "Category disabled",
                 categoryService.setEnabled(id, request.getEnabled())));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Integer>> delete(@PathVariable Long id) {
         int detached = categoryService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(detached == 0 ? "Category deleted"
-                : "Category deleted and removed from " + detached + (detached == 1 ? " video" : " videos"), detached));
+        return ResponseEntity.ok(ApiResponse.success(
+                detached == 0
+                        ? "Category deleted"
+                        : "Category deleted and removed from " + detached + (detached == 1 ? " video" : " videos"),
+                detached));
     }
 }

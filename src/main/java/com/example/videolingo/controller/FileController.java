@@ -23,8 +23,8 @@ public class FileController {
     private final FileStorageService fileStorageService;
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    public ResponseEntity<ApiResponse<FileUploadResponse>> upload(@RequestParam("file") MultipartFile file,
-                                                                    @RequestParam(value = "folder", required = false) String folder) {
+    public ResponseEntity<ApiResponse<FileUploadResponse>> upload(
+            @RequestParam("file") MultipartFile file, @RequestParam(value = "folder", required = false) String folder) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("File uploaded", fileStorageService.upload(file, folder)));
     }

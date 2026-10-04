@@ -1,9 +1,8 @@
 package com.example.videolingo.dto;
 
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.util.Map;
+import lombok.Data;
 
 @Data
 public class UpdateSectionsRequest {

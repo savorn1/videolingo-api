@@ -5,9 +5,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-
 import java.util.List;
+import lombok.Data;
 
 // Full replacement of the editable fields. `cues` null = leave cues as they
 // are (e.g. only toggling published or renaming); a list replaces them all.
@@ -17,10 +16,12 @@ public class UpdateSubtitleRequest {
     @NotNull
     private Long version;
 
-    @NotBlank @Size(max = 100)
+    @NotBlank
+    @Size(max = 100)
     private String label;
 
-    @NotBlank @Size(max = 10)
+    @NotBlank
+    @Size(max = 10)
     private String language;
 
     @NotNull
@@ -29,9 +30,11 @@ public class UpdateSubtitleRequest {
     @NotNull
     private Boolean published;
 
-    @Valid @NotNull
+    @Valid
+    @NotNull
     private SubtitleRulesDto rules;
 
-    @Valid @Size(max = 20000)
+    @Valid
+    @Size(max = 20000)
     private List<SubtitleCueDto> cues;
 }

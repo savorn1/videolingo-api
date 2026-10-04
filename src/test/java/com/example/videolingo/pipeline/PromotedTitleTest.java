@@ -1,10 +1,10 @@
 package com.example.videolingo.pipeline;
 
-import com.example.videolingo.entity.VideoClip.Operation;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.example.videolingo.entity.VideoClip.Operation;
+import org.junit.jupiter.api.Test;
 
 class PromotedTitleTest {
 
@@ -23,7 +23,9 @@ class PromotedTitleTest {
     void eachKindOfResultSaysWhatWasDone() {
         assertEquals("Lesson (trimmed)", VideoEditService.promotedTitle("Lesson", Operation.TRIM, null, null));
         assertEquals("Lesson (edited audio)", VideoEditService.promotedTitle("Lesson", Operation.AUDIO, null, null));
-        assertEquals("Lesson (with text & overlays)", VideoEditService.promotedTitle("Lesson", Operation.OVERLAY, null, null));
+        assertEquals(
+                "Lesson (with text & overlays)",
+                VideoEditService.promotedTitle("Lesson", Operation.OVERLAY, null, null));
         assertEquals("Lesson — Part 3", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 2, null));
         assertEquals("Lesson — Part 1", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, null, null));
     }
@@ -37,7 +39,10 @@ class PromotedTitleTest {
 
     @Test
     void aLongGivenTitleIsCut() {
-        assertEquals(VideoEditService.MAX_TITLE, VideoEditService.promotedTitle("Lesson", Operation.TRIM, null, "y".repeat(500)).length());
+        assertEquals(
+                VideoEditService.MAX_TITLE,
+                VideoEditService.promotedTitle("Lesson", Operation.TRIM, null, "y".repeat(500))
+                        .length());
     }
 
     @Test

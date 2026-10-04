@@ -1,21 +1,24 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // A voice-over audio track for a video in one language, made by a DUB
 // processing job from that language's transcript. Played in place of the
 // video's own sound. At most one per (video, language); dubbing again
 // replaces it.
 @Entity
-@Table(name = "video_dubs",
-        uniqueConstraints = @UniqueConstraint(name = "uk_video_dubs_video_language", columnNames = {"video_id", "language"}),
+@Table(
+        name = "video_dubs",
+        uniqueConstraints =
+                @UniqueConstraint(
+                        name = "uk_video_dubs_video_language",
+                        columnNames = {"video_id", "language"}),
         indexes = @Index(name = "idx_video_dubs_video_id", columnList = "video_id"))
 @Getter
 @Setter

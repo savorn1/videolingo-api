@@ -5,13 +5,12 @@ import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // A video's file version history. Under /api/admin/videos, so gated as
 // module "videos": GET = READ, the rest = WRITE.
@@ -29,7 +28,8 @@ public class VideoVersionController {
     }
 
     @PostMapping("/{versionId}/restore")
-    public ResponseEntity<ApiResponse<VideoResponse>> restore(@PathVariable Long videoId, @PathVariable Long versionId, Authentication authentication) {
+    public ResponseEntity<ApiResponse<VideoResponse>> restore(
+            @PathVariable Long videoId, @PathVariable Long versionId, Authentication authentication) {
         versionService.restore(videoId, versionId, requireUsername(authentication));
         return ResponseEntity.ok(ApiResponse.success("Version restored", videoService.getVideo(videoId)));
     }

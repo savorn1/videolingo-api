@@ -6,7 +6,6 @@ import com.example.videolingo.dto.CollectionRequest;
 import com.example.videolingo.dto.CollectionResponse;
 import com.example.videolingo.dto.CollectionVideoResponse;
 import com.example.videolingo.dto.PageResponse;
-
 import java.util.List;
 import java.util.Map;
 

@@ -1,11 +1,10 @@
 package com.example.videolingo.dto;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
 
 // Completion rollup for a collection: how many learners have touched it, how
 // many finished every video in it, and per-video started/completed/progress.

@@ -7,11 +7,10 @@ import java.util.Set;
 // static so it's unit-tested.
 public final class AuditPolicy {
 
-    private static final Set<String> AUTH_EVENTS = Set.of(
-            "/api/auth/login", "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password");
+    private static final Set<String> AUTH_EVENTS =
+            Set.of("/api/auth/login", "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password");
 
-    private AuditPolicy() {
-    }
+    private AuditPolicy() {}
 
     /**
      * Change-making requests only: every non-GET under /api/admin/, sign-in
@@ -65,7 +64,9 @@ public final class AuditPolicy {
         // "", "api", "admin", module, …
         int start = path.startsWith("/api/admin/") ? 4 : 3;
         for (int i = start; i < parts.length; i++) {
-            if (!parts[i].isEmpty() && parts[i].length() <= 18 && parts[i].chars().allMatch(Character::isDigit)) {
+            if (!parts[i].isEmpty()
+                    && parts[i].length() <= 18
+                    && parts[i].chars().allMatch(Character::isDigit)) {
                 return Long.parseLong(parts[i]);
             }
         }

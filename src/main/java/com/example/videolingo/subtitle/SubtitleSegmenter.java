@@ -13,8 +13,7 @@ import java.util.List;
 // Deterministic and dependency-free, so it runs inline (no processing job).
 public final class SubtitleSegmenter {
 
-    private SubtitleSegmenter() {
-    }
+    private SubtitleSegmenter() {}
 
     public static List<Cue> segment(List<Cue> segments, SubtitleRules rules) {
         List<Cue> cues = new ArrayList<>();
@@ -24,7 +23,8 @@ public final class SubtitleSegmenter {
                 continue;
             }
             List<String> chunks = chunk(text, rules);
-            int totalChars = chunks.stream().mapToInt(SubtitleText::readableLength).sum();
+            int totalChars =
+                    chunks.stream().mapToInt(SubtitleText::readableLength).sum();
             long duration = segment.endMs() - segment.startMs();
             long cursor = segment.startMs();
             int charsSoFar = 0;
@@ -80,12 +80,14 @@ public final class SubtitleSegmenter {
     // or, in Japanese, mid-word — is what makes subtitles hard to read.
     private static int bestCut(List<String> current, String joiner, int limit) {
         for (int i = current.size() - 1; i > 0; i--) {
-            if (SubtitleText.endsSentence(current.get(i - 1)) && SubtitleText.length(String.join(joiner, current.subList(0, i))) * 3 >= limit) {
+            if (SubtitleText.endsSentence(current.get(i - 1))
+                    && SubtitleText.length(String.join(joiner, current.subList(0, i))) * 3 >= limit) {
                 return i;
             }
         }
         for (int i = current.size() - 1; i > 0; i--) {
-            if (SubtitleText.endsClause(current.get(i - 1)) && SubtitleText.length(String.join(joiner, current.subList(0, i))) * 2 >= limit) {
+            if (SubtitleText.endsClause(current.get(i - 1))
+                    && SubtitleText.length(String.join(joiner, current.subList(0, i))) * 2 >= limit) {
                 return i;
             }
         }
@@ -126,7 +128,10 @@ public final class SubtitleSegmenter {
         boolean spaceless = SubtitleText.isSpaceless(text);
         List<Integer> breaks = new ArrayList<>();
         for (int i = 1; i < text.length(); i++) {
-            if (spaceless ? !Character.isLowSurrogate(text.charAt(i)) && !SubtitleText.endsClause(String.valueOf(text.charAt(i))) : text.charAt(i) == ' ') {
+            if (spaceless
+                    ? !Character.isLowSurrogate(text.charAt(i))
+                            && !SubtitleText.endsClause(String.valueOf(text.charAt(i)))
+                    : text.charAt(i) == ' ') {
                 breaks.add(i);
             }
         }
@@ -149,7 +154,8 @@ public final class SubtitleSegmenter {
                 }
             }
             if (best > 0) {
-                return text.substring(0, best).strip() + "\n" + text.substring(best).strip();
+                return text.substring(0, best).strip() + "\n"
+                        + text.substring(best).strip();
             }
         }
         // Greedy fallback (more than two lines, or no balanced split fits).

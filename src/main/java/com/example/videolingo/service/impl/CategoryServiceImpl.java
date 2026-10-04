@@ -10,13 +10,6 @@ import com.example.videolingo.repository.CategoryRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.CategoryService;
 import com.example.videolingo.util.PageableUtils;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -26,12 +19,19 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class CategoryServiceImpl implements CategoryService {
 
-    private static final Set<String> SORTABLE = Set.of("id", "name", "slug", "sortOrder", "enabled", "createdAt", "updatedAt");
+    private static final Set<String> SORTABLE =
+            Set.of("id", "name", "slug", "sortOrder", "enabled", "createdAt", "updatedAt");
 
     private final CategoryRepository categoryRepository;
     private final VideoRepository videoRepository;
@@ -41,7 +41,8 @@ public class CategoryServiceImpl implements CategoryService {
     public PageResponse<CategoryResponse> list(CategoryFilterRequest filter) {
         List<Specification<Category>> conditions = new ArrayList<>();
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
+            String pattern = "%"
+                    + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
             conditions.add((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
                     cb.like(cb.lower(root.get("slug")), pattern, '\\'),
@@ -51,16 +52,20 @@ public class CategoryServiceImpl implements CategoryService {
             conditions.add((root, query, cb) -> cb.equal(root.get("enabled"), filter.getEnabled()));
         }
         String sortBy = SORTABLE.contains(filter.getSortBy()) ? filter.getSortBy() : "sortOrder";
-        Page<Category> page = categoryRepository.findAll(Specification.allOf(conditions),
+        Page<Category> page = categoryRepository.findAll(
+                Specification.allOf(conditions),
                 PageableUtils.of(filter.getPage(), filter.getSize(), sortBy, filter.getSortOrder()));
-        Map<Long, Long> counts = countVideos(page.getContent().stream().map(Category::getId).toList());
+        Map<Long, Long> counts =
+                countVideos(page.getContent().stream().map(Category::getId).toList());
         return PageResponse.of(page.map(c -> toResponse(c, counts.getOrDefault(c.getId(), 0L))));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<CategoryResponse> catalog() {
-        return categoryRepository.findAllByOrderBySortOrderAscNameAsc().stream().map(c -> toResponse(c, null)).toList();
+        return categoryRepository.findAllByOrderBySortOrderAscNameAsc().stream()
+                .map(c -> toResponse(c, null))
+                .toList();
     }
 
     @Override
@@ -136,16 +141,20 @@ public class CategoryServiceImpl implements CategoryService {
         if (ids.isEmpty()) {
             return ids;
         }
-        Map<Long, Category> found = categoryRepository.findAllById(ids).stream().collect(Collectors.toMap(Category::getId, Function.identity()));
-        List<Long> missing = ids.stream().filter(Predicate.not(found::containsKey)).toList();
+        Map<Long, Category> found = categoryRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Category::getId, Function.identity()));
+        List<Long> missing =
+                ids.stream().filter(Predicate.not(found::containsKey)).toList();
         if (!missing.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unknown category id(s): " + missing);
         }
         List<String> disabled = ids.stream()
                 .filter(cid -> !current.contains(cid) && !found.get(cid).isEnabled())
-                .map(cid -> found.get(cid).getName()).toList();
+                .map(cid -> found.get(cid).getName())
+                .toList();
         if (!disabled.isEmpty()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Disabled categories can't be added: " + String.join(", ", disabled));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Disabled categories can't be added: " + String.join(", ", disabled));
         }
         return ids;
     }
@@ -153,7 +162,8 @@ public class CategoryServiceImpl implements CategoryService {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private Category find(Long id) {
-        return categoryRepository.findById(id)
+        return categoryRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Category not found with id: " + id));
     }
 
@@ -161,9 +171,12 @@ public class CategoryServiceImpl implements CategoryService {
     private String chooseSlug(String requested, String name, Long selfId) {
         if (requested != null && !requested.isBlank()) {
             String slug = TranscriptServiceImpl.slug(requested);
-            boolean taken = selfId == null ? categoryRepository.existsBySlug(slug) : categoryRepository.existsBySlugAndIdNot(slug, selfId);
+            boolean taken = selfId == null
+                    ? categoryRepository.existsBySlug(slug)
+                    : categoryRepository.existsBySlugAndIdNot(slug, selfId);
             if (taken) {
-                throw new AppException(HttpStatus.CONFLICT, "The slug \"" + slug + "\" is already used by another category");
+                throw new AppException(
+                        HttpStatus.CONFLICT, "The slug \"" + slug + "\" is already used by another category");
             }
             return slug;
         }
@@ -180,7 +193,8 @@ public class CategoryServiceImpl implements CategoryService {
             return Map.of();
         }
         return videoRepository.countLiveByCategoryIds(ids).stream()
-                .collect(Collectors.toMap(VideoRepository.CategoryUsage::getCategoryId, VideoRepository.CategoryUsage::getCount));
+                .collect(Collectors.toMap(
+                        VideoRepository.CategoryUsage::getCategoryId, VideoRepository.CategoryUsage::getCount));
     }
 
     private static CategoryResponse toResponse(Category c, Long videoCount) {

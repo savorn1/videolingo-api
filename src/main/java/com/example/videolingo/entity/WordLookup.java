@@ -8,18 +8,22 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 // Cache of AI word lookups, shared by everyone: each (word, from, to) costs
 // one AI call ever. `word` is normalised (VocabularyService.normalizeWord).
 @Entity
-@Table(name = "word_lookups", uniqueConstraints = @UniqueConstraint(name = "uk_word_lookups", columnNames = {"word", "from_language", "to_language"}))
+@Table(
+        name = "word_lookups",
+        uniqueConstraints =
+                @UniqueConstraint(
+                        name = "uk_word_lookups",
+                        columnNames = {"word", "from_language", "to_language"}))
 @Getter
 @Setter
 @NoArgsConstructor

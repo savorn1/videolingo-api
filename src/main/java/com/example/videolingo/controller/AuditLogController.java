@@ -5,6 +5,7 @@ import com.example.videolingo.audit.AuditService.AuditEntry;
 import com.example.videolingo.audit.AuditService.AuditFilter;
 import com.example.videolingo.dto.ApiResponse;
 import com.example.videolingo.dto.PageResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,8 +13,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 // The audit log, read-only — module "audit-logs" (READ).
 @RestController

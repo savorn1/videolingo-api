@@ -2,6 +2,9 @@ package com.example.videolingo.repository;
 
 import com.example.videolingo.entity.Notification;
 import com.example.videolingo.entity.NotificationChannel;
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,11 +13,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
-import java.util.Collection;
-import java.util.List;
-
-public interface NotificationRepository extends JpaRepository<Notification, Long>, JpaSpecificationExecutor<Notification> {
+public interface NotificationRepository
+        extends JpaRepository<Notification, Long>, JpaSpecificationExecutor<Notification> {
 
     /** Per-batch delivery counts for Notification History. */
     interface BatchCounts {
@@ -33,7 +33,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         long getInApp();
     }
 
-    @Query("""
+    @Query(
+            """
             select n.batchId as batchId, count(n) as total,
                    sum(case when n.status = com.example.videolingo.entity.NotificationStatus.SENT then 1 else 0 end) as sent,
                    sum(case when n.status = com.example.videolingo.entity.NotificationStatus.FAILED then 1 else 0 end) as failed,
@@ -46,11 +47,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     Page<Notification> findByRecipientIdAndChannel(Long recipientId, NotificationChannel channel, Pageable pageable);
 
-    Page<Notification> findByRecipientIdAndChannelAndReadAtIsNull(Long recipientId, NotificationChannel channel, Pageable pageable);
+    Page<Notification> findByRecipientIdAndChannelAndReadAtIsNull(
+            Long recipientId, NotificationChannel channel, Pageable pageable);
 
     long countByRecipientIdAndChannelAndReadAtIsNull(Long recipientId, NotificationChannel channel);
 
-    @Query("select n.id from Notification n where n.recipientId = :userId and n.channel = com.example.videolingo.entity.NotificationChannel.IN_APP and n.readAt is null")
+    @Query(
+            "select n.id from Notification n where n.recipientId = :userId and n.channel = com.example.videolingo.entity.NotificationChannel.IN_APP and n.readAt is null")
     List<Long> unreadIds(@Param("userId") Long userId);
 
     @Modifying

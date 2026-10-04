@@ -6,14 +6,11 @@ package com.example.videolingo.pipeline;
 // box-fitting are both tested without decoding real video.
 public final class AutoCropRules {
 
-    public record Centroid(double x, double y, double confidence) {
-    }
+    public record Centroid(double x, double y, double confidence) {}
 
-    public record CropRect(int x, int y, int w, int h) {
-    }
+    public record CropRect(int x, int y, int w, int h) {}
 
-    private AutoCropRules() {
-    }
+    private AutoCropRules() {}
 
     /**
      * The weighted centre of a `cols`×`rows` motion heatmap, as fractions

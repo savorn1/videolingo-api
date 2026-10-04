@@ -1,7 +1,5 @@
 package com.example.videolingo.ingest;
 
-import org.springframework.stereotype.Component;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,6 +17,7 @@ import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.stereotype.Component;
 
 // Fetches admin-supplied URLs without letting them reach our own network:
 // only http(s) on the default ports, every hop (redirects are followed by hand)
@@ -26,7 +25,8 @@ import java.util.Optional;
 @Component
 public class SafeHttp {
 
-    public static final String BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+    public static final String BROWSER_UA =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
     private static final int MAX_REDIRECTS = 5;
 
     public record Response(int status, URI finalUri, String contentType, long contentLength, byte[] body) {
@@ -37,7 +37,10 @@ public class SafeHttp {
                 int i = contentType.toLowerCase(Locale.ROOT).indexOf("charset=");
                 if (i >= 0) {
                     try {
-                        cs = Charset.forName(contentType.substring(i + 8).replaceAll("[\"';].*$", "").strip());
+                        cs = Charset.forName(contentType
+                                .substring(i + 8)
+                                .replaceAll("[\"';].*$", "")
+                                .strip());
                     } catch (Exception ignored) {
                         // fall back to UTF-8
                     }
@@ -82,7 +85,8 @@ public class SafeHttp {
         URI uri = start;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             checkAllowed(uri);
-            HttpRequest.Builder req = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+            HttpRequest.Builder req = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(10))
                     .method(method, HttpRequest.BodyPublishers.noBody());
             headers.forEach(req::header);
             HttpResponse<InputStream> res;
@@ -93,7 +97,9 @@ public class SafeHttp {
                 throw new IOException("Interrupted");
             }
             int status = res.statusCode();
-            if (status >= 300 && status < 400 && res.headers().firstValue("location").isPresent()) {
+            if (status >= 300
+                    && status < 400
+                    && res.headers().firstValue("location").isPresent()) {
                 res.body().close();
                 uri = uri.resolve(res.headers().firstValue("location").get().replace(" ", "%20"));
                 continue;
@@ -110,7 +116,8 @@ public class SafeHttp {
         Optional<String> range = res.headers().firstValue("content-range"); // "bytes 0-0/12345"
         if (range.isPresent() && range.get().contains("/")) {
             try {
-                return Long.parseLong(range.get().substring(range.get().lastIndexOf('/') + 1).strip());
+                return Long.parseLong(
+                        range.get().substring(range.get().lastIndexOf('/') + 1).strip());
             } catch (NumberFormatException ignored) {
                 // fall through
             }
@@ -160,7 +167,11 @@ public class SafeHttp {
     }
 
     static boolean isPublic(InetAddress a) {
-        if (a.isAnyLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress() || a.isMulticastAddress()) {
+        if (a.isAnyLocalAddress()
+                || a.isLoopbackAddress()
+                || a.isLinkLocalAddress()
+                || a.isSiteLocalAddress()
+                || a.isMulticastAddress()) {
             return false;
         }
         byte[] b = a.getAddress();
@@ -168,8 +179,11 @@ public class SafeHttp {
             int first = b[0] & 0xff;
             int second = b[1] & 0xff;
             // 100.64/10 carrier-grade NAT, 0/8, 192.0.0/24, 198.18/15 benchmarking, 240/4 reserved
-            return !(first == 0 || (first == 100 && second >= 64 && second <= 127) || (first == 192 && second == 0 && (b[2] & 0xff) == 0)
-                    || (first == 198 && (second == 18 || second == 19)) || first >= 240);
+            return !(first == 0
+                    || (first == 100 && second >= 64 && second <= 127)
+                    || (first == 192 && second == 0 && (b[2] & 0xff) == 0)
+                    || (first == 198 && (second == 18 || second == 19))
+                    || first >= 240);
         }
         if (a instanceof Inet6Address) {
             // fc00::/7 unique-local

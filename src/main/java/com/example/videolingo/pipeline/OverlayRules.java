@@ -32,9 +32,24 @@ public final class OverlayRules {
      * CSS-style (100–900); background null = none. IMAGE: widthPct is its
      * width as % of the video's. endMs null = to the end.
      */
-    public record Layer(String kind, String text, String font, int weight, double sizePct, String color, String background,
-                        double backgroundOpacity, String align, String imageKey, double widthPct, double x, double y, double opacity,
-                        long startMs, Long endMs, String animation) {
+    public record Layer(
+            String kind,
+            String text,
+            String font,
+            int weight,
+            double sizePct,
+            String color,
+            String background,
+            double backgroundOpacity,
+            String align,
+            String imageKey,
+            double widthPct,
+            double x,
+            double y,
+            double opacity,
+            long startMs,
+            Long endMs,
+            String animation) {
         // Not isText(): Jackson would take that for the `text` property and drop the real one.
         public boolean textual() {
             return "TEXT".equals(kind);
@@ -47,11 +62,9 @@ public final class OverlayRules {
         }
     }
 
-    public record Graph(String filter) {
-    }
+    public record Graph(String filter) {}
 
-    private OverlayRules() {
-    }
+    private OverlayRules() {}
 
     // ── validation ───────────────────────────────────────────────────────
 
@@ -90,7 +103,8 @@ public final class OverlayRules {
                 return "font weight must be between 100 and 900";
             }
             if (l.sizePct() < MIN_SIZE_PCT || l.sizePct() > MAX_SIZE_PCT) {
-                return "font size must be between " + (int) MIN_SIZE_PCT + "% and " + (int) MAX_SIZE_PCT + "% of the video's height";
+                return "font size must be between " + (int) MIN_SIZE_PCT + "% and " + (int) MAX_SIZE_PCT
+                        + "% of the video's height";
             }
             if (l.color() == null || !HEX.matcher(l.color()).matches()) {
                 return "the text colour must look like #RRGGBB";
@@ -131,7 +145,10 @@ public final class OverlayRules {
     }
 
     public static boolean isUploadKey(String key) {
-        return key != null && key.startsWith(UPLOAD_PREFIX) && !key.contains("..") && key.length() > UPLOAD_PREFIX.length();
+        return key != null
+                && key.startsWith(UPLOAD_PREFIX)
+                && !key.contains("..")
+                && key.length() > UPLOAD_PREFIX.length();
     }
 
     /** "2 text layers, 1 image" — for the review list. */
@@ -140,8 +157,17 @@ public final class OverlayRules {
         long images = s.layers().size() - texts;
         List<String> parts = new ArrayList<>();
         if (texts > 0) {
-            String first = s.layers().stream().filter(Layer::textual).findFirst().map(Layer::text).orElse("").strip().replaceAll("\\s+", " ");
-            parts.add(texts == 1 ? "Text “" + (first.length() > 40 ? first.substring(0, 39) + "…" : first) + "”" : texts + " text layers");
+            String first = s.layers().stream()
+                    .filter(Layer::textual)
+                    .findFirst()
+                    .map(Layer::text)
+                    .orElse("")
+                    .strip()
+                    .replaceAll("\\s+", " ");
+            parts.add(
+                    texts == 1
+                            ? "Text “" + (first.length() > 40 ? first.substring(0, 39) + "…" : first) + "”"
+                            : texts + " text layers");
         }
         if (images > 0) {
             parts.add(images == 1 ? "1 image" : images + " images");
@@ -190,8 +216,8 @@ public final class OverlayRules {
                 x = x + "-(main_w*" + num(l.x()) + "+overlay_w/2)*" + progress;
             }
             String out = i == layers.size() - 1 ? "[vout]" : "[v" + i + "]";
-            graph.add(current + "[l" + i + "]overlay=x='" + x + "':y='" + y + "':eval=frame:enable='between(t," + num(st) + "," + num(et) + ")'"
-                    + out);
+            graph.add(current + "[l" + i + "]overlay=x='" + x + "':y='" + y + "':eval=frame:enable='between(t,"
+                    + num(st) + "," + num(et) + ")'" + out);
             current = out;
         }
         return new Graph(String.join(";", graph));

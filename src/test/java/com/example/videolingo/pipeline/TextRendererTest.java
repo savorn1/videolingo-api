@@ -1,16 +1,32 @@
 package com.example.videolingo.pipeline;
 
-import org.junit.jupiter.api.Test;
-
-import java.awt.image.BufferedImage;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.awt.image.BufferedImage;
+import org.junit.jupiter.api.Test;
 
 class TextRendererTest {
 
     static OverlayRules.Layer layer(String text, String align, String background) {
-        return new OverlayRules.Layer("TEXT", text, "SansSerif", 400, 10, "#ff0000", background, 1, align, null, 0, 0.5, 0.5, 1, 0, null, "NONE");
+        return new OverlayRules.Layer(
+                "TEXT",
+                text,
+                "SansSerif",
+                400,
+                10,
+                "#ff0000",
+                background,
+                1,
+                align,
+                null,
+                0,
+                0.5,
+                0.5,
+                1,
+                0,
+                null,
+                "NONE");
     }
 
     @Test

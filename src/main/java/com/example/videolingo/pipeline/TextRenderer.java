@@ -1,6 +1,5 @@
 package com.example.videolingo.pipeline;
 
-import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -16,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
 // Draws a text layer (OverlayRules.Layer) into a transparent PNG at the
 // video's own resolution, with Java's 2D graphics — so text works with any
@@ -28,8 +28,7 @@ public final class TextRenderer {
 
     private static volatile List<String> fonts;
 
-    private TextRenderer() {
-    }
+    private TextRenderer() {}
 
     /** Font families the server can draw with, logical ones first. */
     public static List<String> fonts() {
@@ -37,7 +36,10 @@ public final class TextRenderer {
         if (cached == null) {
             List<String> list = new ArrayList<>(LOGICAL);
             Arrays.stream(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames(Locale.ROOT))
-                    .filter(f -> !f.startsWith(".") && !LOGICAL.contains(f) && !f.equals("Dialog") && !f.equals("DialogInput"))
+                    .filter(f -> !f.startsWith(".")
+                            && !LOGICAL.contains(f)
+                            && !f.equals("Dialog")
+                            && !f.equals("DialogInput"))
                     .sorted(String.CASE_INSENSITIVE_ORDER)
                     .forEach(list::add);
             fonts = cached = List.copyOf(list);
@@ -106,7 +108,8 @@ public final class TextRenderer {
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         if (box) {
             Color bg = hex(layer.background());
-            g.setColor(new Color(bg.getRed(), bg.getGreen(), bg.getBlue(), (int) Math.round(layer.backgroundOpacity() * 255)));
+            g.setColor(new Color(
+                    bg.getRed(), bg.getGreen(), bg.getBlue(), (int) Math.round(layer.backgroundOpacity() * 255)));
             int radius = Math.round(size * 0.5f);
             g.fillRoundRect(0, 0, width, height, radius, radius);
         }
@@ -114,11 +117,12 @@ public final class TextRenderer {
         g.setColor(hex(layer.color()));
         for (int i = 0; i < lines.length; i++) {
             int w = g.getFontMetrics().stringWidth(lines[i]);
-            int x = switch (layer.align()) {
-                case "LEFT" -> padX;
-                case "RIGHT" -> width - padX - w;
-                default -> (width - w) / 2;
-            };
+            int x =
+                    switch (layer.align()) {
+                        case "LEFT" -> padX;
+                        case "RIGHT" -> width - padX - w;
+                        default -> (width - w) / 2;
+                    };
             g.drawString(lines[i], x, padY + i * lineHeight + fm.getAscent());
         }
         g.dispose();

@@ -1,18 +1,5 @@
 package com.example.videolingo.service.impl;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import com.example.videolingo.dto.LanguageFilterRequest;
 import com.example.videolingo.dto.LanguageRequest;
 import com.example.videolingo.dto.LanguageResponse;
@@ -24,14 +11,25 @@ import com.example.videolingo.repository.TranscriptRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.util.PageableUtils;
-
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class LanguageServiceImpl implements LanguageService {
 
-    private static final Set<String> SORTABLE = Set.of("id", "code", "name", "nativeName", "enabled", "isDefault", "createdAt", "updatedAt");
+    private static final Set<String> SORTABLE =
+            Set.of("id", "code", "name", "nativeName", "enabled", "isDefault", "createdAt", "updatedAt");
 
     private final LanguageRepository languageRepository;
     private final VideoRepository videoRepository;
@@ -44,7 +42,8 @@ public class LanguageServiceImpl implements LanguageService {
     public PageResponse<LanguageResponse> list(LanguageFilterRequest filter) {
         List<Specification<Language>> conditions = new ArrayList<>();
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
+            String pattern = "%"
+                    + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
             conditions.add((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("code")), pattern, '\\'),
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
@@ -54,14 +53,19 @@ public class LanguageServiceImpl implements LanguageService {
             conditions.add((root, query, cb) -> cb.equal(root.get("enabled"), filter.getEnabled()));
         }
         String sortBy = SORTABLE.contains(filter.getSortBy()) ? filter.getSortBy() : "name";
-        Page<Language> page = languageRepository.findAll(Specification.allOf(conditions),
+        Page<Language> page = languageRepository.findAll(
+                Specification.allOf(conditions),
                 PageableUtils.of(filter.getPage(), filter.getSize(), sortBy, filter.getSortOrder()));
 
         // Usage for the whole page in two grouped queries, not two per row.
-        List<String> codes = page.getContent().stream().map(l -> l.getCode().toLowerCase(Locale.ROOT)).toList();
+        List<String> codes = page.getContent().stream()
+                .map(l -> l.getCode().toLowerCase(Locale.ROOT))
+                .toList();
         Map<String, Long> videos = usage(codes.isEmpty() ? List.of() : videoRepository.countByLanguages(codes));
-        Map<String, Long> transcripts = usage(codes.isEmpty() ? List.of() : transcriptRepository.countByLanguages(codes));
-        return PageResponse.of(page.map(l -> toAdminResponse(l,
+        Map<String, Long> transcripts =
+                usage(codes.isEmpty() ? List.of() : transcriptRepository.countByLanguages(codes));
+        return PageResponse.of(page.map(l -> toAdminResponse(
+                l,
                 videos.getOrDefault(l.getCode().toLowerCase(Locale.ROOT), 0L),
                 transcripts.getOrDefault(l.getCode().toLowerCase(Locale.ROOT), 0L))));
     }
@@ -69,7 +73,9 @@ public class LanguageServiceImpl implements LanguageService {
     @Override
     @Transactional(readOnly = true)
     public List<LanguageResponse> catalog() {
-        return languageRepository.findAllByOrderByNameAsc().stream().map(LanguageServiceImpl::toPublicResponse).toList();
+        return languageRepository.findAllByOrderByNameAsc().stream()
+                .map(LanguageServiceImpl::toPublicResponse)
+                .toList();
     }
 
     @Override
@@ -109,8 +115,10 @@ public class LanguageServiceImpl implements LanguageService {
             boolean onlyCase = code.equalsIgnoreCase(language.getCode());
             long inUse = videoCount(language) + transcriptCount(language);
             if (!onlyCase && inUse > 0) {
-                throw new AppException(HttpStatus.CONFLICT, "The code can't change while " + describeUsage(language)
-                        + " use '" + language.getCode() + "' — create a new language instead");
+                throw new AppException(
+                        HttpStatus.CONFLICT,
+                        "The code can't change while " + describeUsage(language) + " use '" + language.getCode()
+                                + "' — create a new language instead");
             }
             language.setCode(code);
         }
@@ -124,7 +132,9 @@ public class LanguageServiceImpl implements LanguageService {
     public LanguageResponse setEnabled(Long id, boolean enabled) {
         Language language = find(id);
         if (!enabled && language.isDefault()) {
-            throw new AppException(HttpStatus.CONFLICT, "The default language can't be disabled — make another language the default first");
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "The default language can't be disabled — make another language the default first");
         }
         language.setEnabled(enabled);
         return toAdminResponse(languageRepository.save(language));
@@ -135,7 +145,8 @@ public class LanguageServiceImpl implements LanguageService {
     public LanguageResponse setDefault(Long id) {
         Language language = find(id);
         if (!language.isEnabled()) {
-            throw new AppException(HttpStatus.CONFLICT, "Enable " + language.getName() + " before making it the default");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "Enable " + language.getName() + " before making it the default");
         }
         if (!language.isDefault()) {
             languageRepository.clearDefault();
@@ -164,10 +175,14 @@ public class LanguageServiceImpl implements LanguageService {
         if (code == null || code.isBlank()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Language is required");
         }
-        Language language = languageRepository.findByCodeIgnoreCase(code.strip())
-                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Unknown language '" + code.strip() + "' — add it under Languages first"));
+        Language language = languageRepository
+                .findByCodeIgnoreCase(code.strip())
+                .orElseThrow(() -> new AppException(
+                        HttpStatus.BAD_REQUEST,
+                        "Unknown language '" + code.strip() + "' — add it under Languages first"));
         if (requireEnabled && !language.isEnabled()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, language.getName() + " is disabled — enable it under Languages to use it");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, language.getName() + " is disabled — enable it under Languages to use it");
         }
         return language.getCode();
     }
@@ -175,7 +190,8 @@ public class LanguageServiceImpl implements LanguageService {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private Language find(Long id) {
-        return languageRepository.findById(id)
+        return languageRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Language not found with id: " + id));
     }
 
@@ -191,7 +207,8 @@ public class LanguageServiceImpl implements LanguageService {
             String p = parts[i];
             out.append('-');
             if (p.length() == 4 && p.chars().allMatch(Character::isLetter)) {
-                out.append(p.substring(0, 1).toUpperCase(Locale.ROOT)).append(p.substring(1).toLowerCase(Locale.ROOT));
+                out.append(p.substring(0, 1).toUpperCase(Locale.ROOT))
+                        .append(p.substring(1).toLowerCase(Locale.ROOT));
             } else if (p.length() == 2 || (p.length() == 3 && p.chars().allMatch(Character::isDigit))) {
                 out.append(p.toUpperCase(Locale.ROOT));
             } else {
@@ -202,15 +219,25 @@ public class LanguageServiceImpl implements LanguageService {
     }
 
     private static Map<String, Long> usage(List<VideoRepository.LanguageUsage> rows) {
-        return rows.stream().collect(Collectors.toMap(r -> r.getLanguage().toLowerCase(Locale.ROOT), VideoRepository.LanguageUsage::getCount, Long::sum));
+        return rows.stream()
+                .collect(Collectors.toMap(
+                        r -> r.getLanguage().toLowerCase(Locale.ROOT),
+                        VideoRepository.LanguageUsage::getCount,
+                        Long::sum));
     }
 
     private long videoCount(Language l) {
-        return usage(videoRepository.countByLanguages(List.of(l.getCode().toLowerCase(Locale.ROOT)))).values().stream().mapToLong(Long::longValue).sum();
+        return usage(videoRepository.countByLanguages(List.of(l.getCode().toLowerCase(Locale.ROOT)))).values().stream()
+                .mapToLong(Long::longValue)
+                .sum();
     }
 
     private long transcriptCount(Language l) {
-        return usage(transcriptRepository.countByLanguages(List.of(l.getCode().toLowerCase(Locale.ROOT)))).values().stream().mapToLong(Long::longValue).sum();
+        return usage(transcriptRepository.countByLanguages(List.of(l.getCode().toLowerCase(Locale.ROOT))))
+                .values()
+                .stream()
+                .mapToLong(Long::longValue)
+                .sum();
     }
 
     private String describeUsage(Language l) {
@@ -233,7 +260,8 @@ public class LanguageServiceImpl implements LanguageService {
             return "The default language can't be deleted — make another language the default first";
         }
         if (videos + transcripts > 0) {
-            return "In use by " + describeUsage(videos, transcripts) + " — disable it instead, so existing content keeps its language";
+            return "In use by " + describeUsage(videos, transcripts)
+                    + " — disable it instead, so existing content keeps its language";
         }
         return null;
     }

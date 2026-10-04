@@ -13,11 +13,9 @@ public final class VideoEditRules {
     /** Quarter turns clockwise, in degrees. */
     public static final List<Integer> ROTATIONS = List.of(0, 90, 180, 270);
 
-    public record Segment(long startMs, Long endMs) {
-    }
+    public record Segment(long startMs, Long endMs) {}
 
-    private VideoEditRules() {
-    }
+    private VideoEditRules() {}
 
     /** Null = valid; a message otherwise. `durationMs` null = unknown, so only what can be checked without it is. */
     public static String validateTrim(long startMs, Long endMs, Long durationMs) {
@@ -65,10 +63,23 @@ public final class VideoEditRules {
     public static final double MAX_BLUR = 20;
 
     /** A picture adjustment applied to a trim. 0 / 1 / false mean "leave it alone". */
-    public record Look(double brightness, double contrast, double saturation, double blur, boolean grayscale, boolean sepia, boolean vignette) {
+    public record Look(
+            double brightness,
+            double contrast,
+            double saturation,
+            double blur,
+            boolean grayscale,
+            boolean sepia,
+            boolean vignette) {
 
         public boolean isPlain() {
-            return brightness == 0 && contrast == 1 && saturation == 1 && blur == 0 && !grayscale && !sepia && !vignette;
+            return brightness == 0
+                    && contrast == 1
+                    && saturation == 1
+                    && blur == 0
+                    && !grayscale
+                    && !sepia
+                    && !vignette;
         }
     }
 
@@ -146,7 +157,9 @@ public final class VideoEditRules {
 
     /** Only called once a rotation is requested. Null = valid. */
     public static String validateRotation(Integer degrees) {
-        return degrees == null || ROTATIONS.contains(degrees) ? null : "The picture can be turned 90, 180 or 270 degrees";
+        return degrees == null || ROTATIONS.contains(degrees)
+                ? null
+                : "The picture can be turned 90, 180 or 270 degrees";
     }
 
     /** Whether a rotation or flip was asked for at all (a null or 0 turn with no flips is "leave it alone"). */
@@ -183,7 +196,9 @@ public final class VideoEditRules {
 
     /** Cuts sorted by start, with overlapping or touching ones joined. A null end means "to the end". */
     public static List<Segment> mergeCuts(List<Segment> cuts) {
-        List<Segment> sorted = cuts.stream().sorted(java.util.Comparator.comparingLong(Segment::startMs)).toList();
+        List<Segment> sorted = cuts.stream()
+                .sorted(java.util.Comparator.comparingLong(Segment::startMs))
+                .toList();
         java.util.ArrayList<Segment> merged = new java.util.ArrayList<>();
         for (Segment c : sorted) {
             Segment last = merged.isEmpty() ? null : merged.get(merged.size() - 1);

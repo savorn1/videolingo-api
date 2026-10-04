@@ -49,8 +49,10 @@ public class VideoIngestController {
     }
 
     @PostMapping("/detect-language")
-    public ResponseEntity<ApiResponse<LanguageGuess>> detectLanguage(@Valid @RequestBody DetectLanguageRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(ingest.detectLanguage(request.getTitle(), request.getDescription())));
+    public ResponseEntity<ApiResponse<LanguageGuess>> detectLanguage(
+            @Valid @RequestBody DetectLanguageRequest request) {
+        return ResponseEntity.ok(
+                ApiResponse.success(ingest.detectLanguage(request.getTitle(), request.getDescription())));
     }
 
     @PostMapping("/uploads")
@@ -61,7 +63,8 @@ public class VideoIngestController {
     // A video made from an uploaded sound (a still picture plus the audio). Queues a job;
     // the video stays disabled until an admin has looked at the result.
     @PostMapping("/from-audio")
-    public ResponseEntity<ApiResponse<AudioToVideoResponse>> fromAudio(@Valid @RequestBody AudioToVideoRequest request, Authentication auth) {
+    public ResponseEntity<ApiResponse<AudioToVideoResponse>> fromAudio(
+            @Valid @RequestBody AudioToVideoRequest request, Authentication auth) {
         if (auth == null || auth.getName() == null) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
@@ -72,14 +75,16 @@ public class VideoIngestController {
     // A few seconds of a waveform look drawn from the real sound, so it can be judged before the video is made.
     // Rendered on the spot (a few seconds), not queued.
     @PostMapping("/from-audio/preview")
-    public ResponseEntity<ApiResponse<AudioPreviewResponse>> previewFromAudio(@Valid @RequestBody AudioPreviewRequest request) {
+    public ResponseEntity<ApiResponse<AudioPreviewResponse>> previewFromAudio(
+            @Valid @RequestBody AudioPreviewRequest request) {
         return ResponseEntity.ok(ApiResponse.success(ingest.previewFromAudio(request)));
     }
 
     // Joins stored videos into one new video, in the order given. Queues a job; the video
     // stays disabled until an admin has looked at the result.
     @PostMapping("/merge")
-    public ResponseEntity<ApiResponse<MergeVideosResponse>> merge(@Valid @RequestBody MergeVideosRequest request, Authentication auth) {
+    public ResponseEntity<ApiResponse<MergeVideosResponse>> merge(
+            @Valid @RequestBody MergeVideosRequest request, Authentication auth) {
         if (auth == null || auth.getName() == null) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
@@ -88,10 +93,12 @@ public class VideoIngestController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<VideoResponse>> create(@Valid @RequestBody CreateVideoRequest request, Authentication auth) {
+    public ResponseEntity<ApiResponse<VideoResponse>> create(
+            @Valid @RequestBody CreateVideoRequest request, Authentication auth) {
         if (auth == null || auth.getName() == null) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Video added", ingest.create(request, auth.getName())));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Video added", ingest.create(request, auth.getName())));
     }
 }

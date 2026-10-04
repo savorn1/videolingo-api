@@ -6,16 +6,15 @@ import com.example.videolingo.entity.ProcessingJobStatus;
 import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.repository.ProcessingJobLogRepository;
 import com.example.videolingo.repository.ProcessingJobRepository;
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Optional;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.Collection;
-import java.util.Optional;
-import java.util.function.Consumer;
 
 // The worker's side of the job contract (see ProcessingJob): claim, report
 // progress, finish. Each call is its own short transaction, and every write
@@ -30,7 +29,8 @@ public class JobStore {
     /** Takes the oldest queued job of these types, or empty when there's none (or another worker won the race). */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<ProcessingJob> claimNext(Collection<ProcessingJobType> types) {
-        Optional<ProcessingJob> next = jobRepository.findFirstByStatusAndTypeInOrderByIdAsc(ProcessingJobStatus.QUEUED, types);
+        Optional<ProcessingJob> next =
+                jobRepository.findFirstByStatusAndTypeInOrderByIdAsc(ProcessingJobStatus.QUEUED, types);
         if (next.isEmpty()) {
             return Optional.empty();
         }
@@ -47,7 +47,10 @@ public class JobStore {
         } catch (ObjectOptimisticLockingFailureException e) {
             return Optional.empty();
         }
-        log(job.getId(), ProcessingJobLog.Level.INFO, "Started (attempt " + job.getAttempts() + " of " + job.getMaxAttempts() + ")");
+        log(
+                job.getId(),
+                ProcessingJobLog.Level.INFO,
+                "Started (attempt " + job.getAttempts() + " of " + job.getMaxAttempts() + ")");
         return Optional.of(job);
     }
 
@@ -104,7 +107,10 @@ public class JobStore {
                 job.setErrorMessage("The server restarted while this job was running, and it has no attempts left");
             }
             jobRepository.save(job);
-            log(job.getId(), ProcessingJobLog.Level.WARN, retry ? "Server restarted mid-job — queued again" : "Server restarted mid-job — out of attempts");
+            log(
+                    job.getId(),
+                    ProcessingJobLog.Level.WARN,
+                    retry ? "Server restarted mid-job — queued again" : "Server restarted mid-job — out of attempts");
         }
         return stuck.size();
     }
@@ -112,6 +118,10 @@ public class JobStore {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(Long jobId, ProcessingJobLog.Level level, String message) {
         String text = message.length() > 4000 ? message.substring(0, 4000) + "…" : message;
-        logRepository.save(ProcessingJobLog.builder().jobId(jobId).level(level).message(text).build());
+        logRepository.save(ProcessingJobLog.builder()
+                .jobId(jobId)
+                .level(level)
+                .message(text)
+                .build());
     }
 }

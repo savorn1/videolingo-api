@@ -8,5 +8,4 @@ import org.springframework.retry.annotation.EnableRetry;
 @EnableConfigurationProperties(PipelineProperties.class)
 // Backs @Retryable on OpenAiHttpClient (proxies the bean via Spring AOP).
 @EnableRetry
-public class PipelineConfig {
-}
+public class PipelineConfig {}

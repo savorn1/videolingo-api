@@ -9,8 +9,7 @@ import org.springframework.data.domain.Sort;
 // stays in one place.
 public final class PageableUtils {
 
-    private PageableUtils() {
-    }
+    private PageableUtils() {}
 
     public static Pageable of(int page, int size, String sortBy, String sortOrder) {
         Sort.Direction direction = "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;

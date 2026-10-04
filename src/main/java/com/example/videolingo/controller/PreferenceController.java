@@ -8,15 +8,14 @@ import com.example.videolingo.security.CurrentUserResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 // The signed-in user's own preferences: one JSON object, replaced as a whole.
 // Plain Maps in and out (not a JsonNode): the web layer's JSON library isn't
@@ -37,13 +36,15 @@ public class PreferenceController {
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Map<String, Object>>> get(Authentication authentication) {
         Long userId = currentUser.requireUserId(authentication);
-        Map<String, Object> data = repository.findById(userId).map(p -> parse(p.getData())).orElseGet(LinkedHashMap::new);
+        Map<String, Object> data =
+                repository.findById(userId).map(p -> parse(p.getData())).orElseGet(LinkedHashMap::new);
         return ResponseEntity.ok(ApiResponse.success(data));
     }
 
     @PutMapping
     @Transactional
-    public ResponseEntity<ApiResponse<Map<String, Object>>> put(@RequestBody Map<String, Object> body, Authentication authentication) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> put(
+            @RequestBody Map<String, Object> body, Authentication authentication) {
         if (body == null) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Preferences must be a JSON object");
         }
@@ -57,7 +58,9 @@ public class PreferenceController {
             throw new AppException(HttpStatus.PAYLOAD_TOO_LARGE, "Preferences are too large");
         }
         Long userId = currentUser.requireUserId(authentication);
-        UserPreference pref = repository.findById(userId).orElseGet(() -> UserPreference.builder().userId(userId).build());
+        UserPreference pref = repository
+                .findById(userId)
+                .orElseGet(() -> UserPreference.builder().userId(userId).build());
         pref.setData(json);
         repository.save(pref);
         return ResponseEntity.ok(ApiResponse.success(body));
@@ -65,8 +68,7 @@ public class PreferenceController {
 
     private Map<String, Object> parse(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {
-            });
+            return objectMapper.readValue(json, new TypeReference<>() {});
         } catch (JsonProcessingException e) {
             return new LinkedHashMap<>();
         }

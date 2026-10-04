@@ -36,18 +36,23 @@ public class TagController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<TagResponse>> create(@Valid @RequestBody TagRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Tag created", tagService.create(request)));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Tag created", tagService.create(request)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<TagResponse>> update(@PathVariable Long id, @Valid @RequestBody TagRequest request) {
+    public ResponseEntity<ApiResponse<TagResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody TagRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Tag updated", tagService.update(id, request)));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Integer>> delete(@PathVariable Long id) {
         int detached = tagService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(detached == 0 ? "Tag deleted"
-                : "Tag deleted and removed from " + detached + (detached == 1 ? " video" : " videos"), detached));
+        return ResponseEntity.ok(ApiResponse.success(
+                detached == 0
+                        ? "Tag deleted"
+                        : "Tag deleted and removed from " + detached + (detached == 1 ? " video" : " videos"),
+                detached));
     }
 }

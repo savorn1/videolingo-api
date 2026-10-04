@@ -21,14 +21,6 @@ import com.example.videolingo.repository.WatchProgressRepository;
 import com.example.videolingo.service.CollectionService;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Subquery;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,12 +31,20 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class CollectionServiceImpl implements CollectionService {
 
-    private static final Set<String> SORTABLE = Set.of("id", "title", "visibility", "videoCount", "createdAt", "updatedAt");
+    private static final Set<String> SORTABLE =
+            Set.of("id", "title", "visibility", "videoCount", "createdAt", "updatedAt");
     static final int MAX_VIDEOS = 500;
 
     private final VideoCollectionRepository collectionRepository;
@@ -60,7 +60,8 @@ public class CollectionServiceImpl implements CollectionService {
     public PageResponse<CollectionResponse> list(CollectionFilterRequest filter) {
         List<Specification<VideoCollection>> conditions = new ArrayList<>();
         if (filter.getSearch() != null && !filter.getSearch().isBlank()) {
-            String pattern = "%" + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
+            String pattern = "%"
+                    + TranscriptServiceImpl.escapeLike(filter.getSearch().trim().toLowerCase()) + "%";
             conditions.add((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("title")), pattern, '\\'),
                     cb.like(cb.lower(root.get("description")), pattern, '\\')));
@@ -80,11 +81,17 @@ public class CollectionServiceImpl implements CollectionService {
             });
         }
         String sortBy = SORTABLE.contains(filter.getSortBy()) ? filter.getSortBy() : "updatedAt";
-        Page<VideoCollection> page = collectionRepository.findAll(Specification.allOf(conditions),
+        Page<VideoCollection> page = collectionRepository.findAll(
+                Specification.allOf(conditions),
                 PageableUtils.of(filter.getPage(), filter.getSize(), sortBy, filter.getSortOrder()));
-        Map<Long, String> owners = userRepository.findAllById(
-                page.getContent().stream().map(VideoCollection::getOwnerId).filter(Objects::nonNull).distinct().toList()
-        ).stream().collect(Collectors.toMap(User::getId, User::getUsername));
+        Map<Long, String> owners = userRepository
+                .findAllById(page.getContent().stream()
+                        .map(VideoCollection::getOwnerId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername));
         return PageResponse.of(page.map(c -> toResponse(c, owners.get(c.getOwnerId()))));
     }
 
@@ -104,10 +111,15 @@ public class CollectionServiceImpl implements CollectionService {
     @Transactional(readOnly = true)
     public PageResponse<CollectionVideoResponse> videos(Long id, int page, int size) {
         find(id);
-        Page<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(id,
-                PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100))));
-        Map<Long, Video> videos = videoRepository.findAllById(items.getContent().stream().map(CollectionItem::getVideoId).toList())
-                .stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        Page<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(
+                id, PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100))));
+        Map<Long, Video> videos =
+                videoRepository
+                        .findAllById(items.getContent().stream()
+                                .map(CollectionItem::getVideoId)
+                                .toList())
+                        .stream()
+                        .collect(Collectors.toMap(Video::getId, Function.identity()));
         return PageResponse.of(items.map(i -> {
             Video v = videos.get(i.getVideoId());
             return CollectionVideoResponse.builder()
@@ -131,7 +143,8 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public CollectionResponse create(CollectionRequest request, String actingUsername) {
-        Long ownerId = request.getOwnerId() != null ? requireUser(request.getOwnerId())
+        Long ownerId = request.getOwnerId() != null
+                ? requireUser(request.getOwnerId())
                 : userRepository.findByUsername(actingUsername).map(User::getId).orElse(null);
         String title = request.getTitle().strip();
         VideoCollection collection = collectionRepository.save(VideoCollection.builder()
@@ -185,8 +198,10 @@ public class CollectionServiceImpl implements CollectionService {
     @Transactional
     public CollectionResponse removeVideo(Long id, Long videoId) {
         VideoCollection collection = find(id);
-        CollectionItem item = itemRepository.findByCollectionIdAndVideoId(id, videoId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video #" + videoId + " isn't in this collection"));
+        CollectionItem item = itemRepository
+                .findByCollectionIdAndVideoId(id, videoId)
+                .orElseThrow(() ->
+                        new AppException(HttpStatus.NOT_FOUND, "Video #" + videoId + " isn't in this collection"));
         itemRepository.delete(item);
         itemRepository.flush();
         itemRepository.shiftDownAfter(id, item.getPosition());
@@ -202,10 +217,14 @@ public class CollectionServiceImpl implements CollectionService {
     public void reorder(Long id, List<Long> videoIds) {
         find(id);
         List<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(id);
-        Map<Long, CollectionItem> byVideo = items.stream().collect(Collectors.toMap(CollectionItem::getVideoId, Function.identity()));
-        if (videoIds == null || videoIds.size() != items.size() || !byVideo.keySet().equals(new HashSet<>(videoIds))) {
+        Map<Long, CollectionItem> byVideo =
+                items.stream().collect(Collectors.toMap(CollectionItem::getVideoId, Function.identity()));
+        if (videoIds == null
+                || videoIds.size() != items.size()
+                || !byVideo.keySet().equals(new HashSet<>(videoIds))) {
             // Someone added or removed a video since the list was loaded.
-            throw new AppException(HttpStatus.CONFLICT, "This collection changed since you opened it — reload it and try again");
+            throw new AppException(
+                    HttpStatus.CONFLICT, "This collection changed since you opened it — reload it and try again");
         }
         for (int i = 0; i < videoIds.size(); i++) {
             byVideo.get(videoIds.get(i)).setPosition(i);
@@ -219,7 +238,10 @@ public class CollectionServiceImpl implements CollectionService {
         find(id);
         Map<Long, CollectionItem> byVideo = itemRepository.findByCollectionIdOrderByPositionAsc(id).stream()
                 .collect(Collectors.toMap(CollectionItem::getVideoId, Function.identity()));
-        List<String> missing = sections.keySet().stream().filter(v -> !byVideo.containsKey(v)).map(v -> "#" + v).toList();
+        List<String> missing = sections.keySet().stream()
+                .filter(v -> !byVideo.containsKey(v))
+                .map(v -> "#" + v)
+                .toList();
         if (!missing.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Not in this collection: " + String.join(", ", missing));
         }
@@ -233,47 +255,71 @@ public class CollectionServiceImpl implements CollectionService {
         find(id);
         List<Long> videoIds = itemRepository.findVideoIds(id);
         if (videoIds.isEmpty()) {
-            return CollectionAnalyticsResponse.builder().uniqueLearners(0).finishedCourse(0).videos(List.of()).build();
+            return CollectionAnalyticsResponse.builder()
+                    .uniqueLearners(0)
+                    .finishedCourse(0)
+                    .videos(List.of())
+                    .build();
         }
-        Map<Long, Video> videos = videoRepository.findAllById(videoIds).stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        Map<Long, Video> videos = videoRepository.findAllById(videoIds).stream()
+                .collect(Collectors.toMap(Video::getId, Function.identity()));
         List<WatchProgress> rows = progressRepository.findByVideoIdIn(videoIds);
-        Map<Long, List<WatchProgress>> byVideo = rows.stream().collect(Collectors.groupingBy(WatchProgress::getVideoId));
+        Map<Long, List<WatchProgress>> byVideo =
+                rows.stream().collect(Collectors.groupingBy(WatchProgress::getVideoId));
 
         Set<Long> learners = new HashSet<>();
         Map<Long, Set<Long>> completedByUser = new HashMap<>();
         for (WatchProgress p : rows) {
             learners.add(p.getUserId());
             if (p.isCompleted()) {
-                completedByUser.computeIfAbsent(p.getUserId(), k -> new HashSet<>()).add(p.getVideoId());
+                completedByUser
+                        .computeIfAbsent(p.getUserId(), k -> new HashSet<>())
+                        .add(p.getVideoId());
             }
         }
         Set<Long> allVideoIds = new HashSet<>(videoIds);
-        long finishedCourse = completedByUser.values().stream().filter(done -> done.containsAll(allVideoIds)).count();
+        long finishedCourse = completedByUser.values().stream()
+                .filter(done -> done.containsAll(allVideoIds))
+                .count();
 
-        List<CollectionAnalyticsResponse.VideoStat> stats = videoIds.stream().map(videoId -> {
-            Video v = videos.get(videoId);
-            List<WatchProgress> progress = byVideo.getOrDefault(videoId, List.of());
-            long completed = progress.stream().filter(WatchProgress::isCompleted).count();
-            Integer avgPercent = progress.isEmpty() ? null : (int) Math.round(progress.stream()
-                    .mapToInt(p -> Objects.requireNonNullElse(ProgressRules.percent(p.getPositionSeconds(), p.getDurationSeconds(), p.isCompleted()), 0))
-                    .average().orElse(0));
-            return CollectionAnalyticsResponse.VideoStat.builder()
-                    .videoId(videoId)
-                    .title(v != null ? v.getTitle() : null)
-                    .started(progress.size())
-                    .completed(completed)
-                    .avgPercent(avgPercent)
-                    .build();
-        }).toList();
+        List<CollectionAnalyticsResponse.VideoStat> stats = videoIds.stream()
+                .map(videoId -> {
+                    Video v = videos.get(videoId);
+                    List<WatchProgress> progress = byVideo.getOrDefault(videoId, List.of());
+                    long completed =
+                            progress.stream().filter(WatchProgress::isCompleted).count();
+                    Integer avgPercent = progress.isEmpty()
+                            ? null
+                            : (int) Math.round(progress.stream()
+                                    .mapToInt(p -> Objects.requireNonNullElse(
+                                            ProgressRules.percent(
+                                                    p.getPositionSeconds(), p.getDurationSeconds(), p.isCompleted()),
+                                            0))
+                                    .average()
+                                    .orElse(0));
+                    return CollectionAnalyticsResponse.VideoStat.builder()
+                            .videoId(videoId)
+                            .title(v != null ? v.getTitle() : null)
+                            .started(progress.size())
+                            .completed(completed)
+                            .avgPercent(avgPercent)
+                            .build();
+                })
+                .toList();
 
-        return CollectionAnalyticsResponse.builder().uniqueLearners(learners.size()).finishedCourse(finishedCourse).videos(stats).build();
+        return CollectionAnalyticsResponse.builder()
+                .uniqueLearners(learners.size())
+                .finishedCourse(finishedCourse)
+                .videos(stats)
+                .build();
     }
 
     @Override
     @Transactional
     public CollectionResponse duplicate(Long id, String actingUsername) {
         VideoCollection source = find(id);
-        Long ownerId = userRepository.findByUsername(actingUsername).map(User::getId).orElse(null);
+        Long ownerId =
+                userRepository.findByUsername(actingUsername).map(User::getId).orElse(null);
         String title = source.getTitle() + " (copy)";
         VideoCollection copy = collectionRepository.save(VideoCollection.builder()
                 .title(title)
@@ -284,13 +330,15 @@ public class CollectionServiceImpl implements CollectionService {
                 .ownerId(ownerId)
                 .build());
         List<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(id);
-        List<CollectionItem> copies = items.stream().map(i -> CollectionItem.builder()
-                .collectionId(copy.getId())
-                .videoId(i.getVideoId())
-                .position(i.getPosition())
-                .section(i.getSection())
-                .addedBy(actingUsername)
-                .build()).toList();
+        List<CollectionItem> copies = items.stream()
+                .map(i -> CollectionItem.builder()
+                        .collectionId(copy.getId())
+                        .videoId(i.getVideoId())
+                        .position(i.getPosition())
+                        .section(i.getSection())
+                        .addedBy(actingUsername)
+                        .build())
+                .toList();
         itemRepository.saveAll(copies);
         copy.setVideoCount(copies.size());
         collectionRepository.save(copy);
@@ -304,14 +352,19 @@ public class CollectionServiceImpl implements CollectionService {
     private int append(VideoCollection collection, List<Long> requested, String actingUsername) {
         Set<Long> ids = new LinkedHashSet<>(requested);
         ids.remove(null);
-        Map<Long, Video> found = videoRepository.findAllById(ids).stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        Map<Long, Video> found =
+                videoRepository.findAllById(ids).stream().collect(Collectors.toMap(Video::getId, Function.identity()));
         List<Long> missing = ids.stream().filter(v -> !found.containsKey(v)).toList();
         if (!missing.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unknown video id(s): " + missing);
         }
-        List<String> trashed = ids.stream().filter(v -> found.get(v).isDeleted()).map(v -> "#" + v).toList();
+        List<String> trashed = ids.stream()
+                .filter(v -> found.get(v).isDeleted())
+                .map(v -> "#" + v)
+                .toList();
         if (!trashed.isEmpty()) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Trashed videos can't be added: " + String.join(", ", trashed));
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Trashed videos can't be added: " + String.join(", ", trashed));
         }
         Set<Long> present = new HashSet<>(itemRepository.findVideoIds(collection.getId()));
         List<Long> toAdd = ids.stream().filter(v -> !present.contains(v)).toList();
@@ -321,7 +374,12 @@ public class CollectionServiceImpl implements CollectionService {
         int next = itemRepository.maxPosition(collection.getId()) + 1;
         List<CollectionItem> items = new ArrayList<>();
         for (Long videoId : toAdd) {
-            items.add(CollectionItem.builder().collectionId(collection.getId()).videoId(videoId).position(next++).addedBy(actingUsername).build());
+            items.add(CollectionItem.builder()
+                    .collectionId(collection.getId())
+                    .videoId(videoId)
+                    .position(next++)
+                    .addedBy(actingUsername)
+                    .build());
         }
         itemRepository.saveAll(items);
         collection.setVideoCount(present.size() + toAdd.size());
@@ -330,7 +388,8 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     private VideoCollection find(Long id) {
-        return collectionRepository.findById(id)
+        return collectionRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Collection not found with id: " + id));
     }
 
@@ -342,15 +401,20 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     private String ownerName(Long ownerId) {
-        return ownerId == null ? null : userRepository.findById(ownerId).map(User::getUsername).orElse(null);
+        return ownerId == null
+                ? null
+                : userRepository.findById(ownerId).map(User::getUsername).orElse(null);
     }
 
     private String chooseSlug(String requested, String title, Long selfId) {
         if (requested != null && !requested.isBlank()) {
             String slug = TranscriptServiceImpl.slug(requested);
-            boolean taken = selfId == null ? collectionRepository.existsBySlug(slug) : collectionRepository.existsBySlugAndIdNot(slug, selfId);
+            boolean taken = selfId == null
+                    ? collectionRepository.existsBySlug(slug)
+                    : collectionRepository.existsBySlugAndIdNot(slug, selfId);
             if (taken) {
-                throw new AppException(HttpStatus.CONFLICT, "The slug \"" + slug + "\" is already used by another collection");
+                throw new AppException(
+                        HttpStatus.CONFLICT, "The slug \"" + slug + "\" is already used by another collection");
             }
             return slug;
         }

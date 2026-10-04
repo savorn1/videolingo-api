@@ -13,6 +13,8 @@ import com.example.videolingo.repository.RolePermissionRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.service.CustomRoleService;
 import com.example.videolingo.util.PageableUtils;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,9 +22,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -37,10 +36,12 @@ public class CustomRoleServiceImpl implements CustomRoleService {
     public PageResponse<CustomRoleResponse> list(CustomRoleFilterRequest filter) {
         List<Specification<CustomRole>> conditions = new ArrayList<>();
         if (filter.getName() != null && !filter.getName().isBlank()) {
-            conditions.add((root, query, cb) -> cb.like(cb.lower(root.get("name")), "%" + filter.getName().toLowerCase() + "%"));
+            conditions.add((root, query, cb) ->
+                    cb.like(cb.lower(root.get("name")), "%" + filter.getName().toLowerCase() + "%"));
         }
         Specification<CustomRole> spec = Specification.allOf(conditions);
-        Pageable pageable = PageableUtils.of(filter.getPage(), filter.getSize(), filter.getSortBy(), filter.getSortOrder());
+        Pageable pageable =
+                PageableUtils.of(filter.getPage(), filter.getSize(), filter.getSortBy(), filter.getSortOrder());
 
         Page<CustomRole> page = customRoleRepository.findAll(spec, pageable);
         return PageResponse.of(page.map(this::toResponse));
@@ -56,7 +57,8 @@ public class CustomRoleServiceImpl implements CustomRoleService {
     @Transactional
     public CustomRoleResponse create(CustomRoleRequest request) {
         if (customRoleRepository.existsByName(request.getName())) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A custom role named '" + request.getName() + "' already exists");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "A custom role named '" + request.getName() + "' already exists");
         }
         CustomRole role = CustomRole.builder()
                 .name(request.getName())
@@ -72,7 +74,8 @@ public class CustomRoleServiceImpl implements CustomRoleService {
     public CustomRoleResponse update(Long id, CustomRoleRequest request) {
         CustomRole role = find(id);
         if (customRoleRepository.existsByNameAndIdNot(request.getName(), id)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "A custom role named '" + request.getName() + "' already exists");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "A custom role named '" + request.getName() + "' already exists");
         }
         role.setName(request.getName());
         role.setDescription(request.getDescription());
@@ -87,7 +90,8 @@ public class CustomRoleServiceImpl implements CustomRoleService {
     public void delete(Long id) {
         CustomRole role = find(id);
         if (userRepository.existsByCustomRoleId(id)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot delete a custom role that is still assigned to a user");
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "Cannot delete a custom role that is still assigned to a user");
         }
         rolePermissionRepository.deleteByCustomRoleId(id);
         customRoleRepository.delete(role);
@@ -117,7 +121,8 @@ public class CustomRoleServiceImpl implements CustomRoleService {
     }
 
     private CustomRole find(Long id) {
-        return customRoleRepository.findById(id)
+        return customRoleRepository
+                .findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Custom role not found with id: " + id));
     }
 }

@@ -3,9 +3,8 @@ package com.example.videolingo.dto;
 import com.example.videolingo.entity.VideoVisibility;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-
 import java.util.List;
+import lombok.Data;
 
 // Admin-editable fields only. Technical metadata (duration, resolution, size,
 // format) and the file itself aren't editable — they describe the upload.

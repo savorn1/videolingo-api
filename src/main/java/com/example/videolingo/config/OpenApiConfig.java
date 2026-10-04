@@ -20,10 +20,12 @@ public class OpenApiConfig {
                         .version("1.0.0"))
                 .addSecurityItem(new SecurityRequirement().addList("Bearer Authentication"))
                 .components(new Components()
-                        .addSecuritySchemes("Bearer Authentication", new SecurityScheme()
-                                .name("Bearer Authentication")
-                                .type(SecurityScheme.Type.HTTP)
-                                .scheme("bearer")
-                                .bearerFormat("JWT")));
+                        .addSecuritySchemes(
+                                "Bearer Authentication",
+                                new SecurityScheme()
+                                        .name("Bearer Authentication")
+                                        .type(SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")));
     }
 }
