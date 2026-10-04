@@ -360,13 +360,12 @@ public class VideoInspector {
         } catch (IllegalArgumentException e) {
             throw new InspectException("The video on that page can't be used: " + e.getMessage());
         }
-        Facts base =
-                switch (inner.source()) {
-                    case YOUTUBE -> youtube(inner);
-                    case VIMEO -> vimeo(inner);
-                    case FACEBOOK -> facebook(inner);
-                    default -> file(inner, inner.uri());
-                };
+        Facts base = switch (inner.source()) {
+            case YOUTUBE -> youtube(inner);
+            case VIMEO -> vimeo(inner);
+            case FACEBOOK -> facebook(inner);
+            default -> file(inner, inner.uri());
+        };
         // The page's own title/description beat a file name.
         String title = Html.first(meta, "og:title", "twitter:title");
         return new Facts(

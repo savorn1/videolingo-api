@@ -60,15 +60,18 @@ public class VocabularyService {
     // What the AI answers with (structured output).
     public record LookupOutput(
             @JsonPropertyDescription(
-                            "The word's most likely meaning here, translated into the target language — a word or short phrase.")
-                    String translation,
+                    "The word's most likely meaning here, translated into the target language — a word or short phrase.")
+            String translation,
+
             @JsonPropertyDescription(
-                            "A one-sentence explanation of the meaning, in the target language, for a learner.")
-                    String meaning,
+                    "A one-sentence explanation of the meaning, in the target language, for a learner.")
+            String meaning,
+
             @JsonPropertyDescription("Part of speech in the target language, e.g. noun, verb; empty if unclear.")
-                    String partOfSpeech,
+            String partOfSpeech,
+
             @JsonPropertyDescription("A short, simple example sentence using the word, in the word's own language.")
-                    String example) {}
+            String example) {}
 
     public record CardRequest(
             @NotBlank @Size(max = 300) String front,

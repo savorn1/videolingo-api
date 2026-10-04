@@ -64,20 +64,19 @@ final class Html {
         StringBuilder out = new StringBuilder();
         while (m.find()) {
             String e = m.group(1);
-            String r =
-                    switch (e) {
-                        case "amp" -> "&";
-                        case "lt" -> "<";
-                        case "gt" -> ">";
-                        case "quot" -> "\"";
-                        case "apos" -> "'";
-                        case "nbsp" -> " ";
-                        default ->
-                            new String(Character.toChars(
-                                    e.startsWith("#x")
-                                            ? Integer.parseInt(e.substring(2), 16)
-                                            : Integer.parseInt(e.substring(1))));
-                    };
+            String r = switch (e) {
+                case "amp" -> "&";
+                case "lt" -> "<";
+                case "gt" -> ">";
+                case "quot" -> "\"";
+                case "apos" -> "'";
+                case "nbsp" -> " ";
+                default ->
+                    new String(Character.toChars(
+                            e.startsWith("#x")
+                                    ? Integer.parseInt(e.substring(2), 16)
+                                    : Integer.parseInt(e.substring(1))));
+            };
             m.appendReplacement(out, Matcher.quoteReplacement(r));
         }
         m.appendTail(out);

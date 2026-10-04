@@ -91,11 +91,13 @@ public class AiClientService {
             StructuredMessageCreateParams<T> params = new StructuredMessageCreateParams<>(
                     type, raw.toBuilder().outputConfig(withEffort).build());
             StructuredMessage<T> response = client().messages().create(params);
-            return new Raw<>(response.rawMessage(), () -> response.content().stream()
-                    .flatMap(block -> block.text().stream())
-                    .map(block -> block.text())
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("the response had no text block")));
+            return new Raw<>(
+                    response.rawMessage(),
+                    () -> response.content().stream()
+                            .flatMap(block -> block.text().stream())
+                            .map(block -> block.text())
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalStateException("the response had no text block")));
         });
     }
 
@@ -116,10 +118,12 @@ public class AiClientService {
                     .cacheControl(CacheControlEphemeral.builder().build())
                     .build();
             Message response = client().messages().create(params);
-            return new Raw<>(response, () -> response.content().stream()
-                    .flatMap(block -> block.text().stream())
-                    .map(block -> block.text())
-                    .collect(Collectors.joining()));
+            return new Raw<>(
+                    response,
+                    () -> response.content().stream()
+                            .flatMap(block -> block.text().stream())
+                            .map(block -> block.text())
+                            .collect(Collectors.joining()));
         });
     }
 

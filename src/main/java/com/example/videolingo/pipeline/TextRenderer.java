@@ -117,12 +117,11 @@ public final class TextRenderer {
         g.setColor(hex(layer.color()));
         for (int i = 0; i < lines.length; i++) {
             int w = g.getFontMetrics().stringWidth(lines[i]);
-            int x =
-                    switch (layer.align()) {
-                        case "LEFT" -> padX;
-                        case "RIGHT" -> width - padX - w;
-                        default -> (width - w) / 2;
-                    };
+            int x = switch (layer.align()) {
+                case "LEFT" -> padX;
+                case "RIGHT" -> width - padX - w;
+                default -> (width - w) / 2;
+            };
             g.drawString(lines[i], x, padY + i * lineHeight + fm.getAscent());
         }
         g.dispose();

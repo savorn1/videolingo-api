@@ -23,8 +23,7 @@ class MediaToolsParseTest {
 
     @Test
     void probeReadsDurationStreamsAndFrameSize() {
-        String text =
-                """
+        String text = """
                   Duration: 00:01:02.50, start: 0.000000, bitrate: 902 kb/s
                   Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1280x720 [SAR 1:1 DAR 16:9], 25 fps
                   Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 69 kb/s (default)
@@ -35,8 +34,7 @@ class MediaToolsParseTest {
         assertEquals(1280, p.width());
         assertEquals(720, p.height());
 
-        MediaTools.Probe song = MediaTools.parseProbe(
-                """
+        MediaTools.Probe song = MediaTools.parseProbe("""
                   Duration: 00:00:05.00, start: 0.000000
                   Stream #0:0: Audio: mp3 (mp3float), 44100 Hz, stereo, fltp, 128 kb/s
                   Stream #0:1: Video: png, rgb24(pc), 500x500, 90k tbr (attached pic)

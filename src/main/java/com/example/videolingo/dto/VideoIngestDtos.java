@@ -237,7 +237,8 @@ public final class VideoIngestDtos {
 
     public record AudioPreviewResponse(String url, long seconds) {}
 
-    public record SlideDto(@NotBlank @Size(max = 500) String key, @Min(0) long startMs) {}
+    public record SlideDto(
+            @NotBlank @Size(max = 500) String key, @Min(0) long startMs) {}
 
     /** The new (disabled) video and the job that is making its file. */
     public record AudioToVideoResponse(VideoResponse video, ProcessingJobResponse job) {}

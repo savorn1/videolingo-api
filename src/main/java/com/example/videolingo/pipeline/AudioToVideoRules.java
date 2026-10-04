@@ -205,20 +205,18 @@ public final class AudioToVideoRules {
 
     public static BarLayout barLayout(String waveform, Size size) {
         // How many bars span the picture, and how much of each bar's slot is filled.
-        double count =
-                switch (waveform) {
-                    case "BLOCKS" -> 36.0;
-                    case "STRIPES" -> 60.0;
-                    case "FINE" -> 150.0;
-                    default -> 90.0;
-                };
-        double fill =
-                switch (waveform) {
-                    case "BLOCKS" -> 0.6;
-                    case "STRIPES" -> 0.5;
-                    case "FINE" -> 0.35;
-                    default -> 0.4;
-                };
+        double count = switch (waveform) {
+            case "BLOCKS" -> 36.0;
+            case "STRIPES" -> 60.0;
+            case "FINE" -> 150.0;
+            default -> 90.0;
+        };
+        double fill = switch (waveform) {
+            case "BLOCKS" -> 0.6;
+            case "STRIPES" -> 0.5;
+            case "FINE" -> 0.35;
+            default -> 0.4;
+        };
         int target = (int) Math.round(size.w() * 0.8);
         int pitch = Math.max("BLOCKS".equals(waveform) ? 12 : 4, (int) Math.round(target / count));
         int bars = Math.max(8, target / pitch);

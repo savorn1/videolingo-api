@@ -20,8 +20,7 @@ public interface TagRepository extends JpaRepository<Tag, Long>, JpaSpecificatio
 
     // Autocomplete: names starting with the prefix first, then ones containing
     // it anywhere; shorter (closer) names first within each group.
-    @Query(
-            """
+    @Query("""
             select t from Tag t
             where lower(t.name) like concat('%', :q, '%') escape '\\'
             order by case when lower(t.name) like concat(:q, '%') escape '\\' then 0 else 1 end, length(t.name), t.name

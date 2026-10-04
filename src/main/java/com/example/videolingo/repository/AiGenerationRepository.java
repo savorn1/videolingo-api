@@ -12,8 +12,7 @@ import org.springframework.data.repository.query.Param;
 public interface AiGenerationRepository extends JpaRepository<AiGeneration, Long> {
 
     // Newest generation per (type, output language) for a video.
-    @Query(
-            """
+    @Query("""
             select g from AiGeneration g
             where g.videoId = :videoId and g.createdAt = (
                 select max(g2.createdAt) from AiGeneration g2

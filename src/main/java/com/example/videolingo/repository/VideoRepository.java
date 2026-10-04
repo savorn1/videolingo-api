@@ -12,8 +12,7 @@ import org.springframework.data.repository.query.Param;
 public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecificationExecutor<Video> {
 
     /** Same platform video, or the same link — used to warn about adding a video twice. */
-    @org.springframework.data.jpa.repository.Query(
-            """
+    @org.springframework.data.jpa.repository.Query("""
             select v from Video v where (v.source = :source and v.externalId = :externalId) or v.videoUrl = :url order by v.id
             """)
     java.util.List<Video> findDuplicates(
@@ -42,15 +41,12 @@ public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecific
     }
 
     // Live videos only — trashed ones don't count toward "N videos" in the UI.
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select vc.category_id as categoryId, count(*) as count
             from video_categories vc join videos v on v.id = vc.video_id
             where v.deleted_at is null and vc.category_id in (:categoryIds)
             group by vc.category_id
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     List<CategoryUsage> countLiveByCategoryIds(@Param("categoryIds") Collection<Long> categoryIds);
 
     interface TagUsage {
@@ -59,15 +55,12 @@ public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecific
         long getCount();
     }
 
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select vt.tag_id as tagId, count(*) as count
             from video_tags vt join videos v on v.id = vt.video_id
             where v.deleted_at is null and vt.tag_id in (:tagIds)
             group by vt.tag_id
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     List<TagUsage> countLiveByTagIds(@Param("tagIds") Collection<Long> tagIds);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)

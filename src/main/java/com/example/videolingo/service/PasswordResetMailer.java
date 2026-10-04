@@ -39,8 +39,7 @@ public class PasswordResetMailer {
         replyTo(message);
         message.setTo(to);
         message.setSubject("Reset your " + settings.general().siteName() + " password");
-        message.setText(
-                """
+        message.setText("""
                 Hi %s,
 
                 We received a request to reset your %s password. Open the link below to choose a new one:
@@ -48,8 +47,7 @@ public class PasswordResetMailer {
                 %s
 
                 This link expires in %d minutes and can only be used once. If you didn't ask for this, you can ignore this email — your password won't change.
-                """
-                        .formatted(username, settings.general().siteName(), resetLink, ttlMinutes));
+                """.formatted(username, settings.general().siteName(), resetLink, ttlMinutes));
         try {
             sender.send(message);
         } catch (Exception e) {

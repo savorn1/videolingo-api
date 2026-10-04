@@ -270,15 +270,14 @@ public final class MergeRules {
     /** A short line for the job log and the job list. */
     public static String describe(int count, String resolution, String transition) {
         AudioToVideoRules.Size size = AudioToVideoRules.size(resolution);
-        String joint =
-                switch (transition == null ? "NONE" : transition) {
-                    case "FADE" -> ", fades";
-                    case "FADE_WHITE" -> ", fades through white";
-                    case "DISSOLVE" -> ", dissolves";
-                    case "WIPE" -> ", wipes";
-                    case "SLIDE" -> ", slides";
-                    default -> "";
-                };
+        String joint = switch (transition == null ? "NONE" : transition) {
+            case "FADE" -> ", fades";
+            case "FADE_WHITE" -> ", fades through white";
+            case "DISSOLVE" -> ", dissolves";
+            case "WIPE" -> ", wipes";
+            case "SLIDE" -> ", slides";
+            default -> "";
+        };
         return "Join " + count + " videos (" + size.w() + "×" + size.h() + joint + ")";
     }
 }

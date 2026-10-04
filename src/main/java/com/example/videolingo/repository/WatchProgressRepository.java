@@ -19,8 +19,7 @@ public interface WatchProgressRepository extends JpaRepository<WatchProgress, Lo
     List<WatchProgress> findByVideoIdIn(Collection<Long> videoIds);
 
     // Started but not finished, on videos that still exist and aren't trashed — newest first.
-    @Query(
-            """
+    @Query("""
             select p from WatchProgress p, Video v
             where v.id = p.videoId and v.deletedAt is null
               and p.userId = :userId and p.completed = false and p.positionSeconds >= :minPosition

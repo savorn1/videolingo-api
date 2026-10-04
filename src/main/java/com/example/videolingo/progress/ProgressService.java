@@ -34,7 +34,9 @@ public class ProgressService {
 
     public record Heartbeat(
             // A random id per player session (a page showing a video).
-            @NotNull @Pattern(regexp = "^[A-Za-z0-9-]{8,40}$") String sessionId,
+            @NotNull @Pattern(regexp = "^[A-Za-z0-9-]{8,40}$")
+            String sessionId,
+
             @NotNull @Min(0) @Max(86_400) Double positionSeconds,
             @Min(0) @Max(86_400) Double durationSeconds,
             // Seconds actually spent playing since the previous heartbeat.

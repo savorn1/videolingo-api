@@ -43,15 +43,12 @@ public interface CollectionItemRepository extends JpaRepository<CollectionItem, 
     }
 
     // Totals over the collection's videos (trashed ones excluded from duration).
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select coalesce(sum(case when v.deleted_at is null then v.duration_seconds else 0 end), 0) as totalSeconds,
                    count(*) filter (where v.deleted_at is not null) as trashed,
                    count(*) filter (where v.deleted_at is null and not v.enabled) as disabled
             from collection_items i join videos v on v.id = i.video_id
             where i.collection_id = :collectionId
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     DurationSum totals(@Param("collectionId") Long collectionId);
 }

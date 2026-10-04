@@ -33,8 +33,7 @@ public interface NotificationRepository
         long getInApp();
     }
 
-    @Query(
-            """
+    @Query("""
             select n.batchId as batchId, count(n) as total,
                    sum(case when n.status = com.example.videolingo.entity.NotificationStatus.SENT then 1 else 0 end) as sent,
                    sum(case when n.status = com.example.videolingo.entity.NotificationStatus.FAILED then 1 else 0 end) as failed,

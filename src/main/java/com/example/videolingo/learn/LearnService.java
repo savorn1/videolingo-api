@@ -234,18 +234,17 @@ public class LearnService {
                 .filter(Subtitle::isPublished)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Subtitle track not found"));
         Video video = requireWatchable(s.getVideoId(), viewerId, isAdmin);
-        String what =
-                switch (r.kind()) {
-                    case TIMING ->
-                        "Timing is off"
-                                + (r.offsetMs() != null && r.offsetMs() != 0
-                                        ? " — lined up for them when shifted " + (r.offsetMs() > 0 ? "+" : "")
-                                                + String.format(Locale.ROOT, "%.1f", r.offsetMs() / 1000.0) + " s"
-                                        : "");
-                    case TEXT -> "Wrong or misspelt text";
-                    case MISSING -> "Something said isn't subtitled";
-                    case OTHER -> "Problem";
-                };
+        String what = switch (r.kind()) {
+            case TIMING ->
+                "Timing is off"
+                        + (r.offsetMs() != null && r.offsetMs() != 0
+                                ? " — lined up for them when shifted " + (r.offsetMs() > 0 ? "+" : "")
+                                        + String.format(Locale.ROOT, "%.1f", r.offsetMs() / 1000.0) + " s"
+                                : "");
+            case TEXT -> "Wrong or misspelt text";
+            case MISSING -> "Something said isn't subtitled";
+            case OTHER -> "Problem";
+        };
         String body = "Learner report — " + what
                 + (r.note() != null && !r.note().isBlank() ? ":\n" + r.note().strip() : ".");
         reviewService.addComment(

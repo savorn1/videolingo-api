@@ -106,26 +106,21 @@ public class AnalyticsService {
                 daily(
                         "select cast(created_at as date) d, count(*) v from users where created_at >= :a and created_at < :b group by 1",
                         p),
-                daily(
-                        """
+                daily("""
                         select cast(viewed_at as date) d, count(distinct user_id) v from video_views
-                        where user_id is not null and viewed_at >= :a and viewed_at < :b group by 1""",
-                        p),
+                        where user_id is not null and viewed_at >= :a and viewed_at < :b group by 1""", p),
                 shares("select role k, role l, count(*) c from users group by role order by c desc", p),
-                shares(
-                        """
+                shares("""
                         select coalesce(cast(cr.id as varchar), 'none') k, coalesce(cr.name, 'No custom role') l, count(*) c
                         from users u left join custom_roles cr on cr.id = u.custom_role_id
-                        where u.role = 'USER' group by cr.id, cr.name order by c desc""",
-                        p),
+                        where u.role = 'USER' group by cr.id, cr.name order by c desc""", p),
                 jdbc.query(
                         """
                         select u.id, u.username, count(*) views, coalesce(sum(vv.watched_seconds), 0) secs,
                                sum(case when vv.completed then 1 else 0 end) done
                         from video_views vv join users u on u.id = vv.user_id
                         where vv.viewed_at >= :a and vv.viewed_at < :b
-                        group by u.id, u.username order by secs desc, views desc limit %d"""
-                                .formatted(TOP),
+                        group by u.id, u.username order by secs desc, views desc limit %d""".formatted(TOP),
                         p.params(),
                         (rs, i) -> new TopViewer(
                                 rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getLong(4), rs.getLong(5))));
@@ -147,11 +142,9 @@ public class AnalyticsService {
                 number(
                         "select coalesce(avg(duration_seconds), 0) from videos where deleted_at is null and duration_seconds is not null",
                         p),
-                count(
-                        """
+                count("""
                         select count(*) from videos v where v.deleted_at is null
-                        and not exists (select 1 from transcripts t where t.video_id = v.id and t.segment_count > 0)""",
-                        p),
+                        and not exists (select 1 from transcripts t where t.video_id = v.id and t.segment_count > 0)""", p),
                 count(
                         "select count(*) from videos v where v.deleted_at is null and not exists (select 1 from subtitles s where s.video_id = v.id)",
                         p),
@@ -169,28 +162,22 @@ public class AnalyticsService {
                                 "select coalesce(language, '') k, coalesce(language, '') l, count(*) c from videos where deleted_at is null group by 1 order by c desc",
                                 p),
                         names),
-                shares(
-                        """
+                shares("""
                         select cast(c.id as varchar) k, c.name l, count(*) cnt from video_categories vc
                         join categories c on c.id = vc.category_id join videos v on v.id = vc.video_id
-                        where v.deleted_at is null group by c.id, c.name order by cnt desc""",
-                        p),
-                ordered(
-                        shares(
-                                """
+                        where v.deleted_at is null group by c.id, c.name order by cnt desc""", p),
+                ordered(shares("""
                         select case when duration_seconds is null then 'unknown' when duration_seconds < 60 then 'lt1'
                                     when duration_seconds < 300 then '1to5' when duration_seconds < 900 then '5to15'
                                     when duration_seconds < 1800 then '15to30' else '30plus' end k, '' l, count(*) c
-                        from videos where deleted_at is null group by 1""",
-                                p),
-                        new String[][] {
-                            {"lt1", "Under 1 min"},
-                            {"1to5", "1–5 min"},
-                            {"5to15", "5–15 min"},
-                            {"15to30", "15–30 min"},
-                            {"30plus", "30 min +"},
-                            {"unknown", "Unknown"}
-                        }),
+                        from videos where deleted_at is null group by 1""", p), new String[][] {
+                    {"lt1", "Under 1 min"},
+                    {"1to5", "1–5 min"},
+                    {"5to15", "5–15 min"},
+                    {"15to30", "15–30 min"},
+                    {"30plus", "30 min +"},
+                    {"unknown", "Unknown"}
+                }),
                 topVideos(p));
     }
 
@@ -201,8 +188,7 @@ public class AnalyticsService {
                        avg(case when vv.completed then 1.0 else 0.0 end) done
                 from video_views vv join videos v on v.id = vv.video_id
                 where vv.viewed_at >= :a and vv.viewed_at < :b
-                group by v.id, v.title order by views desc, secs desc limit %d"""
-                        .formatted(TOP),
+                group by v.id, v.title order by views desc, secs desc limit %d""".formatted(TOP),
                 p.params(),
                 (rs, i) -> new TopVideo(
                         rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getLong(4), rs.getLong(5), rs.getDouble(6)));
@@ -213,12 +199,10 @@ public class AnalyticsService {
     public WatchAnalytics watch(LocalDate from, LocalDate to) {
         Period p = period(from, to);
         String inRange = " from video_views where viewed_at >= :a and viewed_at < :b";
-        Double percent = nullableNumber(
-                """
+        Double percent = nullableNumber("""
                 select avg(least(cast(vv.watched_seconds as float) / v.duration_seconds, 1.0))
                 from video_views vv join videos v on v.id = vv.video_id
-                where vv.viewed_at >= :a and vv.viewed_at < :b and v.duration_seconds > 0""",
-                p);
+                where vv.viewed_at >= :a and vv.viewed_at < :b and v.duration_seconds > 0""", p);
 
         List<Share> byHour = new ArrayList<>();
         Map<String, Long> hours = keyedCounts(
@@ -277,14 +261,11 @@ public class AnalyticsService {
         long succeeded = count("select count(*)" + jobs + " and status = 'SUCCEEDED'", p);
         long failed = count("select count(*)" + jobs + " and status = 'FAILED'", p);
 
-        Map<String, Long> perVideo = keyedCounts(
-                """
+        Map<String, Long> perVideo = keyedCounts("""
                 select case when n = 0 then '0' when n = 1 then '1' when n = 2 then '2' else '3+' end k, count(*) c from (
                   select v.id, count(t.id) n from videos v
                   left join transcripts t on t.video_id = v.id and %s
-                  where v.deleted_at is null group by v.id) x group by 1"""
-                        .formatted(IS_TRANSLATION),
-                p);
+                  where v.deleted_at is null group by v.id) x group by 1""".formatted(IS_TRANSLATION), p);
         List<Share> coverage = new ArrayList<>();
         for (String[] b : new String[][] {
             {"0", "Not translated"}, {"1", "1 language"}, {"2", "2 languages"}, {"3+", "3+ languages"}
@@ -366,16 +347,12 @@ public class AnalyticsService {
         Map<String, Long> subtitles = keyedCounts("select lower(s.language) k, count(*) c" + liveS + " group by 1", p);
         Map<String, Long> published =
                 keyedCounts("select lower(s.language) k, count(*) c" + liveS + " and s.published group by 1", p);
-        Map<String, Long> views = keyedCounts(
-                """
+        Map<String, Long> views = keyedCounts("""
                 select lower(v.language) k, count(*) c from video_views vv join videos v on v.id = vv.video_id
-                where v.language is not null and vv.viewed_at >= :a and vv.viewed_at < :b group by 1""",
-                p);
-        Map<String, Long> watch = keyedCounts(
-                """
+                where v.language is not null and vv.viewed_at >= :a and vv.viewed_at < :b group by 1""", p);
+        Map<String, Long> watch = keyedCounts("""
                 select lower(v.language) k, coalesce(sum(vv.watched_seconds), 0) c from video_views vv join videos v on v.id = vv.video_id
-                where v.language is not null and vv.viewed_at >= :a and vv.viewed_at < :b group by 1""",
-                p);
+                where v.language is not null and vv.viewed_at >= :a and vv.viewed_at < :b group by 1""", p);
         Map<String, Long> ai = keyedCounts(
                 "select lower(output_language) k, count(*) c from ai_generations where output_language is not null group by 1",
                 p);
@@ -461,13 +438,10 @@ public class AnalyticsService {
                         .stream()
                         .map(a -> new Amount(a.key(), languageLabel(a.key(), names), a.value(), a.count()))
                         .toList(),
-                amounts(
-                        """
+                amounts("""
                         select coalesce(cast(u.id as varchar), 'none') k, coalesce(u.username, 'Unknown owner') l, coalesce(sum(v.file_size), 0) v, count(*) c
                         from videos v left join users u on u.id = v.owner_id where v.storage_key is not null
-                        group by 1, 2 order by v desc limit %d"""
-                                .formatted(TOP),
-                        p),
+                        group by 1, 2 order by v desc limit %d""".formatted(TOP), p),
                 jdbc.query(
                         "select id, title, file_size, mime_type, deleted_at is not null" + stored
                                 + " and file_size is not null order by file_size desc limit " + TOP,
@@ -510,8 +484,7 @@ public class AnalyticsService {
                                sum(case when status = 'TRUNCATED' then 1 else 0 end), sum(case when status = 'ERROR' then 1 else 0 end),
                                avg(latency_ms), coalesce(avg(input_tokens + output_tokens + cache_write_tokens + cache_read_tokens), 0),
                                coalesce(sum(cost_usd), 0)
-                        """
-                                + usage + " group by feature order by 9 desc, 2 desc",
+                        """ + usage + " group by feature order by 9 desc, 2 desc",
                         p.params(),
                         (rs, i) -> new AiFeatureRow(
                                 rs.getString(1),
@@ -538,8 +511,7 @@ public class AnalyticsService {
                                (select count(*) from ai_chats c where c.video_id = u.video_id and c.created_at >= :a and c.created_at < :b)
                         from ai_usage u left join videos v on v.id = u.video_id
                         where u.created_at >= :a and u.created_at < :b and u.video_id is not null
-                        group by u.video_id, v.title order by cost desc, req desc limit %d"""
-                                .formatted(TOP),
+                        group by u.video_id, v.title order by cost desc, req desc limit %d""".formatted(TOP),
                         p.params(),
                         (rs, i) -> new AiVideoRow(
                                 rs.getLong(1),

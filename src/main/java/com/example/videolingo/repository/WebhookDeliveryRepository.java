@@ -16,15 +16,12 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
     // Deletes all but the newest `keep` deliveries of a webhook.
     @Modifying
     @Transactional
-    @Query(
-            value =
-                    """
+    @Query(value = """
             delete from webhook_deliveries where webhook_id = :webhookId and id < (
               select coalesce(min(id), 0) from (
                 select id from webhook_deliveries where webhook_id = :webhookId order by id desc limit :keep
               ) newest)
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     int prune(@Param("webhookId") Long webhookId, @Param("keep") int keep);
 
     @Modifying

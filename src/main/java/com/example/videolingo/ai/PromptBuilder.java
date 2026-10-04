@@ -18,8 +18,7 @@ public final class PromptBuilder {
     public record VideoContext(
             String title, String languageName, String languageCode, Integer durationSeconds, List<Segment> segments) {}
 
-    static final String BASE_INSTRUCTIONS =
-            """
+    static final String BASE_INSTRUCTIONS = """
             You help language learners study videos on VideoLingo, a platform for learning languages through video.
             You are given the transcript of one video, with a [m:ss] timestamp on each line.
             Base everything you write on what the transcript actually says. Do not add facts that are not in it. \

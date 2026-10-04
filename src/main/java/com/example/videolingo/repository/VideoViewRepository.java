@@ -35,8 +35,7 @@ public interface VideoViewRepository extends JpaRepository<VideoView, Long> {
         long getViews();
     }
 
-    @Query(
-            """
+    @Query("""
             select count(v) as totalViews,
                    count(distinct v.userId) as uniqueViewers,
                    coalesce(sum(v.watchedSeconds), 0) as totalWatchSeconds,
@@ -52,16 +51,13 @@ public interface VideoViewRepository extends JpaRepository<VideoView, Long> {
             "select v.videoId as videoId, count(v) as views from VideoView v where v.videoId in :videoIds group by v.videoId")
     List<VideoViewCount> countByVideoIds(@Param("videoIds") Collection<Long> videoIds);
 
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select cast(viewed_at as date) as day, count(*) as views
             from video_views
             where video_id = :videoId and viewed_at >= :since
             group by cast(viewed_at as date)
             order by day
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     List<DailyViews> dailyViewsSince(@Param("videoId") Long videoId, @Param("since") LocalDateTime since);
 
     java.util.Optional<VideoView> findBySessionIdAndVideoId(String sessionId, Long videoId);

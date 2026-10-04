@@ -66,12 +66,11 @@ public final class VideoLinks {
             }
             Matcher m = YT_PATH.matcher(path);
             if (m.matches()) {
-                Kind kind =
-                        switch (m.group(1)) {
-                            case "shorts" -> Kind.SHORT;
-                            case "live" -> Kind.LIVE;
-                            default -> Kind.VIDEO;
-                        };
+                Kind kind = switch (m.group(1)) {
+                    case "shorts" -> Kind.SHORT;
+                    case "live" -> Kind.LIVE;
+                    default -> Kind.VIDEO;
+                };
                 return youtube(m.group(2), kind, uri);
             }
             throw new IllegalArgumentException(

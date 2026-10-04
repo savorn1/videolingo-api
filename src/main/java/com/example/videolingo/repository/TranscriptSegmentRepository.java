@@ -39,9 +39,7 @@ public interface TranscriptSegmentRepository extends JpaRepository<TranscriptSeg
 
     // Case-insensitive substring match across every transcript. `pattern`
     // must already be LIKE-escaped with '\' (see TranscriptServiceImpl).
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select s.id as segmentId, s.position as position, s.startMs as startMs, s.endMs as endMs, s.text as text,
                    t.id as transcriptId, t.language as language, t.videoId as videoId, v.title as videoTitle
             from TranscriptSegment s join Transcript t on t.id = s.transcriptId join Video v on v.id = t.videoId
@@ -49,9 +47,7 @@ public interface TranscriptSegmentRepository extends JpaRepository<TranscriptSeg
               and (:videoId is null or t.videoId = :videoId)
               and (:language is null or t.language = :language)
             order by t.id desc, s.position asc
-            """,
-            countQuery =
-                    """
+            """, countQuery = """
             select count(s) from TranscriptSegment s join Transcript t on t.id = s.transcriptId
             where lower(s.text) like :pattern escape '\\'
               and (:videoId is null or t.videoId = :videoId)

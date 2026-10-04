@@ -116,27 +116,26 @@ public final class LanguageDetector {
             }
             letters++;
             Character.UnicodeScript script = Character.UnicodeScript.of(cp);
-            String code =
-                    switch (script) {
-                        case KHMER -> "km";
-                        case THAI -> "th";
-                        case LAO -> "lo";
-                        case MYANMAR -> "my";
-                        case HANGUL -> "ko";
-                        case HIRAGANA, KATAKANA -> "ja";
-                        case HAN -> "han";
-                        case ARABIC -> "ar";
-                        case HEBREW -> "he";
-                        case GREEK -> "el";
-                        case CYRILLIC -> "ru";
-                        case DEVANAGARI -> "hi";
-                        case BENGALI -> "bn";
-                        case TAMIL -> "ta";
-                        case TELUGU -> "te";
-                        case GEORGIAN -> "ka";
-                        case ARMENIAN -> "hy";
-                        default -> null;
-                    };
+            String code = switch (script) {
+                case KHMER -> "km";
+                case THAI -> "th";
+                case LAO -> "lo";
+                case MYANMAR -> "my";
+                case HANGUL -> "ko";
+                case HIRAGANA, KATAKANA -> "ja";
+                case HAN -> "han";
+                case ARABIC -> "ar";
+                case HEBREW -> "he";
+                case GREEK -> "el";
+                case CYRILLIC -> "ru";
+                case DEVANAGARI -> "hi";
+                case BENGALI -> "bn";
+                case TAMIL -> "ta";
+                case TELUGU -> "te";
+                case GEORGIAN -> "ka";
+                case ARMENIAN -> "hy";
+                default -> null;
+            };
             if (code != null) {
                 counts.merge(code, 1, Integer::sum);
             }

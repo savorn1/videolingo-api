@@ -70,13 +70,12 @@ public class WebhookDispatcher {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSubtitleReview(SubtitleReviewEvent e) {
-        String event =
-                switch (e.status()) {
-                    case IN_REVIEW -> WebhookEvents.SUBTITLE_REVIEW_REQUESTED;
-                    case APPROVED -> WebhookEvents.SUBTITLE_APPROVED;
-                    case CHANGES_REQUESTED -> WebhookEvents.SUBTITLE_CHANGES_REQUESTED;
-                    case DRAFT -> null;
-                };
+        String event = switch (e.status()) {
+            case IN_REVIEW -> WebhookEvents.SUBTITLE_REVIEW_REQUESTED;
+            case APPROVED -> WebhookEvents.SUBTITLE_APPROVED;
+            case CHANGES_REQUESTED -> WebhookEvents.SUBTITLE_CHANGES_REQUESTED;
+            case DRAFT -> null;
+        };
         if (event == null) {
             return;
         }

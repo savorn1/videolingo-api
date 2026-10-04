@@ -29,7 +29,7 @@ public final class Settings {
             @Email @Size(max = 120) String supportEmail,
             // Base URL of the admin app used in emailed links and {{appUrl}}; blank = the server's app.frontend-url.
             @Size(max = 200) @Pattern(regexp = "^$|^https?://\\S+$", message = "must start with http:// or https://")
-                    String publicUrl) {}
+            String publicUrl) {}
 
     public record Video(
             @Min(1) @Max(100) int maxTagsPerVideo,
@@ -63,8 +63,8 @@ public final class Settings {
             @NotNull @Valid SubtitleRulesSetting compactRules,
             // Primary language subtags that use compactRules, e.g. "ja", "zh".
             @NotNull @Size(max = 30)
-                    List<@Pattern(regexp = "^[a-z]{2,3}$", message = "must be a 2–3 letter language code") String>
-                            compactLanguages,
+            List<@Pattern(regexp = "^[a-z]{2,3}$", message = "must be a 2–3 letter language code") String>
+                    compactLanguages,
             // Refuse to publish a track that still has readability issues.
             boolean blockPublishWithIssues,
             // Refuse to publish a track until a reviewer has approved it.
@@ -79,26 +79,23 @@ public final class Settings {
             boolean questionsEnabled,
             boolean quizEnabled,
             boolean chatEnabled,
+
             @NotBlank
-                    @Size(max = 80)
-                    @Pattern(regexp = "^[a-z0-9][a-z0-9.\\-]*$", message = "must be a model id such as claude-opus-5")
-                    String model,
+            @Size(max = 80)
+            @Pattern(regexp = "^[a-z0-9][a-z0-9.\\-]*$", message = "must be a model id such as claude-opus-5")
+            String model,
             // Blank = no retry on a refusal.
             @Size(max = 80)
-                    @Pattern(
-                            regexp = "^$|^[a-z0-9][a-z0-9.\\-]*$",
-                            message = "must be a model id such as claude-opus-4-8")
-                    String fallbackModel,
+            @Pattern(regexp = "^$|^[a-z0-9][a-z0-9.\\-]*$", message = "must be a model id such as claude-opus-4-8")
+            String fallbackModel,
+
             @NotNull
-                    @Pattern(
-                            regexp = "^(low|medium|high|xhigh|max)$",
-                            message = "must be low, medium, high, xhigh or max")
-                    String generationEffort,
+            @Pattern(regexp = "^(low|medium|high|xhigh|max)$", message = "must be low, medium, high, xhigh or max")
+            String generationEffort,
+
             @NotNull
-                    @Pattern(
-                            regexp = "^(low|medium|high|xhigh|max)$",
-                            message = "must be low, medium, high, xhigh or max")
-                    String chatEffort,
+            @Pattern(regexp = "^(low|medium|high|xhigh|max)$", message = "must be low, medium, high, xhigh or max")
+            String chatEffort,
             // Null = no budget.
             @DecimalMin("0.0") @DecimalMax("1000000.0") BigDecimal monthlyBudgetUsd,
             boolean budgetEnforced,
@@ -112,12 +109,13 @@ public final class Settings {
             @Min(1) @Max(10240) int maxUploadMb,
             // MIME types or families ("image/*"); empty = anything.
             @NotNull @Size(max = 40)
-                    List<
-                                    @Pattern(
-                                            regexp = "^[a-z]+/([a-z0-9.+\\-]+|\\*)$",
-                                            message = "must be a MIME type like image/png or image/*")
-                                    String>
-                            allowedUploadTypes,
+            List<
+                            @Pattern(
+                                    regexp = "^[a-z]+/([a-z0-9.+\\-]+|\\*)$",
+                                    message = "must be a MIME type like image/png or image/*")
+                            String>
+                    allowedUploadTypes,
+
             @Min(1) @Max(1024) int maxSubtitleUploadMb,
             // Shown against stored bytes in Analytics; null = no quota.
             @DecimalMin("0.1") @DecimalMax("1000000.0") Double storageQuotaGb) {}

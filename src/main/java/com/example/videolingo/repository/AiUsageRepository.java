@@ -39,8 +39,7 @@ public interface AiUsageRepository extends JpaRepository<AiUsageRecord, Long>, J
         long getUnpriced();
     }
 
-    @Query(
-            """
+    @Query("""
             select count(u) as requests,
                    coalesce(sum(case when u.status = com.example.videolingo.entity.AiUsageStatus.ERROR or u.status = com.example.videolingo.entity.AiUsageStatus.TRUNCATED then 1 else 0 end), 0) as errors,
                    coalesce(sum(case when u.status = com.example.videolingo.entity.AiUsageStatus.REFUSED then 1 else 0 end), 0) as refusals,
@@ -71,8 +70,7 @@ public interface AiUsageRepository extends JpaRepository<AiUsageRecord, Long>, J
         BigDecimal getCost();
     }
 
-    @Query(
-            """
+    @Query("""
             select cast(u.feature as string) as key, count(u) as requests, coalesce(sum(u.inputTokens), 0) as inputTokens,
                    coalesce(sum(u.outputTokens), 0) as outputTokens, coalesce(sum(u.cacheWriteTokens), 0) as cacheWriteTokens,
                    coalesce(sum(u.cacheReadTokens), 0) as cacheReadTokens, coalesce(sum(u.costUsd), 0) as cost
@@ -80,8 +78,7 @@ public interface AiUsageRepository extends JpaRepository<AiUsageRecord, Long>, J
             """)
     List<Group> byFeature(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    @Query(
-            """
+    @Query("""
             select u.model as key, count(u) as requests, coalesce(sum(u.inputTokens), 0) as inputTokens,
                    coalesce(sum(u.outputTokens), 0) as outputTokens, coalesce(sum(u.cacheWriteTokens), 0) as cacheWriteTokens,
                    coalesce(sum(u.cacheReadTokens), 0) as cacheReadTokens, coalesce(sum(u.costUsd), 0) as cost
@@ -89,8 +86,7 @@ public interface AiUsageRepository extends JpaRepository<AiUsageRecord, Long>, J
             """)
     List<Group> byModel(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    @Query(
-            """
+    @Query("""
             select coalesce(u.username, '(unknown)') as key, count(u) as requests, coalesce(sum(u.inputTokens), 0) as inputTokens,
                    coalesce(sum(u.outputTokens), 0) as outputTokens, coalesce(sum(u.cacheWriteTokens), 0) as cacheWriteTokens,
                    coalesce(sum(u.cacheReadTokens), 0) as cacheReadTokens, coalesce(sum(u.costUsd), 0) as cost
@@ -106,14 +102,11 @@ public interface AiUsageRepository extends JpaRepository<AiUsageRecord, Long>, J
         BigDecimal getCost();
     }
 
-    @Query(
-            value =
-                    """
+    @Query(value = """
             select cast(created_at as date) as day, count(*) as requests, coalesce(sum(cost_usd), 0) as cost
             from ai_usage where created_at >= :from and created_at < :to
             group by cast(created_at as date) order by day
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     List<Daily> daily(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     long countByFeatureAndStatus(AiFeature feature, AiUsageStatus status);

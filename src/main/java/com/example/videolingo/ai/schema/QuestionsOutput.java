@@ -12,9 +12,14 @@ public record QuestionsOutput(List<Question> questions) {
     }
 
     public record Question(
-            @JsonPropertyDescription("An open-ended comprehension or discussion question.") String question,
-            @JsonPropertyDescription("A model answer, grounded in the transcript.") String answer,
+            @JsonPropertyDescription("An open-ended comprehension or discussion question.")
+            String question,
+
+            @JsonPropertyDescription("A model answer, grounded in the transcript.")
+            String answer,
+
             Difficulty difficulty,
+
             @JsonPropertyDescription("Where in the video the answer is found, in whole seconds.")
-                    int timestampSeconds) {}
+            int timestampSeconds) {}
 }

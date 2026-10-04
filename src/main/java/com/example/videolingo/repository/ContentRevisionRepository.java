@@ -25,8 +25,7 @@ public interface ContentRevisionRepository extends JpaRepository<ContentRevision
         java.time.LocalDateTime getCreatedAt();
     }
 
-    @Query(
-            """
+    @Query("""
             select r.id as id, r.number as number, r.summary as summary, r.itemCount as itemCount,
                    r.createdBy as createdBy, r.createdAt as createdAt
             from ContentRevision r where r.entityType = :type and r.entityId = :entityId order by r.number desc

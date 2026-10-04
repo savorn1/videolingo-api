@@ -623,14 +623,13 @@ public class VideoEditService {
             String t = custom.strip();
             return t.length() > MAX_TITLE ? t.substring(0, MAX_TITLE) : t;
         }
-        String suffix =
-                switch (operation) {
-                    case SPLIT -> " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
-                    case TRIM -> " (trimmed)";
-                    case AUDIO -> " (edited audio)";
-                    case OVERLAY -> " (with text & overlays)";
-                    case EXTRACT -> " (audio)";
-                };
+        String suffix = switch (operation) {
+            case SPLIT -> " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
+            case TRIM -> " (trimmed)";
+            case AUDIO -> " (edited audio)";
+            case OVERLAY -> " (with text & overlays)";
+            case EXTRACT -> " (audio)";
+        };
         String base = sourceTitle == null ? "Video" : sourceTitle.strip();
         // The end of the title is the part that says what this is, so the original's is what gets shortened.
         int room = MAX_TITLE - suffix.length();
