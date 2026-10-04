@@ -148,20 +148,94 @@ public class MediaTools {
      * picture, then the turn and flips, then the resize — so a resize is the size of the finished picture.
      */
     public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, JobContext ctx) {
+        return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, 0, ctx);
+    }
+
+    /**
+     * Same, and when `padMs` > 0 the result runs that long past the end of the video: the last frame is held and the
+     * sound is silent there (the end time still caps the length, so a little extra padding is harmless).
+     */
+    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, long padMs,
+                     JobContext ctx) {
+        return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, null, ctx);
+    }
+
+    /** Same, and the picture gets a look (see VideoEditRules.Look) after the crop, turn and resize. */
+    public Path trim(String video, long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, boolean flipH, boolean flipV, long padMs,
+                     VideoEditRules.Look look, JobContext ctx) {
         Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
         List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
                 "-i", video, "-ss", millis(startMs)));
         if (endMs != null) {
             command.addAll(List.of("-to", millis(endMs)));
         }
-        List<String> filters = videoFilters(crop, rotate, flipH, flipV, scale);
+        List<String> filters = new ArrayList<>(videoFilters(crop, rotate, flipH, flipV, scale));
+        filters.addAll(lookFilters(look));
+        if (padMs > 0) {
+            filters.add(padFilter(padMs));
+        }
         if (!filters.isEmpty()) {
             command.addAll(List.of("-vf", String.join(",", filters)));
+        }
+        if (padMs > 0 && probe(video, ctx.workDir()).hasAudio()) {
+            command.addAll(List.of("-af", "apad"));
         }
         command.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
                 "-movflags", "+faststart", out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", endMs == null ? null : endMs - startMs);
         return out;
+    }
+
+    /** ffmpeg expression that is true for the moments inside any of the (merged) cuts, in seconds. */
+    static String cutExpression(List<VideoEditRules.Segment> cuts) {
+        return cuts.stream().map(c -> c.endMs() == null
+                        ? String.format(java.util.Locale.ROOT, "gte(t,%.3f)", c.startMs() / 1000.0)
+                        : String.format(java.util.Locale.ROOT, "gte(t,%.3f)*lt(t,%.3f)", c.startMs() / 1000.0, c.endMs() / 1000.0))
+                .collect(java.util.stream.Collectors.joining("+"));
+    }
+
+    /** The video with the given (merged) ranges taken out, picture and sound together; re-encoded so cuts are frame-exact. */
+    public Path cut(String video, List<VideoEditRules.Segment> cuts, boolean hasAudio, Long keptMs, JobContext ctx) {
+        Path out = ctx.workDir().resolve("cut.mp4");
+        String drop = cutExpression(cuts);
+        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video,
+                "-vf", "select='not(" + drop + ")',setpts=N/FRAME_RATE/TB"));
+        if (hasAudio) {
+            command.addAll(List.of("-af", "aselect='not(" + drop + ")',asetpts=N/SR/TB"));
+        } else {
+            command.add("-an");
+        }
+        command.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg", keptMs);
+        return out;
+    }
+
+    /** The -vf filters for a look (brightness, contrast, colour, tint, blur, vignette), in that order. Empty for a plain look. */
+    static List<String> lookFilters(VideoEditRules.Look look) {
+        List<String> filters = new ArrayList<>();
+        if (look == null || look.isPlain()) {
+            return filters;
+        }
+        double saturation = look.grayscale() ? 0 : look.saturation();
+        if (look.brightness() != 0 || look.contrast() != 1 || saturation != 1) {
+            filters.add(String.format(java.util.Locale.ROOT, "eq=brightness=%.3f:contrast=%.3f:saturation=%.3f", look.brightness(), look.contrast(), saturation));
+        }
+        if (look.sepia() && !look.grayscale()) {
+            filters.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0:0:0:0:1");
+        }
+        if (look.blur() > 0) {
+            filters.add(String.format(java.util.Locale.ROOT, "gblur=sigma=%.2f", look.blur()));
+        }
+        if (look.vignette()) {
+            filters.add("vignette=PI/4");
+        }
+        return filters;
+    }
+
+    /** Holds the last frame for `padMs` (plus a second of slack; -to caps the length). */
+    static String padFilter(long padMs) {
+        return String.format(java.util.Locale.ROOT, "tpad=stop_mode=clone:stop_duration=%.3f", (padMs + 1000) / 1000.0);
     }
 
     /** The -vf filters for a crop, a turn and flips, then a resize — in that order. Empty when none is asked for. */
@@ -532,7 +606,7 @@ public class MediaTools {
     /** Several videos joined into one, in order. See MergeRules. */
     public Path merge(List<Path> inputs, List<MergeRules.Part> parts, AudioToVideoRules.Size frame, String transition, JobContext ctx) {
         Path out = ctx.workDir().resolve("merged.mp4");
-        run(MergeRules.command(props.ffmpeg(), inputs, parts, frame, transition, out), Duration.ofMinutes(180), ctx, "ffmpeg", MergeRules.totalMs(parts));
+        run(MergeRules.command(props.ffmpeg(), inputs, parts, frame, transition, out), Duration.ofMinutes(180), ctx, "ffmpeg", MergeRules.totalMs(parts, transition));
         return out;
     }
 

@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 
@@ -22,8 +23,12 @@ public final class MergeRules {
     public static final int MAX_PARTS = 10;
     /** Re-encoding is slow, so the joined video is capped. */
     public static final long MAX_TOTAL_MS = 3L * 60 * 60 * 1000;
-    public static final List<String> TRANSITIONS = List.of("NONE", "FADE");
+    public static final List<String> TRANSITIONS = List.of("NONE", "FADE", "FADE_WHITE", "DISSOLVE", "WIPE", "SLIDE");
     public static final double FADE_SECONDS = 0.5;
+    /** The joint of an overlapping transition (DISSOLVE, WIPE, SLIDE); the two clips play over each other for this long. */
+    public static final double OVERLAP_SECONDS = 0.6;
+    /** The ffmpeg xfade effect behind each overlapping transition. */
+    static final Map<String, String> OVERLAPS = Map.of("DISSOLVE", "fade", "WIPE", "wipeleft", "SLIDE", "slideleft");
     public static final int FPS = 30;
     public static final int SAMPLE_RATE = 48_000;
 
@@ -70,6 +75,28 @@ public final class MergeRules {
         return parts.stream().mapToLong(Part::durationMs).sum();
     }
 
+    /** True for the transitions where the clips play over each other, which makes the result shorter than the sum of the clips. */
+    public static boolean overlaps(String transition) {
+        return transition != null && OVERLAPS.containsKey(transition);
+    }
+
+    /** How long the joint between two clips lasts: shortened for a clip too short to hold it. */
+    static double overlapFor(long beforeMs, long afterMs) {
+        return Math.min(OVERLAP_SECONDS, Math.min(beforeMs, afterMs) / 2000.0);
+    }
+
+    /** The length of the joined video: the clips' total, less the overlaps of an overlapping transition. */
+    public static long totalMs(List<Part> parts, String transition) {
+        long total = totalMs(parts);
+        if (!overlaps(transition)) {
+            return total;
+        }
+        for (int i = 1; i < parts.size(); i++) {
+            total -= Math.round(overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs()) * 1000);
+        }
+        return total;
+    }
+
     static String formatLength(long ms) {
         long minutes = Math.round(ms / 60_000.0);
         return minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min";
@@ -90,7 +117,9 @@ public final class MergeRules {
      * through black (and silence) — the first clip doesn't fade in, nor the last out.
      */
     static String filterGraph(List<Part> parts, AudioToVideoRules.Size size, String transition) {
-        boolean fade = "FADE".equals(transition);
+        boolean fade = "FADE".equals(transition) || "FADE_WHITE".equals(transition);
+        String dipColor = "FADE_WHITE".equals(transition) ? ":c=white" : "";
+        boolean overlap = overlaps(transition);
         int n = parts.size();
         List<String> lines = new ArrayList<>();
         StringBuilder concat = new StringBuilder();
@@ -107,16 +136,33 @@ public final class MergeRules {
                             + ",atrim=duration=" + seconds(d) + ",asetpts=PTS-STARTPTS"
                     : "anullsrc=r=" + SAMPLE_RATE + ":cl=stereo,atrim=duration=" + seconds(d) + ",asetpts=PTS-STARTPTS");
             if (fade && i > 0) {
-                video.append(",fade=t=in:st=0:d=").append(seconds(f));
+                video.append(",fade=t=in:st=0:d=").append(seconds(f)).append(dipColor);
                 audio.append(",afade=t=in:st=0:d=").append(seconds(f));
             }
             if (fade && i < n - 1) {
-                video.append(",fade=t=out:st=").append(seconds(d - f)).append(":d=").append(seconds(f));
+                video.append(",fade=t=out:st=").append(seconds(d - f)).append(":d=").append(seconds(f)).append(dipColor);
                 audio.append(",afade=t=out:st=").append(seconds(d - f)).append(":d=").append(seconds(f));
             }
             lines.add(video + "[v" + i + "]");
             lines.add(audio + "[a" + i + "]");
             concat.append("[v").append(i).append("][a").append(i).append("]");
+        }
+        if (overlap) {
+            // Each clip plays over the end of the one before it: the picture with xfade, the sound with acrossfade.
+            String effect = OVERLAPS.get(transition);
+            double length = parts.get(0).durationMs() / 1000.0;
+            String video = "[v0]";
+            String audio = "[a0]";
+            for (int i = 1; i < n; i++) {
+                double o = overlapFor(parts.get(i - 1).durationMs(), parts.get(i).durationMs());
+                boolean last = i == n - 1;
+                lines.add(video + "[v" + i + "]xfade=transition=" + effect + ":duration=" + seconds(o) + ":offset=" + seconds(length - o) + (last ? "[v]" : "[x" + i + "]"));
+                lines.add(audio + "[a" + i + "]acrossfade=d=" + seconds(o) + (last ? "[a]" : "[y" + i + "]"));
+                length += parts.get(i).durationMs() / 1000.0 - o;
+                video = "[x" + i + "]";
+                audio = "[y" + i + "]";
+            }
+            return String.join(";", lines);
         }
         lines.add(concat + "concat=n=" + n + ":v=1:a=1[v][a]");
         return String.join(";", lines);
@@ -182,6 +228,14 @@ public final class MergeRules {
     /** A short line for the job log and the job list. */
     public static String describe(int count, String resolution, String transition) {
         AudioToVideoRules.Size size = AudioToVideoRules.size(resolution);
-        return "Join " + count + " videos (" + size.w() + "×" + size.h() + ("FADE".equals(transition) ? ", fades" : "") + ")";
+        String joint = switch (transition == null ? "NONE" : transition) {
+            case "FADE" -> ", fades";
+            case "FADE_WHITE" -> ", fades through white";
+            case "DISSOLVE" -> ", dissolves";
+            case "WIPE" -> ", wipes";
+            case "SLIDE" -> ", slides";
+            default -> "";
+        };
+        return "Join " + count + " videos (" + size.w() + "×" + size.h() + joint + ")";
     }
 }

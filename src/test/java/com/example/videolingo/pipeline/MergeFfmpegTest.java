@@ -91,7 +91,8 @@ class MergeFfmpegTest {
         assertTrue(info.contains("640x360"), info);
         assertTrue(info.contains("Audio: aac") && info.contains("48000 Hz") && info.contains("stereo"), info);
         double total = durationSeconds(info);
-        assertTrue(Math.abs(total - 4.5) < 0.25, "expected about 4.5 s, got " + total + "\n" + info);
+        double expected = MergeRules.totalMs(parts, transition) / 1000.0;
+        assertTrue(Math.abs(total - expected) < 0.25, "expected about " + expected + " s, got " + total + "\n" + info);
     }
 
     @Test
@@ -102,5 +103,25 @@ class MergeFfmpegTest {
     @Test
     void mismatchedClipsAreJoinedWithFades(@TempDir Path dir) {
         joinAndCheck("FADE", dir);
+    }
+
+    @Test
+    void mismatchedClipsAreJoinedWithFadesThroughWhite(@TempDir Path dir) {
+        joinAndCheck("FADE_WHITE", dir);
+    }
+
+    @Test
+    void mismatchedClipsAreDissolvedTogetherAndComeOutShorter(@TempDir Path dir) {
+        joinAndCheck("DISSOLVE", dir);
+    }
+
+    @Test
+    void mismatchedClipsAreWipedTogether(@TempDir Path dir) {
+        joinAndCheck("WIPE", dir);
+    }
+
+    @Test
+    void mismatchedClipsAreSlidTogether(@TempDir Path dir) {
+        joinAndCheck("SLIDE", dir);
     }
 }

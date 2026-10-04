@@ -42,6 +42,13 @@ public class VideoEditController {
                 .body(ApiResponse.success("Split queued", editService.startSplit(videoId, request, requireUsername(authentication))));
     }
 
+    @PostMapping("/cut")
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> cut(@PathVariable Long videoId, @RequestBody VideoEditService.CutRequest request,
+                                                                   Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success("Cut queued", editService.startCut(videoId, request, requireUsername(authentication))));
+    }
+
     @PostMapping("/audio")
     public ResponseEntity<ApiResponse<ProcessingJobResponse>> audio(@PathVariable Long videoId, @RequestBody VideoEditService.AudioRequest request,
                                                                      Authentication authentication) {

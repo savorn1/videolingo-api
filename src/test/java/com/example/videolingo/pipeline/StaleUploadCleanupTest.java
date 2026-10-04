@@ -30,7 +30,7 @@ class StaleUploadCleanupTest {
                 S3Object.builder().key("audio-uploads/old.mp3").lastModified(now.minusSeconds(5 * 86400)).build(),
                 S3Object.builder().key("audio-uploads/new.mp3").lastModified(now.minusSeconds(3600)).build()).build());
 
-        PipelineSteps steps = new PipelineSteps(null, null, null, null, null, null, null, null, null, null, null, null, null, null, s3, null);
+        PipelineSteps steps = new PipelineSteps(null, null, null, null, null, null, null, null, null, null, null, null, null, null, s3, null, null);
         ReflectionTestUtils.setField(steps, "bucket", "videolingo");
 
         assertEquals(1, steps.deleteStale("audio-uploads/", now.minusSeconds(3 * 86400)));
@@ -40,7 +40,7 @@ class StaleUploadCleanupTest {
 
     @Test
     void doesNothingWithoutStorage() {
-        PipelineSteps steps = new PipelineSteps(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        PipelineSteps steps = new PipelineSteps(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         assertEquals(0, steps.deleteStale("audio-uploads/", Instant.now()));
     }
 }

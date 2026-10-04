@@ -234,9 +234,18 @@ public class LearnService {
     /** viewerId/isAdmin gate PRIVATE videos to their owner (and admins) — same rule collection() uses. */
     public Video requireWatchable(Long videoId, Long viewerId, boolean isAdmin) {
         return videoRepository.findById(videoId)
-                .filter(v -> v.isEnabled() && !v.isDeleted() && !v.isArchived())
-                .filter(v -> isAdmin || v.getVisibility() != VideoVisibility.PRIVATE || Objects.equals(v.getOwnerId(), viewerId))
+                .filter(v -> isWatchable(v, viewerId, isAdmin))
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found"));
+    }
+
+    /**
+     * Whether this viewer may watch the video: it must be enabled, not in the trash and not archived, and a PRIVATE one
+     * only for its owner (and admins). Anything that lists videos to open (Continue watching, …) should use the same
+     * rule, or it offers links that answer "Video not found".
+     */
+    public static boolean isWatchable(Video v, Long viewerId, boolean isAdmin) {
+        return v.isEnabled() && !v.isDeleted() && !v.isArchived()
+                && (isAdmin || v.getVisibility() != VideoVisibility.PRIVATE || Objects.equals(v.getOwnerId(), viewerId));
     }
 
     private Map<String, Object> parse(String json) {

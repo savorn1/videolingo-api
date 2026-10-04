@@ -48,10 +48,19 @@ public class VideoEditService {
     }
 
     /** rotate = clockwise quarter turns in degrees (0/90/180/270); flips are applied after the turn. Crop is on the original picture, then turn/flip, then resize. */
-    public record TrimRequest(long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, Boolean flipH, Boolean flipV) {
+    public record TrimRequest(long startMs, Long endMs, CropRect crop, ScaleSize scale, Integer rotate, Boolean flipH, Boolean flipV, TrimAudio audio,
+                              Boolean extend, VideoEditRules.Look look) {
+    }
+
+    /** Sound added to a trim, on the trimmed video's own timeline: an uploaded file to use instead of the video's sound and/or background music. */
+    public record TrimAudio(String replaceKey, MusicInput music) {
     }
 
     public record SplitRequest(List<SegmentRange> segments) {
+    }
+
+    /** Ranges to take out of the video (endMs null = to the end); what's left plays on as one video. */
+    public record CutRequest(List<SegmentRange> cuts) {
     }
 
     // An audio edit as sent by the editor; anything left out keeps the sound as it is.
@@ -120,7 +129,12 @@ public class VideoEditService {
     public ProcessingJobResponse startTrim(Long videoId, TrimRequest request, String username) {
         Video video = findVideo(videoId);
         requireEditable(video);
-        require(VideoEditRules.validateTrim(request.startMs(), request.endMs(), durationMs(video)));
+        boolean extend = Boolean.TRUE.equals(request.extend());
+        Long videoMs = durationMs(video);
+        require(extend ? VideoEditRules.validateExtendedTrim(request.startMs(), request.endMs(), videoMs)
+                : VideoEditRules.validateTrim(request.startMs(), request.endMs(), videoMs));
+        // How much of the result is past the video's own end; held as the last frame and silence.
+        long padMs = extend && request.endMs() != null && videoMs != null ? Math.max(0, request.endMs() - videoMs) : 0;
         if (request.crop() != null) {
             require(VideoEditRules.validateCrop(request.crop().x(), request.crop().y(), request.crop().w(), request.crop().h(),
                     video.getWidth(), video.getHeight()));
@@ -129,6 +143,15 @@ public class VideoEditService {
             require(VideoEditRules.validateScale(request.scale().w(), request.scale().h()));
         }
         require(VideoEditRules.validateRotation(request.rotate()));
+        require(VideoEditRules.validateLook(request.look()));
+        AudioEditRules.Spec audio = null;
+        if (request.audio() != null) {
+            audio = toSpec(new AudioRequest(request.audio().replaceKey(), null, null, null, null, null, null, null, null, null, null, null, null,
+                    request.audio().music()));
+            Long total = durationMs(video);
+            long end = request.endMs() != null ? request.endMs() : total != null ? total : -1;
+            require(AudioEditRules.validate(audio, end > request.startMs() ? end - request.startMs() : null));
+        }
         requireNoActiveJob(videoId);
 
         Map<String, Object> params = new LinkedHashMap<>();
@@ -151,6 +174,15 @@ public class VideoEditService {
         }
         if (Boolean.TRUE.equals(request.flipV())) {
             params.put("flipV", true);
+        }
+        if (audio != null) {
+            params.put("audio", audio);
+        }
+        if (padMs > 0) {
+            params.put("padMs", padMs);
+        }
+        if (request.look() != null && !request.look().isPlain()) {
+            params.put("look", request.look());
         }
         ProcessingJob job = jobService.enqueue(videoId, ProcessingJobType.EDIT, toJson(params), "Trim/crop requested by " + username);
         return jobService.getJob(job.getId());
@@ -178,6 +210,31 @@ public class VideoEditService {
         params.put("segments", segmentParams);
         ProcessingJob job = jobService.enqueue(videoId, ProcessingJobType.EDIT, toJson(params),
                 "Split into " + segments.size() + " segment(s) requested by " + username);
+        return jobService.getJob(job.getId());
+    }
+
+    @Transactional
+    public ProcessingJobResponse startCut(Long videoId, CutRequest request, String username) {
+        Video video = findVideo(videoId);
+        requireEditable(video);
+        List<SegmentRange> cuts = request == null || request.cuts() == null ? List.of() : request.cuts();
+        List<VideoEditRules.Segment> segments = cuts.stream().map(c -> new VideoEditRules.Segment(c.startMs(), c.endMs())).toList();
+        require(VideoEditRules.validateCuts(segments, durationMs(video)));
+        requireNoActiveJob(videoId);
+
+        List<Map<String, Object>> cutParams = VideoEditRules.mergeCuts(segments).stream().map(c -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("startMs", c.startMs());
+            if (c.endMs() != null) {
+                m.put("endMs", c.endMs());
+            }
+            return m;
+        }).toList();
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("operation", "CUT");
+        params.put("cuts", cutParams);
+        ProcessingJob job = jobService.enqueue(videoId, ProcessingJobType.EDIT, toJson(params),
+                "Cut out " + cutParams.size() + " range(s) requested by " + username);
         return jobService.getJob(job.getId());
     }
 

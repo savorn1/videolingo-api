@@ -43,7 +43,7 @@ class MergeRulesTest {
     @Test
     void sizeAndTransitionAreChecked() {
         assertNotNull(MergeRules.validate(List.of(1L, 2L), "4k", null));
-        assertNotNull(MergeRules.validate(List.of(1L, 2L), null, "WIPE"));
+        assertNotNull(MergeRules.validate(List.of(1L, 2L), null, "SPIN"));
         assertNull(MergeRules.validate(List.of(1L, 2L), "360p", "NONE"));
     }
 
@@ -166,5 +166,43 @@ class MergeRulesTest {
     @Test
     void theOrderOfTheFirstVideoIsKept() {
         assertEquals(List.of("km", "en"), MergeRules.commonLanguages(List.of(new java.util.LinkedHashSet<>(List.of("km", "en")), java.util.Set.of("en", "km"))));
+    }
+
+    @Test
+    void everyTransitionIsAccepted() {
+        for (String t : List.of("NONE", "FADE", "FADE_WHITE", "DISSOLVE", "WIPE", "SLIDE")) {
+            assertNull(MergeRules.validate(List.of(1L, 2L), "720p", t), t);
+        }
+        assertNotNull(MergeRules.validate(List.of(1L, 2L), "720p", "SPIN"));
+    }
+
+    @Test
+    void anOverlappingTransitionShortensTheResult() {
+        List<Part> parts = List.of(new Part(10_000, true), new Part(10_000, true), new Part(300, true));
+        assertEquals(20_300, MergeRules.totalMs(parts, "NONE"));
+        assertEquals(20_300, MergeRules.totalMs(parts, "FADE"));
+        // Two joints: 0.6 s, then 0.15 s (half the 300 ms clip).
+        assertEquals(20_300 - 600 - 150, MergeRules.totalMs(parts, "DISSOLVE"));
+    }
+
+    @Test
+    void anOverlappingGraphChainsXfadeAndAcrossfade() {
+        String graph = MergeRules.filterGraph(List.of(new Part(10_000, true), new Part(10_000, true), new Part(10_000, true)), HD, "WIPE");
+        assertTrue(graph.contains("[v0][v1]xfade=transition=wipeleft:duration=0.600:offset=9.400[x1]"), graph);
+        assertTrue(graph.contains("[x1][v2]xfade=transition=wipeleft:duration=0.600:offset=18.800[v]"), graph);
+        assertTrue(graph.contains("[a0][a1]acrossfade=d=0.600[y1]") && graph.contains("[y1][a2]acrossfade=d=0.600[a]"), graph);
+        assertFalse(graph.contains("concat="), graph);
+    }
+
+    @Test
+    void aWhiteFadeDipsToWhite() {
+        String graph = MergeRules.filterGraph(List.of(new Part(10_000, true), new Part(10_000, true)), HD, "FADE_WHITE");
+        assertTrue(graph.contains("fade=t=out:st=9.500:d=0.500:c=white"), graph);
+        assertTrue(graph.contains("concat=n=2"), graph);
+    }
+
+    @Test
+    void theJobLogNamesTheTransition() {
+        assertEquals("Join 2 videos (1920×1080, dissolves)", MergeRules.describe(2, "1080p", "DISSOLVE"));
     }
 }

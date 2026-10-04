@@ -99,4 +99,35 @@ class VideoEditRulesTest {
         assertEquals("Flipped left–right", VideoEditRules.describeOrientation(null, true, false));
         assertEquals("Turned 180° clockwise, flipped left–right, flipped top–bottom", VideoEditRules.describeOrientation(180, true, true));
     }
+
+    @Test
+    void anExtendedTrimMayRunPastTheEndButNotFar() {
+        assertNull(VideoEditRules.validateExtendedTrim(1000, 70000L, 60000L));
+        assertNull(VideoEditRules.validateExtendedTrim(1000, 30000L, 60000L));
+        assertNotNull(VideoEditRules.validateExtendedTrim(1000, null, 60000L));
+        assertNotNull(VideoEditRules.validateExtendedTrim(1000, 70000L, null));
+        assertNotNull(VideoEditRules.validateExtendedTrim(60000, 70000L, 60000L));
+        assertNotNull(VideoEditRules.validateExtendedTrim(5000, 5000L, 60000L));
+        assertNotNull(VideoEditRules.validateExtendedTrim(0, 60000L + VideoEditRules.MAX_EXTEND_MS + 1, 60000L));
+    }
+
+    @Test
+    void padFilterHoldsTheLastFrame() {
+        assertEquals("tpad=stop_mode=clone:stop_duration=11.000", MediaTools.padFilter(10000));
+    }
+
+    @Test
+    void aLookIsCheckedAndDescribed() {
+        VideoEditRules.Look plain = new VideoEditRules.Look(0, 1, 1, 0, false, false, false);
+        assertTrue(plain.isPlain());
+        assertNull(VideoEditRules.describeLook(plain));
+        assertNull(VideoEditRules.validateLook(null));
+        assertNull(VideoEditRules.validateLook(new VideoEditRules.Look(0.2, 1.4, 1.5, 3, false, true, true)));
+        assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(1.5, 1, 1, 0, false, false, false)));
+        assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(0, 3, 1, 0, false, false, false)));
+        assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(0, 1, 5, 0, false, false, false)));
+        assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(0, 1, 1, 50, false, false, false)));
+        assertNotNull(VideoEditRules.validateLook(new VideoEditRules.Look(Double.NaN, 1, 1, 0, false, false, false)));
+        assertEquals("Brighter, black & white, vignette", VideoEditRules.describeLook(new VideoEditRules.Look(0.1, 1, 1, 0, true, false, true)));
+    }
 }

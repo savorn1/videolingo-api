@@ -75,6 +75,7 @@ public class PipelineSteps {
     private final TextToSpeechClient tts;
     private final S3Client s3;
     private final ObjectMapper objectMapper;
+    private final PipelineProperties props;
 
     @Value("${s3.bucket:}")
     private String bucket;
@@ -303,8 +304,9 @@ public class PipelineSteps {
     /** How long an unpromoted clip stays available for review. */
     static final int CLIP_HOURS = 72;
 
-    // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540},"rotate":90,"flipH":true}  (rotate/flips optional)
+    // {"operation":"TRIM","startMs":0,"endMs":5000,"crop":{"x":0,"y":0,"w":1280,"h":720},"scale":{"w":960,"h":540},"rotate":90,"flipH":true,"audio":{…AudioEditRules.Spec…},"padMs":3000,"look":{…VideoEditRules.Look…}}  (rotate/flips/audio/padMs/look optional; padMs = time past the video's end, held as the last frame; audio is added to the trimmed result)
     // {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":9000}]}
+    // {"operation":"CUT","cuts":[{"startMs":20000,"endMs":30000}]}  (merged, sorted; endMs null = to the end)
     // {"operation":"AUDIO","audio":{…AudioEditRules.Spec…},"summary":"Volume 150%, fade out 2 s"}
     // {"operation":"EXTRACT","format":"MP3" | "WAV"}
     // {"operation":"OVERLAY","overlay":{"layers":[…OverlayRules.Layer…]},"summary":"Text “Hello”, 1 image"}
@@ -351,6 +353,7 @@ public class PipelineSteps {
 
         switch (operation) {
             case "SPLIT" -> splitJob(video, job, p, input, ctx);
+            case "CUT" -> cutJob(video, job, p, input, ctx);
             case "AUDIO" -> audioJob(video, job, p, input, ctx);
             case "EXTRACT" -> extractJob(video, job, p, input, ctx);
             case "OVERLAY" -> overlayJob(video, job, p, input, ctx);
@@ -362,7 +365,7 @@ public class PipelineSteps {
     // The video row was created, disabled, when the request came in; this fills
     // it in, so the admin reviews it like any new upload before enabling it.
     /** How much of the sound a test render covers. */
-    static final long PREVIEW_MS = 5_000;
+    public static final long PREVIEW_MS = 5_000;
     /** At most this many test renders at once: they run in the request, so they must not crowd out the real jobs. */
     private final java.util.concurrent.Semaphore previewSlots = new java.util.concurrent.Semaphore(2);
 
@@ -545,7 +548,7 @@ public class PipelineSteps {
             throw new JobFailure(problem);
         }
         AudioToVideoRules.Size frame = AudioToVideoRules.size(resolution);
-        long totalMs = MergeRules.totalMs(parts);
+        long totalMs = MergeRules.totalMs(parts, transition);
         long silent = parts.stream().filter(x -> !x.hasAudio()).count();
         if (silent > 0) {
             ctx.info(silent + " of the videos have no sound; silence is used for them");
@@ -635,16 +638,12 @@ public class PipelineSteps {
         }
     }
 
-    private void audioJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
-        AudioEditRules.Spec spec;
-        try {
-            spec = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
-        } catch (Exception e) {
-            throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
-        }
-        if (spec == null) {
-            throw new JobFailure("The job has no audio settings");
-        }
+    /** What an audio render made: the file and how long it is after any speed change. */
+    private record AudioRender(Path file, long outMs) {
+    }
+
+    /** Renders `spec`'s sound onto `input` (the shared part of an AUDIO job and a trim with added audio). */
+    private AudioRender renderAudio(AudioEditRules.Spec spec, String input, JobContext ctx) {
         ctx.progress(10, "Reading the video");
         MediaTools.Probe source = media.probe(input, ctx.workDir());
         if (source.durationMs() == null || source.durationMs() <= 0) {
@@ -678,6 +677,22 @@ public class PipelineSteps {
 
         ctx.progress(25, graph.picture() ? "Rendering the sound and re-timing the picture" : "Rendering the sound");
         Path out = media.editAudio(input, replacement, music, spec.music() != null && spec.music().loop(), graph, outMs, ctx.slice(25, 90));
+        return new AudioRender(out, outMs);
+    }
+
+    private void audioJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        AudioEditRules.Spec spec;
+        try {
+            spec = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
+        } catch (Exception e) {
+            throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
+        }
+        if (spec == null) {
+            throw new JobFailure("The job has no audio settings");
+        }
+        AudioRender rendered = renderAudio(spec, input, ctx);
+        Path out = rendered.file();
+        long outMs = rendered.outMs();
         ctx.progress(92, "Saving the result");
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -776,7 +791,28 @@ public class PipelineSteps {
         boolean flipV = p.path("flipV").asBoolean(false);
 
         ctx.progress(20, "Trimming");
-        Path out = media.trim(input, startMs, endMs, crop, scale, rotate, flipH, flipV, ctx.slice(20, 90));
+        long padMs = p.path("padMs").asLong(0);
+        VideoEditRules.Look look = null;
+        if (p.hasNonNull("look")) {
+            try {
+                look = objectMapper.treeToValue(p.get("look"), VideoEditRules.Look.class);
+            } catch (Exception e) {
+                throw new JobFailure("The job's look settings aren't valid: " + e.getMessage());
+            }
+        }
+        Path out = media.trim(input, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, ctx.slice(20, p.has("audio") ? 60 : 90));
+        String audioSummary = null;
+        if (p.hasNonNull("audio")) {
+            AudioEditRules.Spec audio;
+            try {
+                audio = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
+            } catch (Exception e) {
+                throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
+            }
+            ctx.progress(60, "Adding the audio");
+            out = renderAudio(audio, out.toString(), ctx.slice(60, 90)).file();
+            audioSummary = AudioEditRules.describe(audio);
+        }
         ctx.progress(92, "Saving the clip");
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -799,11 +835,50 @@ public class PipelineSteps {
                 .scaleW(scale != null ? scale.w() : null).scaleH(scale != null ? scale.h() : null)
                 .durationSeconds(clipSeconds(startMs, endMs, video))
                 .width(width).height(height)
-                .summary(VideoEditRules.describeOrientation(rotate, flipH, flipV))
+                .summary(joinSummary(joinSummary(VideoEditRules.describeOrientation(rotate, flipH, flipV), VideoEditRules.describeLook(look)), audioSummary))
                 .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Trim ready — review it, then replace the original video or discard it");
+    }
+
+    private static String joinSummary(String a, String b) {
+        return a == null ? b : b == null ? a : a + "; " + b;
+    }
+
+    private void cutJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        List<VideoEditRules.Segment> cuts = new ArrayList<>();
+        p.path("cuts").forEach(c -> cuts.add(new VideoEditRules.Segment(c.path("startMs").asLong(0), c.hasNonNull("endMs") ? c.get("endMs").asLong() : null)));
+        if (cuts.isEmpty()) {
+            throw new JobFailure("The job has no cuts");
+        }
+        MediaTools.Probe probe = media.probe(input, ctx.workDir());
+        Long totalMs = probe.durationMs() != null ? probe.durationMs() : video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null;
+        long removedMs = 0;
+        for (VideoEditRules.Segment c : cuts) {
+            Long end = c.endMs() != null ? c.endMs() : totalMs;
+            removedMs += end == null ? 0 : Math.max(0, Math.min(end, totalMs != null ? totalMs : end) - c.startMs());
+        }
+        Long keptMs = totalMs == null ? null : Math.max(0, totalMs - removedMs);
+
+        ctx.progress(20, "Cutting out " + cuts.size() + " range(s)");
+        Path out = media.cut(input, cuts, probe.hasAudio(), keptMs, ctx.slice(20, 90));
+        ctx.progress(92, "Saving the clip");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
+        upload(key, out, "video/mp4", null);
+        ctx.checkpoint();
+
+        // Stored as a TRIM result, so it can replace the original or become a new video like any trim.
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId()).jobId(job.getId()).operation(VideoClip.Operation.TRIM)
+                .startMs(0).endMs(null)
+                .durationSeconds(keptMs == null ? null : (int) (keptMs / 1000))
+                .width(video.getWidth()).height(video.getHeight())
+                .summary("Cut out " + cuts.size() + (cuts.size() == 1 ? " range" : " ranges") + (removedMs > 0 ? " (" + removedMs / 1000 + " s)" : ""))
+                .storageKey(key).url(publicUrl(key)).sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Cut ready — review it, then replace the original video or add it as a new one");
     }
 
     private void splitJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {

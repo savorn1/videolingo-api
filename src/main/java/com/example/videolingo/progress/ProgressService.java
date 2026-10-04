@@ -1,5 +1,6 @@
 package com.example.videolingo.progress;
 
+import com.example.videolingo.learn.LearnService;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoView;
 import com.example.videolingo.entity.WatchProgress;
@@ -101,12 +102,13 @@ public class ProgressService {
     }
 
     @Transactional(readOnly = true)
-    public List<ContinueItem> continueWatching(Long userId, int limit) {
+    public List<ContinueItem> continueWatching(Long userId, boolean isAdmin, int limit) {
         List<WatchProgress> rows = progressRepository.inProgress(userId, ProgressRules.MIN_RESUME_SECONDS,
                 PageRequest.of(0, Math.max(1, Math.min(limit, 50))));
         Map<Long, Video> videos = videoRepository.findAllById(rows.stream().map(WatchProgress::getVideoId).toList()).stream()
                 .collect(Collectors.toMap(Video::getId, Function.identity()));
-        return rows.stream().filter(r -> videos.containsKey(r.getVideoId())).map(r -> {
+        // Only videos this viewer can actually open: a hidden, archived or private one would answer "Video not found" on Resume.
+        return rows.stream().filter(r -> videos.containsKey(r.getVideoId()) && LearnService.isWatchable(videos.get(r.getVideoId()), userId, isAdmin)).map(r -> {
             Video v = videos.get(r.getVideoId());
             return new ContinueItem(toDto(r), v.getTitle(), v.getThumbnailUrl(), v.getLanguage(), v.getDurationSeconds());
         }).toList();

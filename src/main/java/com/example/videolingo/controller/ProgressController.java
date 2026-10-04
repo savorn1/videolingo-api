@@ -41,7 +41,7 @@ public class ProgressController {
 
     @GetMapping("/continue-watching")
     public ResponseEntity<ApiResponse<List<ContinueItem>>> continueWatching(@RequestParam(defaultValue = "12") int limit, Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(progressService.continueWatching(currentUser.requireUserId(authentication), limit)));
+        return ResponseEntity.ok(ApiResponse.success(progressService.continueWatching(currentUser.requireUserId(authentication), currentUser.isAdmin(authentication), limit)));
     }
 
     @PutMapping("/progress/{videoId}/completed")
