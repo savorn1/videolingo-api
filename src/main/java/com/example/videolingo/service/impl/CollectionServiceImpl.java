@@ -19,6 +19,7 @@ import com.example.videolingo.repository.VideoCollectionRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.repository.WatchProgressRepository;
 import com.example.videolingo.service.CollectionService;
+import com.example.videolingo.storage.MediaUrls;
 import com.example.videolingo.util.PageableUtils;
 import jakarta.persistence.criteria.Subquery;
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ public class CollectionServiceImpl implements CollectionService {
     static final int MAX_VIDEOS = 500;
 
     private final VideoCollectionRepository collectionRepository;
+    private final MediaUrls mediaUrls;
     private final CollectionItemRepository itemRepository;
     private final VideoRepository videoRepository;
     private final UserRepository userRepository;
@@ -127,7 +129,7 @@ public class CollectionServiceImpl implements CollectionService {
                     .section(i.getSection())
                     .videoId(i.getVideoId())
                     .title(v != null ? v.getTitle() : null)
-                    .thumbnailUrl(v != null ? v.getThumbnailUrl() : null)
+                    .thumbnailUrl(v != null ? mediaUrls.forBrowser(v.getThumbnailUrl()) : null)
                     .durationSeconds(v != null ? v.getDurationSeconds() : null)
                     .language(v != null ? v.getLanguage() : null)
                     .enabled(v != null && v.isEnabled())

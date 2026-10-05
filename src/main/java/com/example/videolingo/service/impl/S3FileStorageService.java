@@ -5,6 +5,7 @@ import com.example.videolingo.exception.AppException;
 import com.example.videolingo.service.FileStorageService;
 import com.example.videolingo.settings.Settings;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import java.io.IOException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class S3FileStorageService implements FileStorageService {
     private static final String DEFAULT_FOLDER = "uploads";
 
     private final S3Client s3Client;
+    private final MediaUrls mediaUrls;
     private final SettingsService settings;
 
     @Value("${s3.bucket}")
@@ -69,7 +71,7 @@ public class S3FileStorageService implements FileStorageService {
 
         return FileUploadResponse.builder()
                 .key(key)
-                .url(publicEndpoint + "/" + bucket + "/" + key)
+                .url(mediaUrls.forBrowser(publicEndpoint.replaceAll("/+$", "") + "/" + bucket + "/" + key))
                 .fileName(originalFilename)
                 .contentType(file.getContentType())
                 .size(file.getSize())

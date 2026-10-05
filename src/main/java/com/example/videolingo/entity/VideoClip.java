@@ -29,11 +29,18 @@ public class VideoClip {
         SPLIT,
         AUDIO,
         EXTRACT,
-        OVERLAY;
+        OVERLAY,
+        GIF,
+        STILL;
 
         /** Promoting it swaps the video's own file. */
         public boolean replacesVideo() {
             return this == TRIM || this == AUDIO || this == OVERLAY;
+        }
+
+        /** A file to download (audio, a GIF, a picture) — it can't become or replace a video. */
+        public boolean downloadOnly() {
+            return this == EXTRACT || this == GIF || this == STILL;
         }
     }
 
@@ -83,12 +90,19 @@ public class VideoClip {
     @Column(name = "duration_seconds")
     private Integer durationSeconds;
 
+    @Column(name = "duration_ms")
+    private Long durationMs;
+
     private Integer width;
 
     private Integer height;
 
     @Column(name = "storage_key", nullable = false, length = 500)
     private String storageKey;
+
+    // The video's file this was made from; null on results made before it was recorded.
+    @Column(name = "source_key", length = 500)
+    private String sourceKey;
 
     @Column(nullable = false, length = 1000)
     private String url;

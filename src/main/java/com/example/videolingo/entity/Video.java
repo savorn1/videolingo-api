@@ -97,6 +97,10 @@ public class Video {
     @Column(name = "duration_seconds")
     private Integer durationSeconds;
 
+    // Exact length; durationSeconds is rounded. Null on videos not re-read since it was added.
+    @Column(name = "duration_ms")
+    private Long durationMs;
+
     private Integer width;
 
     private Integer height;

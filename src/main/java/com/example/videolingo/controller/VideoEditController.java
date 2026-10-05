@@ -68,6 +68,27 @@ public class VideoEditController {
                         editService.startAudio(videoId, request, requireUsername(authentication))));
     }
 
+    @PostMapping("/gif")
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> gif(
+            @PathVariable Long videoId,
+            @RequestBody VideoEditService.GifRequest request,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success(
+                        "GIF queued", editService.startGif(videoId, request, requireUsername(authentication))));
+    }
+
+    @PostMapping("/still")
+    public ResponseEntity<ApiResponse<ProcessingJobResponse>> still(
+            @PathVariable Long videoId,
+            @RequestBody VideoEditService.StillRequest request,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success(
+                        "Still picture queued",
+                        editService.startStill(videoId, request, requireUsername(authentication))));
+    }
+
     @PostMapping("/extract-audio")
     public ResponseEntity<ApiResponse<ProcessingJobResponse>> extractAudio(
             @PathVariable Long videoId,

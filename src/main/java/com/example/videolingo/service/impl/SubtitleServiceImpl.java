@@ -30,6 +30,7 @@ import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.SubtitleService;
 import com.example.videolingo.service.TranscriptService;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import com.example.videolingo.subtitle.Cue;
 import com.example.videolingo.subtitle.SubtitleFiles;
 import com.example.videolingo.subtitle.SubtitleIssue;
@@ -79,6 +80,7 @@ public class SubtitleServiceImpl implements SubtitleService {
             "reviewStatus");
 
     private final SubtitleRepository subtitleRepository;
+    private final MediaUrls mediaUrls;
     private final SubtitleCueRepository cueRepository;
     private final VideoRepository videoRepository;
     private final TranscriptRepository transcriptRepository;
@@ -681,7 +683,7 @@ public class SubtitleServiceImpl implements SubtitleService {
                 .id(s.getId())
                 .videoId(s.getVideoId())
                 .videoTitle(video != null ? video.getTitle() : null)
-                .videoUrl(video != null ? video.getVideoUrl() : null)
+                .videoUrl(video != null ? mediaUrls.forBrowser(video.getVideoUrl()) : null)
                 .language(s.getLanguage())
                 .label(s.getLabel())
                 .kind(s.getKind())

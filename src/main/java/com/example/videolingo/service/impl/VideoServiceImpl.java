@@ -28,6 +28,7 @@ import com.example.videolingo.service.VideoMarkerService;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import com.example.videolingo.util.PageableUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -58,6 +59,7 @@ public class VideoServiceImpl implements VideoService {
     private static final int MAX_STAT_DAYS = 365;
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final VideoViewRepository videoViewRepository;
     private final UserRepository userRepository;
     private final LanguageService languageService;
@@ -167,7 +169,8 @@ public class VideoServiceImpl implements VideoService {
             language = languageService.resolve(language, !unchanged);
         }
         video.setLanguage(language);
-        video.setThumbnailUrl(blankToNull(request.getThumbnailUrl()));
+        // A thumbnail shown in the form comes back signed; keep the plain address.
+        video.setThumbnailUrl(mediaUrls.toStored(blankToNull(request.getThumbnailUrl())));
         if (request.getVisibility() != null) {
             video.setVisibility(request.getVisibility());
         }
@@ -311,6 +314,7 @@ public class VideoServiceImpl implements VideoService {
                 .sourceAuthor(source.getSourceAuthor())
                 .thumbnailUrl(source.getThumbnailUrl())
                 .durationSeconds(source.getDurationSeconds())
+                .durationMs(source.getDurationMs())
                 .width(source.getWidth())
                 .height(source.getHeight())
                 .fileSize(source.getFileSize())
@@ -402,15 +406,16 @@ public class VideoServiceImpl implements VideoService {
                 .ownerId(video.getOwnerId())
                 .ownerUsername(ownerUsername)
                 .language(video.getLanguage())
-                .videoUrl(video.getVideoUrl())
+                .videoUrl(mediaUrls.forBrowser(video.getVideoUrl()))
                 .storageKey(video.getStorageKey())
                 .importedFrom(video.getImportedFrom())
                 .source(sourceOf(video))
                 .externalId(video.getExternalId())
                 .sourceAuthor(video.getSourceAuthor())
                 .embedUrl(VideoLinks.embedUrl(sourceOf(video), video.getExternalId(), video.getVideoUrl()))
-                .thumbnailUrl(video.getThumbnailUrl())
+                .thumbnailUrl(mediaUrls.forBrowser(video.getThumbnailUrl()))
                 .durationSeconds(video.getDurationSeconds())
+                .durationMs(video.getDurationMs())
                 .width(video.getWidth())
                 .height(video.getHeight())
                 .fileSize(video.getFileSize())

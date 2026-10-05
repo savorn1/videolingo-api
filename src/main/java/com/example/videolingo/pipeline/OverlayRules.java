@@ -56,9 +56,26 @@ public final class OverlayRules {
         }
     }
 
-    public record Spec(List<Layer> layers) {
+    /**
+     * Subtitles burned in from a transcript of the video (rendered as an ASS file, see CaptionRules). A second
+     * transcript (a translation) adds a smaller second line under each one. sizePct is the font size as % of the
+     * video's height.
+     */
+    public record Captions(Long transcriptId, Long secondTranscriptId, String style, String position, double sizePct) {}
+
+    public static final Set<String> CAPTION_STYLES = Set.of("CLASSIC", "BOX", "YELLOW");
+    public static final Set<String> CAPTION_POSITIONS = Set.of("BOTTOM", "TOP");
+    public static final double MIN_CAPTION_PCT = 3;
+    public static final double MAX_CAPTION_PCT = 10;
+
+    /** Layers and/or subtitles; jobs saved before subtitles existed have none. */
+    public record Spec(List<Layer> layers, Captions captions) {
         public Spec {
             layers = layers == null ? List.of() : List.copyOf(layers);
+        }
+
+        public Spec(List<Layer> layers) {
+            this(layers, null);
         }
     }
 
@@ -70,8 +87,12 @@ public final class OverlayRules {
 
     /** Null = valid; a message otherwise. durationMs null = unknown. */
     public static String validate(Spec s, Long durationMs) {
-        if (s.layers().isEmpty()) {
+        if (s.layers().isEmpty() && s.captions() == null) {
             return "Add a text or image layer first";
+        }
+        String captionError = validateCaptions(s.captions());
+        if (captionError != null) {
+            return captionError;
         }
         if (s.layers().size() > MAX_LAYERS) {
             return "At most " + MAX_LAYERS + " layers";
@@ -81,6 +102,30 @@ public final class OverlayRules {
             if (err != null) {
                 return "Layer " + (i + 1) + ": " + err;
             }
+        }
+        return null;
+    }
+
+    /** Null = valid (or none). Whether the transcripts exist and belong to the video is checked by the service. */
+    static String validateCaptions(Captions c) {
+        if (c == null) {
+            return null;
+        }
+        if (c.transcriptId() == null) {
+            return "Subtitles: pick a transcript";
+        }
+        if (c.transcriptId().equals(c.secondTranscriptId())) {
+            return "Subtitles: the second line needs a different transcript";
+        }
+        if (c.style() != null && !CAPTION_STYLES.contains(c.style())) {
+            return "Subtitles: unknown style";
+        }
+        if (c.position() != null && !CAPTION_POSITIONS.contains(c.position())) {
+            return "Subtitles: unknown position";
+        }
+        if (c.sizePct() < MIN_CAPTION_PCT || c.sizePct() > MAX_CAPTION_PCT) {
+            return "Subtitles: the size must be between " + (int) MIN_CAPTION_PCT + "% and " + (int) MAX_CAPTION_PCT
+                    + "%";
         }
         return null;
     }
@@ -171,6 +216,9 @@ public final class OverlayRules {
         }
         if (images > 0) {
             parts.add(images == 1 ? "1 image" : images + " images");
+        }
+        if (s.captions() != null) {
+            parts.add(s.captions().secondTranscriptId() != null ? "two-line subtitles" : "subtitles");
         }
         return String.join(", ", parts);
     }

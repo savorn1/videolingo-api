@@ -8,6 +8,7 @@ import com.example.videolingo.learn.LearnService;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.repository.VideoViewRepository;
 import com.example.videolingo.repository.WatchProgressRepository;
+import com.example.videolingo.storage.MediaUrls;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -57,6 +58,7 @@ public class ProgressService {
             ProgressDto progress, String title, String thumbnailUrl, String language, Integer videoDurationSeconds) {}
 
     private final WatchProgressRepository progressRepository;
+    private final MediaUrls mediaUrls;
     private final VideoViewRepository viewRepository;
     private final VideoRepository videoRepository;
 
@@ -144,7 +146,11 @@ public class ProgressService {
                 .map(r -> {
                     Video v = videos.get(r.getVideoId());
                     return new ContinueItem(
-                            toDto(r), v.getTitle(), v.getThumbnailUrl(), v.getLanguage(), v.getDurationSeconds());
+                            toDto(r),
+                            v.getTitle(),
+                            mediaUrls.forBrowser(v.getThumbnailUrl()),
+                            v.getLanguage(),
+                            v.getDurationSeconds());
                 })
                 .toList();
     }

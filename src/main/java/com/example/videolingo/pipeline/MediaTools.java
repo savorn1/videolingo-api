@@ -30,11 +30,16 @@ public class MediaTools {
 
     /** The video's audio as speech-ready MP3 in the job's work directory. */
     public Path extractAudio(Video video, JobContext ctx) {
+        return extractAudio(video, video.getVideoUrl(), ctx);
+    }
+
+    /** Same, reading an uploaded or linked file from `readableUrl` (a signed link when the bucket is private). */
+    public Path extractAudio(Video video, String readableUrl, JobContext ctx) {
         Path out = ctx.workDir().resolve("audio.mp3");
         String input;
         if (video.getSource() == VideoSource.UPLOAD || video.getSource() == VideoSource.URL) {
             // ffmpeg reads http(s) directly and only pulls the audio it needs.
-            input = video.getVideoUrl();
+            input = readableUrl;
         } else {
             input = download(video, ctx).toString();
         }
@@ -182,6 +187,301 @@ public class MediaTools {
      */
     public Path burnSubtitles(String video, Path srt, JobContext ctx) {
         Path out = ctx.workDir().resolve("with-subtitles.mp4");
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-vf",
+                "subtitles=" + filterPath(srt),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?"));
+        command.addAll(h264(22));
+        command.addAll(List.of("-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(120), ctx, "ffmpeg");
+        return out;
+    }
+
+    /**
+     * Each box blurred in place: the picture is split, the box cut out, blurred and laid back over it. They chain
+     * with "," like any other filter, so the crop and the rest follow them. The radius stays under a quarter of the
+     * box's shorter side (the colour planes are half the size).
+     */
+    static List<String> blurFilters(List<VideoEditRules.BlurBox> boxes) {
+        List<String> filters = new ArrayList<>();
+        if (boxes == null) {
+            return filters;
+        }
+        for (int i = 0; i < boxes.size(); i++) {
+            VideoEditRules.BlurBox b = boxes.get(i);
+            int radius = Math.max(1, Math.min(40, Math.min(b.w(), b.h()) / 4 - 1));
+            filters.add("split=2[bm" + i + "][bt" + i + "];[bt" + i + "]crop=" + b.w() + ":" + b.h() + ":" + b.x() + ":"
+                    + b.y()
+                    + ",boxblur=luma_radius=" + radius + ":luma_power=2[bb" + i + "];[bm" + i + "][bb" + i + "]overlay="
+                    + b.x()
+                    + ":" + b.y());
+        }
+        return filters;
+    }
+
+    /** Plays one part of the clip at another speed; the sound keeps its pitch. `clipMs` = the clip's length. */
+    public Path speedRange(String video, VideoEditRules.SpeedRange r, boolean hasAudio, long clipMs, JobContext ctx) {
+        Path out = ctx.workDir().resolve("ramped.mp4");
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-filter_complex",
+                speedGraph(r, hasAudio, clipMs),
+                "-map",
+                "[v]"));
+        if (hasAudio) {
+            command.addAll(List.of("-map", "[a]", "-c:a", "aac", "-b:a", "128k"));
+        }
+        command.addAll(h264(20));
+        command.addAll(List.of("-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
+    /** Before / during / after, each a piece of the clip (empty ones left out), joined again. */
+    static String speedGraph(VideoEditRules.SpeedRange r, boolean hasAudio, long clipMs) {
+        java.util.function.LongFunction<String> sec = ms -> String.format(java.util.Locale.ROOT, "%.3f", ms / 1000.0);
+        List<String> parts = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        String speed = String.format(java.util.Locale.ROOT, "%s", r.speed());
+        String[][] pieces = {
+            {r.startMs() > 0 ? "end=" + sec.apply(r.startMs()) : null, "1"},
+            {"start=" + sec.apply(r.startMs()) + ":end=" + sec.apply(r.endMs()), speed},
+            {r.endMs() < clipMs ? "start=" + sec.apply(r.endMs()) : null, "1"}
+        };
+        int n = 0;
+        for (String[] piece : pieces) {
+            if (piece[0] == null) {
+                continue;
+            }
+            boolean changed = !piece[1].equals("1");
+            parts.add("[0:v]trim=" + piece[0] + ",setpts=" + (changed ? "(PTS-STARTPTS)/" + piece[1] : "PTS-STARTPTS")
+                    + "[v" + n + "]");
+            if (hasAudio) {
+                parts.add("[0:a]atrim=" + piece[0] + ",asetpts=PTS-STARTPTS"
+                        + (changed ? "," + String.join(",", atempoChain(Double.parseDouble(piece[1]))) : "") + "[a" + n
+                        + "]");
+            }
+            labels.add("[v" + n + "]" + (hasAudio ? "[a" + n + "]" : ""));
+            n++;
+        }
+        parts.add(String.join("", labels) + "concat=n=" + n + ":v=1:a=" + (hasAudio ? 1 : 0) + "[v]"
+                + (hasAudio ? "[a]" : ""));
+        return String.join(";", parts);
+    }
+
+    /** atempo steps for a speed: each step between 0.5 and 2 (so 0.25 = 0.5, 0.5 and 4 = 2, 2). */
+    static List<String> atempoChain(double speed) {
+        List<String> steps = new ArrayList<>();
+        double left = speed;
+        while (left < 0.5) {
+            steps.add("atempo=0.5");
+            left /= 0.5;
+        }
+        while (left > 2) {
+            steps.add("atempo=2");
+            left /= 2;
+        }
+        steps.add("atempo=" + String.format(java.util.Locale.ROOT, "%s", Math.round(left * 1000) / 1000.0));
+        return steps;
+    }
+
+    /** `second` over `video` in a corner, `sizePct` of its width, muted; the main video's sound and length are kept. */
+    public Path pip(String video, String second, String corner, double sizePct, int width, JobContext ctx) {
+        Path out = ctx.workDir().resolve("pip.mp4");
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-i",
+                second,
+                "-filter_complex",
+                pipGraph(corner, sizePct, width),
+                "-map",
+                "[v]",
+                "-map",
+                "0:a?",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k"));
+        command.addAll(h264(20));
+        command.addAll(List.of("-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
+    static String pipGraph(String corner, double sizePct, int width) {
+        int w = Math.max(2, (int) Math.round(width * sizePct / 100 / 2) * 2);
+        int margin = Math.max(2, (int) Math.round(width * 0.03));
+        String c = corner == null ? "BOTTOM_RIGHT" : corner;
+        String x = c.endsWith("LEFT") ? String.valueOf(margin) : "W-w-" + margin;
+        String y = c.startsWith("TOP") ? String.valueOf(margin) : "H-h-" + margin;
+        return "[1:v]scale=" + w + ":-2,setsar=1[p];[0:v][p]overlay=" + x + ":" + y + ":eof_action=pass[v]";
+    }
+
+    /** A silent title card video: `png` (the text, and the logo above it if any) centred on `background`, fading in and out. */
+    public Path card(
+            Path png,
+            String background,
+            int width,
+            int height,
+            long durationMs,
+            boolean sound,
+            String name,
+            JobContext ctx) {
+        Path out = ctx.workDir().resolve(name + ".mp4");
+        String d = String.format(java.util.Locale.ROOT, "%.3f", durationMs / 1000.0);
+        String fadeOut = String.format(java.util.Locale.ROOT, "%.3f", Math.max(0, durationMs - 400) / 1000.0);
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x" + background.substring(1) + ":s=" + width + "x" + height + ":r=" + MergeRules.FPS + ":d="
+                        + d,
+                "-i",
+                png.toString()));
+        if (sound) {
+            command.addAll(List.of("-f", "lavfi", "-i", "anullsrc=r=" + MergeRules.SAMPLE_RATE + ":cl=stereo"));
+        }
+        command.addAll(List.of(
+                "-filter_complex",
+                "[0:v][1:v]overlay=(W-w)/2:(H-h)/2,fade=t=in:st=0:d=0.4,fade=t=out:st=" + fadeOut
+                        + ":d=0.4,format=yuv420p[v]",
+                "-map",
+                "[v]"));
+        if (sound) {
+            command.addAll(List.of("-map", "2:a", "-c:a", "aac", "-b:a", "128k"));
+        }
+        command.addAll(List.of("-t", d));
+        command.addAll(h264(20));
+        command.add(out.toString());
+        run(command, Duration.ofMinutes(10), ctx, "ffmpeg");
+        return out;
+    }
+
+    /** Joins the parts in order (cards and the clip), all brought to one size, frame rate and sound format. */
+    public Path join(List<String> parts, int width, int height, boolean sound, JobContext ctx) {
+        Path out = ctx.workDir().resolve("with-cards.mp4");
+        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y"));
+        for (String part : parts) {
+            command.addAll(List.of("-i", part));
+        }
+        command.addAll(List.of("-filter_complex", joinGraph(parts.size(), width, height, sound), "-map", "[v]"));
+        if (sound) {
+            command.addAll(List.of("-map", "[a]", "-c:a", "aac", "-b:a", "128k"));
+        }
+        command.addAll(h264(20));
+        command.addAll(List.of("-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
+    static String joinGraph(int n, int width, int height, boolean sound) {
+        StringBuilder g = new StringBuilder();
+        StringBuilder labels = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            g.append("[")
+                    .append(i)
+                    .append(":v]scale=")
+                    .append(width)
+                    .append(":")
+                    .append(height)
+                    .append(":force_original_aspect_ratio=decrease,pad=")
+                    .append(width)
+                    .append(":")
+                    .append(height)
+                    .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,fps=")
+                    .append(MergeRules.FPS)
+                    .append(",format=yuv420p[v")
+                    .append(i)
+                    .append("];");
+            labels.append("[v").append(i).append("]");
+            if (sound) {
+                g.append("[")
+                        .append(i)
+                        .append(":a]aformat=sample_rates=")
+                        .append(MergeRules.SAMPLE_RATE)
+                        .append(":channel_layouts=stereo[a")
+                        .append(i)
+                        .append("];");
+                labels.append("[a").append(i).append("]");
+            }
+        }
+        return g.append(labels)
+                .append("concat=n=")
+                .append(n)
+                .append(":v=1:a=")
+                .append(sound ? 1 : 0)
+                .append("[v]")
+                .append(sound ? "[a]" : "")
+                .toString();
+    }
+
+    /** Holds the frame at `atMs` for `durationMs`, the sound pausing (silence) for as long; the rest plays on after. */
+    public Path freeze(String video, long atMs, long durationMs, boolean hasAudio, JobContext ctx) {
+        Path out = ctx.workDir().resolve("frozen.mp4");
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-filter_complex",
+                freezeGraph(atMs, durationMs, hasAudio),
+                "-map",
+                "[v]"));
+        if (hasAudio) {
+            command.addAll(List.of("-map", "[a]", "-c:a", "aac", "-b:a", "128k"));
+        }
+        command.addAll(h264(20));
+        command.addAll(List.of("-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
+    /** The picture up to `atMs` with its last frame held, then the rest; the sound gets the same gap as silence. */
+    static String freezeGraph(long atMs, long durationMs, boolean hasAudio) {
+        String at = String.format(java.util.Locale.ROOT, "%.3f", atMs / 1000.0);
+        String hold = String.format(java.util.Locale.ROOT, "%.3f", durationMs / 1000.0);
+        String graph = "[0:v]trim=end=" + at + ",setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=" + hold
+                + "[v1];[0:v]trim=start=" + at + ",setpts=PTS-STARTPTS[v2];[v1][v2]concat=n=2:v=1:a=0[v]";
+        if (hasAudio) {
+            graph += ";[0:a]atrim=end=" + at + ",asetpts=PTS-STARTPTS,apad=pad_dur=" + hold + "[a1];[0:a]atrim=start="
+                    + at + ",asetpts=PTS-STARTPTS[a2];[a1][a2]concat=n=2:v=0:a=1[a]";
+        }
+        return graph;
+    }
+
+    /** A looping GIF of startMs–endMs, `width` px wide, with its own colour palette so it isn't banded. */
+    public Path gif(String video, long startMs, long endMs, int width, int fps, JobContext ctx) {
+        Path out = ctx.workDir().resolve("clip.gif");
         run(
                 List.of(
                         props.ffmpeg(),
@@ -189,28 +489,47 @@ public class MediaTools {
                         "-loglevel",
                         "error",
                         "-y",
+                        "-ss",
+                        millis(startMs),
+                        "-t",
+                        millis(endMs - startMs),
                         "-i",
                         video,
                         "-vf",
-                        "subtitles=" + filterPath(srt),
-                        "-map",
-                        "0:v:0",
-                        "-map",
-                        "0:a?",
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "22",
-                        "-c:a",
-                        "aac",
-                        "-b:a",
-                        "128k",
-                        "-movflags",
-                        "+faststart",
+                        gifFilter(width, fps),
+                        "-loop",
+                        "0",
                         out.toString()),
-                Duration.ofMinutes(120),
+                Duration.ofMinutes(20),
+                ctx,
+                "ffmpeg");
+        return out;
+    }
+
+    static String gifFilter(int width, int fps) {
+        return "fps=" + fps + ",scale=" + width + ":-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse";
+    }
+
+    /** The frame at `atMs` as a JPG. */
+    public Path still(String video, long atMs, JobContext ctx) {
+        Path out = ctx.workDir().resolve("still.jpg");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-ss",
+                        millis(atMs),
+                        "-i",
+                        video,
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        "2",
+                        out.toString()),
+                Duration.ofMinutes(5),
                 ctx,
                 "ffmpeg");
         return out;
@@ -282,37 +601,96 @@ public class MediaTools {
             long padMs,
             VideoEditRules.Look look,
             JobContext ctx) {
+        return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, null, null, ctx);
+    }
+
+    /**
+     * Same, and an effect (see VideoEditRules.EFFECTS) and a fade in/out. The order is: crop, turn, resize, look,
+     * effect, held end, slow zoom, fade — so a zoom and the fades run to the very end of an extended trim.
+     */
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            long padMs,
+            VideoEditRules.Look look,
+            String effect,
+            VideoEditRules.Fade fade,
+            JobContext ctx) {
+        return trim(
+                video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, effect, fade, List.of(), ctx);
+    }
+
+    /** Same, with areas blurred first (in the original picture, before the crop). */
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            long padMs,
+            VideoEditRules.Look look,
+            String effect,
+            VideoEditRules.Fade fade,
+            List<VideoEditRules.BlurBox> blurs,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
+        // -ss before -i jumps to the start instead of decoding everything before it; still exact to the frame, as
+        // the clip is re-encoded. The clip's clock then starts at 0, and -t is its length.
         List<String> command = new ArrayList<>(List.of(
-                props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video, "-ss", millis(startMs)));
+                props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-ss", millis(startMs), "-i", video));
         if (endMs != null) {
-            command.addAll(List.of("-to", millis(endMs)));
+            command.addAll(List.of("-t", millis(endMs - startMs)));
         }
-        List<String> filters = new ArrayList<>(videoFilters(crop, rotate, flipH, flipV, scale));
+        boolean zoom = "ZOOM_IN".equals(effect) || "ZOOM_OUT".equals(effect);
+        boolean fading = fade != null && !fade.isNone();
+        Probe info = padMs > 0 || zoom || fading ? probe(video, ctx.workDir()) : null;
+        // Filters run on the clip's clock, which starts at 0.
+        long clipMs = endMs != null
+                ? endMs - startMs
+                : info != null && info.durationMs() != null ? Math.max(0, info.durationMs() - startMs) : 0;
+
+        List<String> filters = new ArrayList<>(blurFilters(blurs));
+        filters.addAll(videoFilters(crop, rotate, flipH, flipV, scale));
         filters.addAll(lookFilters(look));
+        filters.addAll(effectFilters(effect));
         if (padMs > 0) {
             filters.add(padFilter(padMs));
+        }
+        if (zoom) {
+            int[] size = outputSize(crop, rotate, scale, info.width(), info.height());
+            if (size == null) {
+                throw new JobFailure("The video's picture size couldn't be read, so it can't be zoomed");
+            }
+            filters.addAll(zoomFilters(effect, 0, clipMs, size[0], size[1]));
+        }
+        if (fading) {
+            filters.addAll(fadeFilters(fade, 0, clipMs, "fade"));
         }
         if (!filters.isEmpty()) {
             command.addAll(List.of("-vf", String.join(",", filters)));
         }
-        if (padMs > 0 && probe(video, ctx.workDir()).hasAudio()) {
-            command.addAll(List.of("-af", "apad"));
+        boolean sound = info != null && info.hasAudio();
+        List<String> audioFilters = new ArrayList<>();
+        if (padMs > 0 && sound) {
+            audioFilters.add("apad");
         }
-        command.addAll(List.of(
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "20",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-movflags",
-                "+faststart",
-                out.toString()));
+        if (fading && sound) {
+            audioFilters.addAll(fadeFilters(fade, 0, clipMs, "afade"));
+        }
+        if (!audioFilters.isEmpty()) {
+            command.addAll(List.of("-af", String.join(",", audioFilters)));
+        }
+        command.addAll(h264(20));
+        command.addAll(List.of("-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", endMs == null ? null : endMs - startMs);
         return out;
     }
@@ -349,25 +727,13 @@ public class MediaTools {
         } else {
             command.add("-an");
         }
-        command.addAll(List.of(
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "20",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-movflags",
-                "+faststart",
-                out.toString()));
+        command.addAll(h264(20));
+        command.addAll(List.of("-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out.toString()));
         run(command, Duration.ofMinutes(60), ctx, "ffmpeg", keptMs);
         return out;
     }
 
-    /** The -vf filters for a look (brightness, contrast, colour, tint, blur, vignette), in that order. Empty for a plain look. */
+    /** The -vf filters for a look (brightness, contrast, colour, warmth, tint, sharpen, blur, vignette), in that order. Empty for a plain look. */
     static List<String> lookFilters(VideoEditRules.Look look) {
         List<String> filters = new ArrayList<>();
         if (look == null || look.isPlain()) {
@@ -382,8 +748,16 @@ public class MediaTools {
                     look.contrast(),
                     saturation));
         }
+        if (look.warmth() != 0 && !look.grayscale()) {
+            // Midtones toward orange (warm) or blue (cool).
+            filters.add(String.format(
+                    java.util.Locale.ROOT, "colorbalance=rm=%.3f:bm=%.3f", 0.3 * look.warmth(), -0.3 * look.warmth()));
+        }
         if (look.sepia() && !look.grayscale()) {
             filters.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0:0:0:0:1");
+        }
+        if (look.sharpen()) {
+            filters.add("unsharp=5:5:0.8:5:5:0");
         }
         if (look.blur() > 0) {
             filters.add(String.format(java.util.Locale.ROOT, "gblur=sigma=%.2f", look.blur()));
@@ -392,6 +766,77 @@ public class MediaTools {
             filters.add("vignette=PI/4");
         }
         return filters;
+    }
+
+    /** The -vf filters for an effect that stays the same through the clip; the slow zooms are added by zoomFilters. */
+    static List<String> effectFilters(String effect) {
+        if ("GLITCH".equals(effect)) {
+            return List.of("rgbashift=rh=-6:bh=6", "noise=alls=10:allf=t");
+        }
+        if ("OLD_FILM".equals(effect)) {
+            return List.of(
+                    "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0:0:0:0:1",
+                    "noise=alls=20:allf=t+u",
+                    "vignette=PI/4",
+                    "eq=brightness='0.03*sin(40*t)':eval=frame");
+        }
+        return List.of();
+    }
+
+    /**
+     * A slow push-in (or pull-back) over the clip: the picture is scaled up frame by frame (by up to
+     * VideoEditRules.ZOOM_AMOUNT) and cut back to its own size around the centre. Times are on the source's clock.
+     */
+    static List<String> zoomFilters(String effect, long startMs, long endMs, int width, int height) {
+        double from = startMs / 1000.0;
+        double length = Math.max(0.001, (endMs - startMs) / 1000.0);
+        String progress = String.format(java.util.Locale.ROOT, "min(1,max(0,(t-%.3f)/%.3f))", from, length);
+        String amount = "ZOOM_OUT".equals(effect) ? "(1-" + progress + ")" : progress;
+        return List.of(
+                String.format(
+                        java.util.Locale.ROOT,
+                        "scale=w='trunc(iw*(1+%.3f*%s)/2)*2':h=-2:eval=frame",
+                        VideoEditRules.ZOOM_AMOUNT,
+                        amount),
+                "crop=" + width + ":" + height);
+    }
+
+    /** Fade in at the start and out at the end; `kind` is "fade" (picture, to the fade's colour) or "afade" (sound). */
+    static List<String> fadeFilters(VideoEditRules.Fade fade, long startMs, long endMs, String kind) {
+        List<String> filters = new ArrayList<>();
+        String color = "fade".equals(kind) && fade.white() ? ":color=white" : "";
+        if (fade.inMs() > 0) {
+            filters.add(String.format(
+                    java.util.Locale.ROOT,
+                    "%s=t=in:st=%.3f:d=%.3f%s",
+                    kind,
+                    startMs / 1000.0,
+                    fade.inMs() / 1000.0,
+                    color));
+        }
+        if (fade.outMs() > 0) {
+            filters.add(String.format(
+                    java.util.Locale.ROOT,
+                    "%s=t=out:st=%.3f:d=%.3f%s",
+                    kind,
+                    Math.max(startMs, endMs - fade.outMs()) / 1000.0,
+                    fade.outMs() / 1000.0,
+                    color));
+        }
+        return filters;
+    }
+
+    /** The picture size after crop, turn and resize; null when the source's size isn't known and nothing sets it. */
+    static int[] outputSize(CropRect crop, Integer rotate, ScaleSize scale, Integer width, Integer height) {
+        if (scale != null) {
+            return new int[] {scale.w(), scale.h()};
+        }
+        Integer w = crop != null ? Integer.valueOf(crop.w()) : width;
+        Integer h = crop != null ? Integer.valueOf(crop.h()) : height;
+        if (w == null || h == null) {
+            return null;
+        }
+        return VideoEditRules.swapsSides(rotate) ? new int[] {h, w} : new int[] {w, h};
     }
 
     /** Holds the last frame for `padMs` (plus a second of slack; -to caps the length). */
@@ -423,6 +868,14 @@ public class MediaTools {
             filters.add("scale=" + scale.w() + ":" + scale.h());
         }
         return filters;
+    }
+
+    /**
+     * The H.264 settings every re-encoded video gets. yuv420p because a 10-bit or 4:4:4 source would otherwise
+     * give an MP4 that most browsers and phones can't play.
+     */
+    static List<String> h264(int crf) {
+        return List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", String.valueOf(crf), "-pix_fmt", "yuv420p");
     }
 
     // ffmpeg's -ss/-to want HH:MM:SS.mmm.
@@ -557,7 +1010,8 @@ public class MediaTools {
         }
         command.addAll(List.of("-filter_complex", graph.filter()));
         if (graph.picture()) {
-            command.addAll(List.of("-map", "[vout]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20"));
+            command.addAll(List.of("-map", "[vout]"));
+            command.addAll(h264(20));
         } else {
             command.addAll(List.of("-map", "0:v:0?", "-c:v", "copy"));
         }
@@ -794,28 +1248,9 @@ public class MediaTools {
         for (Path layer : layers) {
             command.addAll(List.of("-loop", "1", "-framerate", "25", "-t", millis(durationMs), "-i", layer.toString()));
         }
-        command.addAll(List.of(
-                "-filter_complex",
-                graph.filter(),
-                "-map",
-                "[vout]",
-                "-map",
-                "0:a?",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "20",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "copy",
-                "-t",
-                millis(durationMs),
-                "-movflags",
-                "+faststart",
-                out.toString()));
+        command.addAll(List.of("-filter_complex", graph.filter(), "-map", "[vout]", "-map", "0:a?"));
+        command.addAll(h264(20));
+        command.addAll(List.of("-c:a", "copy", "-t", millis(durationMs), "-movflags", "+faststart", out.toString()));
         run(command, Duration.ofMinutes(120), ctx, "ffmpeg", durationMs);
         return out;
     }

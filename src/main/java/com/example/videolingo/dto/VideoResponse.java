@@ -34,6 +34,8 @@ public class VideoResponse {
     private String embedUrl;
     private String thumbnailUrl;
     private Integer durationSeconds;
+    // Exact length when known (null for videos not re-read since it was recorded); durationSeconds is rounded.
+    private Long durationMs;
     private Integer width;
     private Integer height;
     private Long fileSize;

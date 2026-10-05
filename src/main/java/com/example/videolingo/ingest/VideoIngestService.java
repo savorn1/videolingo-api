@@ -35,6 +35,7 @@ import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -108,6 +109,7 @@ public class VideoIngestService {
     private static final Pattern THUMB_KEY = Pattern.compile("^thumbnails/[0-9a-f-]{36}\\.[a-z0-9]{2,4}$");
 
     private final VideoInspector inspector;
+    private final MediaUrls mediaUrls;
     private final VideoRepository videoRepository;
     private final LanguageRepository languageRepository;
     private final LanguageService languageService;
@@ -263,7 +265,8 @@ public class VideoIngestService {
                 "PUT",
                 Map.of("Content-Type", contentType),
                 signed.expiration(),
-                publicUrl(key),
+                // Signed for reading, so the browser can preview the upload; saved back without the signature.
+                mediaUrls.forBrowser(publicUrl(key)),
                 contentType);
     }
 
@@ -585,6 +588,8 @@ public class VideoIngestService {
         video.setSource(VideoSource.UPLOAD);
         video.setStorageKey(key);
         video.setVideoUrl(publicUrl(key));
+        // Re-read from the new file by the next edit; the old file's exact length would be wrong.
+        video.setDurationMs(null);
         video.setFileSize(head.contentLength());
         video.setMimeType(head.contentType());
         if (r.getDurationSeconds() != null) {
@@ -659,7 +664,8 @@ public class VideoIngestService {
 
     // A thumbnail we stored ourselves must exist; any other http(s) image address is taken as given.
     private String thumbnail(String url) {
-        String t = blankToNull(url);
+        // A thumbnail picked from an upload comes back signed; keep the plain address.
+        String t = mediaUrls.toStored(blankToNull(url));
         if (t == null) {
             return null;
         }

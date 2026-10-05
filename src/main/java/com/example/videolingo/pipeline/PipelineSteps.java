@@ -20,6 +20,7 @@ import com.example.videolingo.repository.VideoExportRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.TranscriptService;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import com.example.videolingo.subtitle.Cue;
 import com.example.videolingo.subtitle.SubtitleFiles;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -59,6 +60,7 @@ public class PipelineSteps {
     private static final double MAX_SPEECH_RATE = 1.5;
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final TranscriptRepository transcriptRepository;
     private final TranscriptSegmentRepository segmentRepository;
     private final TranscriptService transcriptService;
@@ -351,6 +353,7 @@ public class PipelineSteps {
         if (video.getStorageKey() != null) {
             ctx.progress(5, "Fetching the video file");
             input = fetch(video.getStorageKey(), "source-video", ctx).toString();
+            recordExactLength(video, input, ctx);
         } else if (isLink(video.getSource())) {
             throw new JobFailure("Import this video into storage first — link videos can't be edited directly");
         } else {
@@ -362,8 +365,26 @@ public class PipelineSteps {
             case "CUT" -> cutJob(video, job, p, input, ctx);
             case "AUDIO" -> audioJob(video, job, p, input, ctx);
             case "EXTRACT" -> extractJob(video, job, p, input, ctx);
+            case "GIF" -> gifJob(video, job, p, input, ctx);
+            case "STILL" -> stillJob(video, job, p, input, ctx);
             case "OVERLAY" -> overlayJob(video, job, p, input, ctx);
             default -> trimJob(video, job, p, input, ctx);
+        }
+    }
+
+    // Older videos only have a rounded length; the file is on hand now, so the editor's limits get exact.
+    private void recordExactLength(Video video, String input, JobContext ctx) {
+        if (video.getDurationMs() != null) {
+            return;
+        }
+        try {
+            Long ms = media.probe(input, ctx.workDir()).durationMs();
+            if (ms != null && ms > 0) {
+                videoRepository.updateDurationMs(video.getId(), ms);
+                video.setDurationMs(ms);
+            }
+        } catch (JobFailure e) {
+            // The edit itself will say what's wrong with the file.
         }
     }
 
@@ -538,7 +559,8 @@ public class PipelineSteps {
         video.setSource(VideoSource.UPLOAD);
         video.setMimeType("video/mp4");
         video.setFileSize(size(out));
-        video.setDurationSeconds((int) Math.max(1, Math.round(probe.durationMs() / 1000.0)));
+        video.setDurationSeconds(seconds(probe.durationMs()));
+        video.setDurationMs(probe.durationMs());
         video.setWidth(frame.w());
         video.setHeight(frame.h());
         videoRepository.save(video);
@@ -626,7 +648,8 @@ public class PipelineSteps {
         video.setSource(VideoSource.UPLOAD);
         video.setMimeType("video/mp4");
         video.setFileSize(size(out));
-        video.setDurationSeconds((int) Math.max(1, Math.round(totalMs / 1000.0)));
+        video.setDurationSeconds(seconds(totalMs));
+        video.setDurationMs(totalMs);
         video.setWidth(frame.w());
         video.setHeight(frame.h());
         videoRepository.save(video);
@@ -758,7 +781,7 @@ public class PipelineSteps {
     private void audioJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
         AudioEditRules.Spec spec;
         try {
-            spec = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
+            spec = jobParams().treeToValue(p.get("audio"), AudioEditRules.Spec.class);
         } catch (Exception e) {
             throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
         }
@@ -778,11 +801,13 @@ public class PipelineSteps {
                 .operation(VideoClip.Operation.AUDIO)
                 .startMs(0)
                 .endMs(null)
-                .durationSeconds((int) (outMs / 1000))
+                .durationMs(outMs)
+                .durationSeconds(seconds(outMs))
                 .width(video.getWidth())
                 .height(video.getHeight())
                 .summary(text(p, "summary", AudioEditRules.describe(spec)))
                 .storageKey(key)
+                .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))
                 .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
@@ -793,11 +818,11 @@ public class PipelineSteps {
     private void overlayJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
         OverlayRules.Spec spec;
         try {
-            spec = objectMapper.treeToValue(p.get("overlay"), OverlayRules.Spec.class);
+            spec = jobParams().treeToValue(p.get("overlay"), OverlayRules.Spec.class);
         } catch (Exception e) {
             throw new JobFailure("The job's layers aren't valid: " + e.getMessage());
         }
-        if (spec == null || spec.layers().isEmpty()) {
+        if (spec == null || (spec.layers().isEmpty() && spec.captions() == null)) {
             throw new JobFailure("The job has no layers");
         }
         ctx.progress(5, "Reading the video");
@@ -809,22 +834,36 @@ public class PipelineSteps {
             throw new JobFailure("Couldn't read how long the video is");
         }
 
-        ctx.progress(10, "Preparing the layers");
-        List<Path> files = new ArrayList<>();
-        for (int i = 0; i < spec.layers().size(); i++) {
-            OverlayRules.Layer layer = spec.layers().get(i);
-            if (layer.textual()) {
-                Path png = ctx.workDir().resolve("layer-" + i + ".png");
-                TextRenderer.write(TextRenderer.render(layer, probe.height()), png);
-                files.add(png);
-            } else {
-                files.add(fetch(layer.imageKey(), "layer-" + i, ctx));
+        boolean captions = spec.captions() != null;
+        Path out = Path.of(input);
+        if (!spec.layers().isEmpty()) {
+            ctx.progress(10, "Preparing the layers");
+            List<Path> files = new ArrayList<>();
+            for (int i = 0; i < spec.layers().size(); i++) {
+                OverlayRules.Layer layer = spec.layers().get(i);
+                if (layer.textual()) {
+                    Path png = ctx.workDir().resolve("layer-" + i + ".png");
+                    TextRenderer.write(TextRenderer.render(layer, probe.height()), png);
+                    files.add(png);
+                } else {
+                    files.add(fetch(layer.imageKey(), "layer-" + i, ctx));
+                }
             }
-        }
-        OverlayRules.Graph graph = OverlayRules.build(spec, probe.width(), probe.durationMs());
+            OverlayRules.Graph graph = OverlayRules.build(spec, probe.width(), probe.durationMs());
 
-        ctx.progress(20, "Drawing the layers onto the video");
-        Path out = media.overlay(input, files, graph, probe.durationMs(), ctx.slice(20, 92));
+            ctx.progress(20, "Drawing the layers onto the video");
+            out = media.overlay(input, files, graph, probe.durationMs(), ctx.slice(20, captions ? 60 : 92));
+        }
+        if (captions) {
+            ctx.progress(captions && spec.layers().isEmpty() ? 20 : 60, "Burning in the subtitles");
+            Path ass = ctx.workDir().resolve("captions.ass");
+            try {
+                Files.writeString(ass, captionFile(spec.captions(), probe.width(), probe.height()));
+            } catch (IOException e) {
+                throw new JobFailure("Couldn't write the subtitles: " + e.getMessage());
+            }
+            out = media.burnSubtitles(out.toString(), ass, ctx);
+        }
         ctx.progress(93, "Saving the result");
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -835,16 +874,36 @@ public class PipelineSteps {
                 .operation(VideoClip.Operation.OVERLAY)
                 .startMs(0)
                 .endMs(null)
-                .durationSeconds((int) (probe.durationMs() / 1000))
+                .durationMs(probe.durationMs())
+                .durationSeconds(seconds(probe.durationMs()))
                 .width(probe.width())
                 .height(probe.height())
                 .summary(text(p, "summary", OverlayRules.describe(spec)))
                 .storageKey(key)
+                .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))
                 .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
                 .build());
         ctx.info("Text & overlay ready — preview it, then replace the original video or discard it");
+    }
+
+    /** The ASS file for burned-in subtitles: the transcript's lines, with the second transcript's under them. */
+    private String captionFile(OverlayRules.Captions c, int width, int height) {
+        List<CaptionRules.Line> first = captionLines(c.transcriptId());
+        if (first.isEmpty()) {
+            throw new JobFailure("The transcript for the subtitles has no lines");
+        }
+        List<CaptionRules.Line> second =
+                c.secondTranscriptId() != null ? captionLines(c.secondTranscriptId()) : List.of();
+        return CaptionRules.toAss(
+                CaptionRules.pair(first, second), c.style(), c.position(), c.sizePct(), width, height);
+    }
+
+    private List<CaptionRules.Line> captionLines(Long transcriptId) {
+        return segmentRepository.findByTranscriptIdOrderByPositionAsc(transcriptId).stream()
+                .map(s -> new CaptionRules.Line(s.getStartMs(), s.getEndMs(), s.getText()))
+                .toList();
     }
 
     private void extractJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
@@ -863,9 +922,11 @@ public class PipelineSteps {
                 .operation(VideoClip.Operation.EXTRACT)
                 .startMs(0)
                 .endMs(null)
+                .durationMs(durationMs(video))
                 .durationSeconds(video.getDurationSeconds())
                 .summary(wav ? "WAV · 16-bit PCM" : "MP3 · 192 kbps")
                 .storageKey(key)
+                .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))
                 .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
@@ -873,25 +934,121 @@ public class PipelineSteps {
         ctx.info("Audio extracted as " + downloadName);
     }
 
-    private void trimJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
-        long startMs = p.path("startMs").asLong(0);
-        Long endMs = p.hasNonNull("endMs") ? p.get("endMs").asLong() : null;
-        MediaTools.CropRect crop = crop(p.get("crop"));
-        MediaTools.ScaleSize scale = scale(p.get("scale"));
-        Integer rotate = p.hasNonNull("rotate") ? p.get("rotate").asInt() : null;
-        boolean flipH = p.path("flipH").asBoolean(false);
-        boolean flipV = p.path("flipV").asBoolean(false);
-
-        ctx.progress(20, "Trimming");
-        long padMs = p.path("padMs").asLong(0);
-        VideoEditRules.Look look = null;
-        if (p.hasNonNull("look")) {
+    /** The clip with its intro and/or outro card, all at the clip's size; silent cards when the clip has sound. */
+    private Path withCards(Path clip, VideoEditRules.Cards cards, JobContext ctx) {
+        MediaTools.Probe info = media.probe(clip.toString(), ctx.workDir());
+        if (info.width() == null || info.height() == null) {
+            throw new JobFailure("Couldn't read the clip's picture size for the cards");
+        }
+        int w = info.width();
+        int h = info.height();
+        java.awt.image.BufferedImage logo = null;
+        if (cards.logoKey() != null) {
             try {
-                look = objectMapper.treeToValue(p.get("look"), VideoEditRules.Look.class);
-            } catch (Exception e) {
-                throw new JobFailure("The job's look settings aren't valid: " + e.getMessage());
+                logo = javax.imageio.ImageIO.read(
+                        fetch(cards.logoKey(), "card-logo", ctx).toFile());
+            } catch (IOException e) {
+                throw new JobFailure("Couldn't read the logo: " + e.getMessage());
             }
         }
+        List<String> parts = new ArrayList<>();
+        if (cards.intro() != null) {
+            parts.add(cardVideo(cards.intro(), cards, logo, w, h, info.hasAudio(), "intro", ctx)
+                    .toString());
+        }
+        parts.add(clip.toString());
+        if (cards.outro() != null) {
+            parts.add(cardVideo(cards.outro(), cards, logo, w, h, info.hasAudio(), "outro", ctx)
+                    .toString());
+        }
+        return media.join(parts, w, h, info.hasAudio(), ctx);
+    }
+
+    private Path cardVideo(
+            VideoEditRules.Card card,
+            VideoEditRules.Cards cards,
+            java.awt.image.BufferedImage logo,
+            int w,
+            int h,
+            boolean sound,
+            String name,
+            JobContext ctx) {
+        java.awt.image.BufferedImage text = TextRenderer.render(CardRenderer.textLayer(card.text(), cards.color()), h);
+        Path png = ctx.workDir().resolve(name + "-card.png");
+        TextRenderer.write(CardRenderer.compose(text, logo, w, h), png);
+        return media.card(png, cards.background(), w, h, card.durationMs(), sound, name, ctx);
+    }
+
+    private void gifJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        long startMs = p.path("startMs").asLong(0);
+        long endMs = p.path("endMs").asLong(startMs + 3000);
+        int width = p.path("width").asInt(480);
+        ctx.progress(20, "Making the GIF");
+        Path out = media.gif(input, startMs, endMs, width, VideoEditRules.GIF_FPS, ctx.slice(20, 90));
+        ctx.progress(92, "Saving the GIF");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".gif";
+        String downloadName = fileName(video.getTitle(), null).replaceAll("\\.mp4$", ".gif");
+        upload(key, out, "image/gif", downloadName);
+        ctx.checkpoint();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.GIF)
+                .startMs(startMs)
+                .endMs(endMs)
+                .durationMs(endMs - startMs)
+                .durationSeconds(seconds(endMs - startMs))
+                .width(width)
+                .summary("GIF · " + width + " px wide · " + VideoEditRules.GIF_FPS + " fps")
+                .storageKey(key)
+                .sourceKey(video.getStorageKey())
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("GIF ready as " + downloadName);
+    }
+
+    private void stillJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        long atMs = p.path("atMs").asLong(0);
+        ctx.progress(30, "Taking the picture");
+        Path out = media.still(input, atMs, ctx.slice(30, 90));
+        ctx.progress(92, "Saving the picture");
+        String key = "edits/" + video.getId() + "/" + job.getId() + ".jpg";
+        String downloadName = fileName(video.getTitle(), null).replaceAll("\\.mp4$", ".jpg");
+        upload(key, out, "image/jpeg", downloadName);
+        ctx.checkpoint();
+        clipRepository.save(VideoClip.builder()
+                .videoId(video.getId())
+                .jobId(job.getId())
+                .operation(VideoClip.Operation.STILL)
+                .startMs(atMs)
+                .endMs(null)
+                .summary("JPG picture")
+                .storageKey(key)
+                .sourceKey(video.getStorageKey())
+                .url(publicUrl(key))
+                .sizeBytes(size(out))
+                .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
+                .build());
+        ctx.info("Picture ready as " + downloadName);
+    }
+
+    private void trimJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
+        EditJobParams.Trim t = read(p, EditJobParams.Trim.class, "trim settings");
+        long startMs = t.startMs();
+        Long endMs = t.endMs();
+        MediaTools.CropRect crop = t.crop();
+        MediaTools.ScaleSize scale = t.scale();
+        Integer rotate = t.rotate();
+        boolean flipH = Boolean.TRUE.equals(t.flipH());
+        boolean flipV = Boolean.TRUE.equals(t.flipV());
+        long padMs = t.padMs() == null ? 0 : t.padMs();
+        VideoEditRules.Look look = t.look();
+        String effect = t.effect();
+        VideoEditRules.Fade fade = t.fade();
+
+        ctx.progress(20, "Trimming");
         Path out = media.trim(
                 input,
                 startMs,
@@ -903,20 +1060,53 @@ public class PipelineSteps {
                 flipV,
                 padMs,
                 look,
-                ctx.slice(20, p.has("audio") ? 60 : 90));
-        String audioSummary = null;
-        if (p.hasNonNull("audio")) {
-            AudioEditRules.Spec audio;
-            try {
-                audio = objectMapper.treeToValue(p.get("audio"), AudioEditRules.Spec.class);
-            } catch (Exception e) {
-                throw new JobFailure("The job's audio settings aren't valid: " + e.getMessage());
+                effect,
+                fade,
+                t.blurs() == null ? List.of() : t.blurs(),
+                ctx.slice(20, t.audio() != null ? 60 : 90));
+        // Then, in order: a part at another speed, a held frame, a video in a corner (times on the trimmed clip as the
+        // editor shows it — the freeze is moved along by the speed change), the added audio, and last the cards.
+        if (t.speed() != null) {
+            ctx.progress(55, "Changing the speed");
+            MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
+            long clipLength =
+                    info.durationMs() != null ? info.durationMs() : t.speed().endMs();
+            out = media.speedRange(out.toString(), t.speed(), info.hasAudio(), clipLength, ctx);
+        }
+        if (t.freeze() != null) {
+            ctx.progress(t.audio() != null ? 58 : 88, "Holding the frame");
+            boolean sound = media.probe(out.toString(), ctx.workDir()).hasAudio();
+            long at = VideoEditRules.rampedMs(t.freeze().atMs(), t.speed());
+            out = media.freeze(out.toString(), at, t.freeze().durationMs(), sound, ctx);
+        }
+        if (t.pip() != null) {
+            ctx.progress(60, "Adding the picture in picture");
+            Video other = videoRepository
+                    .findById(t.pip().videoId())
+                    .orElseThrow(() -> new JobFailure("The video for the picture in picture is gone"));
+            if (other.getStorageKey() == null) {
+                throw new JobFailure("The video for the picture in picture isn't a stored file");
             }
+            Path second = fetch(other.getStorageKey(), "pip-source", ctx);
+            MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
+            if (info.width() == null) {
+                throw new JobFailure("Couldn't read the clip's picture size");
+            }
+            out = media.pip(
+                    out.toString(), second.toString(), t.pip().corner(), t.pip().sizePct(), info.width(), ctx);
+        }
+        String audioSummary = null;
+        if (t.audio() != null) {
             ctx.progress(60, "Adding the audio");
-            out = renderAudio(audio, out.toString(), ctx.slice(60, 90)).file();
-            audioSummary = AudioEditRules.describe(audio);
+            out = renderAudio(t.audio(), out.toString(), ctx.slice(60, 90)).file();
+        }
+        if (t.cards() != null) {
+            ctx.progress(90, "Adding the cards");
+            out = withCards(out, t.cards(), ctx);
+            audioSummary = AudioEditRules.describe(t.audio());
         }
         ctx.progress(92, "Saving the clip");
+        Long outMs = outputMs(out, endMs != null ? endMs - startMs : null, ctx);
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
         ctx.checkpoint();
@@ -943,15 +1133,23 @@ public class PipelineSteps {
                 .cropH(crop != null ? crop.h() : null)
                 .scaleW(scale != null ? scale.w() : null)
                 .scaleH(scale != null ? scale.h() : null)
-                .durationSeconds(clipSeconds(startMs, endMs, video))
+                .durationMs(outMs)
+                .durationSeconds(seconds(outMs))
                 .width(width)
                 .height(height)
                 .summary(joinSummary(
                         joinSummary(
-                                VideoEditRules.describeOrientation(rotate, flipH, flipV),
-                                VideoEditRules.describeLook(look)),
+                                joinSummary(
+                                        VideoEditRules.describeOrientation(rotate, flipH, flipV),
+                                        VideoEditRules.describeLook(look)),
+                                joinSummary(
+                                        joinSummary(
+                                                VideoEditRules.describeEffect(effect),
+                                                VideoEditRules.describeFade(fade)),
+                                        VideoEditRules.describeFreeze(t.freeze()))),
                         audioSummary))
                 .storageKey(key)
+                .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))
                 .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
@@ -964,18 +1162,17 @@ public class PipelineSteps {
     }
 
     private void cutJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
-        List<VideoEditRules.Segment> cuts = new ArrayList<>();
-        p.path("cuts")
-                .forEach(c -> cuts.add(new VideoEditRules.Segment(
-                        c.path("startMs").asLong(0),
-                        c.hasNonNull("endMs") ? c.get("endMs").asLong() : null)));
+        EditJobParams.Cut params = read(p, EditJobParams.Cut.class, "cut settings");
+        List<VideoEditRules.Segment> cuts = params.cuts() == null
+                ? List.of()
+                : params.cuts().stream()
+                        .map(c -> new VideoEditRules.Segment(c.startMs(), c.endMs()))
+                        .toList();
         if (cuts.isEmpty()) {
             throw new JobFailure("The job has no cuts");
         }
         MediaTools.Probe probe = media.probe(input, ctx.workDir());
-        Long totalMs = probe.durationMs() != null
-                ? probe.durationMs()
-                : video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null;
+        Long totalMs = probe.durationMs() != null ? probe.durationMs() : durationMs(video);
         long removedMs = 0;
         for (VideoEditRules.Segment c : cuts) {
             Long end = c.endMs() != null ? c.endMs() : totalMs;
@@ -985,6 +1182,7 @@ public class PipelineSteps {
 
         ctx.progress(20, "Cutting out " + cuts.size() + " range(s)");
         Path out = media.cut(input, cuts, probe.hasAudio(), keptMs, ctx.slice(20, 90));
+        Long outMs = outputMs(out, keptMs, ctx);
         ctx.progress(92, "Saving the clip");
         String key = "edits/" + video.getId() + "/" + job.getId() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -997,12 +1195,14 @@ public class PipelineSteps {
                 .operation(VideoClip.Operation.TRIM)
                 .startMs(0)
                 .endMs(null)
-                .durationSeconds(keptMs == null ? null : (int) (keptMs / 1000))
+                .durationMs(outMs)
+                .durationSeconds(seconds(outMs))
                 .width(video.getWidth())
                 .height(video.getHeight())
                 .summary("Cut out " + cuts.size() + (cuts.size() == 1 ? " range" : " ranges")
                         + (removedMs > 0 ? " (" + removedMs / 1000 + " s)" : ""))
                 .storageKey(key)
+                .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))
                 .sizeBytes(size(out))
                 .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
@@ -1011,19 +1211,19 @@ public class PipelineSteps {
     }
 
     private void splitJob(Video video, ProcessingJob job, JsonNode p, String input, JobContext ctx) {
-        List<JsonNode> segments = new ArrayList<>();
-        p.path("segments").forEach(segments::add);
+        EditJobParams.Split params = read(p, EditJobParams.Split.class, "split settings");
+        List<EditJobParams.Range> segments = params.segments() == null ? List.of() : params.segments();
         if (segments.isEmpty()) {
             throw new JobFailure("The job has no segments");
         }
         int n = segments.size();
         for (int i = 0; i < n; i++) {
-            JsonNode seg = segments.get(i);
-            long startMs = seg.path("startMs").asLong(0);
-            Long endMs = seg.hasNonNull("endMs") ? seg.get("endMs").asLong() : null;
+            long startMs = segments.get(i).startMs();
+            Long endMs = segments.get(i).endMs();
             JobContext slice = ctx.slice(i * 100 / n, (i + 1) * 100 / n);
             slice.progress(5, "Cutting segment " + (i + 1) + " of " + n);
             Path out = media.trim(input, startMs, endMs, null, null, slice.slice(5, 90));
+            Long outMs = outputMs(out, endMs != null ? endMs - startMs : null, ctx);
             String key = "edits/" + video.getId() + "/" + job.getId() + "-" + i + ".mp4";
             upload(key, out, "video/mp4", null);
             ctx.checkpoint();
@@ -1034,10 +1234,12 @@ public class PipelineSteps {
                     .segmentIndex(i)
                     .startMs(startMs)
                     .endMs(endMs)
-                    .durationSeconds(clipSeconds(startMs, endMs, video))
+                    .durationMs(outMs)
+                    .durationSeconds(seconds(outMs))
                     .width(video.getWidth())
                     .height(video.getHeight())
                     .storageKey(key)
+                    .sourceKey(video.getStorageKey())
                     .url(publicUrl(key))
                     .sizeBytes(size(out))
                     .expiresAt(LocalDateTime.now().plusHours(CLIP_HOURS))
@@ -1046,29 +1248,47 @@ public class PipelineSteps {
         ctx.info("Split into " + n + " segment(s) — review them, then add any as a new video or discard them");
     }
 
-    private static Integer clipSeconds(long startMs, Long endMs, Video video) {
-        Long end = endMs != null
-                ? endMs
-                : (video.getDurationSeconds() != null ? video.getDurationSeconds() * 1000L : null);
-        return end == null ? null : (int) Math.max(0, (end - startMs) / 1000);
+    /** The video's exact length, or its rounded one for a video not re-read since exact lengths were recorded. */
+    static Long durationMs(Video video) {
+        if (video.getDurationMs() != null) {
+            return video.getDurationMs();
+        }
+        return video.getDurationSeconds() == null ? null : video.getDurationSeconds() * 1000L;
     }
 
-    private static MediaTools.CropRect crop(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return null;
-        }
-        return new MediaTools.CropRect(
-                node.path("x").asInt(0),
-                node.path("y").asInt(0),
-                node.path("w").asInt(),
-                node.path("h").asInt());
+    /** The whole seconds shown for a length (rounded, at least 1), as videos have always been recorded. */
+    static Integer seconds(Long ms) {
+        return ms == null ? null : (int) Math.max(1, Math.round(ms / 1000.0));
     }
 
-    private static MediaTools.ScaleSize scale(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return null;
+    /** How long a finished file actually plays; `expected` when it can't be read. */
+    private Long outputMs(Path out, Long expected, JobContext ctx) {
+        try {
+            Long ms = media.probe(out.toString(), ctx.workDir()).durationMs();
+            return ms != null ? ms : expected;
+        } catch (JobFailure e) {
+            return expected;
         }
-        return new MediaTools.ScaleSize(node.path("w").asInt(), node.path("h").asInt());
+    }
+
+    private volatile ObjectMapper jobParams;
+
+    /** Reads job parameters, skipping fields this build doesn't know (see EditJobParams.reader). */
+    private ObjectMapper jobParams() {
+        ObjectMapper m = jobParams;
+        if (m == null) {
+            m = EditJobParams.reader(objectMapper);
+            jobParams = m;
+        }
+        return m;
+    }
+
+    private <T> T read(JsonNode params, Class<T> type, String what) {
+        try {
+            return jobParams().treeToValue(params, type);
+        } catch (Exception e) {
+            throw new JobFailure("The job's " + what + " aren't valid: " + e.getMessage());
+        }
     }
 
     private static long size(Path file) {
@@ -1130,7 +1350,7 @@ public class PipelineSteps {
         if (video.getVideoUrl() == null || video.getVideoUrl().isBlank()) {
             throw new JobFailure("The video has no media link to transcribe");
         }
-        Path audio = media.extractAudio(video, ctx.slice(0, 30));
+        Path audio = media.extractAudio(video, mediaUrls.forServer(video.getVideoUrl()), ctx.slice(0, 30));
         List<Path> chunks = media.split(audio, ctx);
         List<TranscriptSegmentDto> segments = new ArrayList<>();
         String languageName = translator.name(language);

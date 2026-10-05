@@ -12,6 +12,7 @@ import com.example.videolingo.repository.VideoClipRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.VideoVersionService;
+import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
@@ -26,6 +27,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // Trimming/cropping/scaling a range of a video, splitting it into segments,
 // re-rendering its sound (AUDIO) or extracting it (EXTRACT) — all run as EDIT
@@ -54,7 +57,20 @@ public class VideoEditService {
             Boolean flipV,
             TrimAudio audio,
             Boolean extend,
-            VideoEditRules.Look look) {}
+            VideoEditRules.Look look,
+            String effect,
+            VideoEditRules.Fade fade,
+            VideoEditRules.Freeze freeze,
+            List<VideoEditRules.BlurBox> blurs,
+            VideoEditRules.SpeedRange speed,
+            VideoEditRules.Pip pip,
+            VideoEditRules.Cards cards) {}
+
+    /** A GIF of a short range (endMs required); width 320/480/640, 480 when left out. */
+    public record GifRequest(long startMs, long endMs, Integer width) {}
+
+    /** A still picture (JPG) of the frame at atMs. */
+    public record StillRequest(long atMs) {}
 
     /** Sound added to a trim, on the trimmed video's own timeline: an uploaded file to use instead of the video's sound and/or background music. */
     public record TrimAudio(String replaceKey, MusicInput music) {}
@@ -108,7 +124,8 @@ public class VideoEditService {
             Integer height,
             String summary,
             LocalDateTime createdAt,
-            LocalDateTime expiresAt) {}
+            LocalDateTime expiresAt,
+            Long durationMs) {}
 
     public record EditOverview(List<ClipResponse> clips, List<ProcessingJobResponse> jobs) {}
 
@@ -116,6 +133,7 @@ public class VideoEditService {
     public record PromoteResult(String kind, Long newVideoId) {}
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final VideoClipRepository clipRepository;
     private final ProcessingJobRepository jobRepository;
     private final ProcessingJobService jobService;
@@ -124,6 +142,8 @@ public class VideoEditService {
     private final ObjectMapper objectMapper;
     private final MediaTools media;
     private final PipelineProperties pipelineProps;
+    private final SourceFileCache sourceFiles;
+    private final com.example.videolingo.repository.TranscriptRepository transcriptRepository;
 
     /** Recently drawn waveforms, by source + resolution (a file doesn't change under the same key). */
     private final Map<String, Waveform> waveforms =
@@ -139,7 +159,7 @@ public class VideoEditService {
         findVideo(videoId);
         List<ClipResponse> clips =
                 clipRepository.findByVideoIdAndExpiresAtAfterOrderByIdDesc(videoId, LocalDateTime.now()).stream()
-                        .map(VideoEditService::toResponse)
+                        .map(this::toResponse)
                         .toList();
         List<ProcessingJobResponse> jobs =
                 jobRepository.findTop10ByVideoIdAndTypeOrderByIdDesc(videoId, ProcessingJobType.EDIT).stream()
@@ -150,7 +170,7 @@ public class VideoEditService {
 
     @Transactional
     public ProcessingJobResponse startTrim(Long videoId, TrimRequest request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         boolean extend = Boolean.TRUE.equals(request.extend());
         Long videoMs = durationMs(video);
@@ -175,15 +195,34 @@ public class VideoEditService {
         }
         require(VideoEditRules.validateRotation(request.rotate()));
         require(VideoEditRules.validateLook(request.look()));
+        require(VideoEditRules.validateEffect(request.effect()));
+        Long clipEnd = request.endMs() != null ? request.endMs() : videoMs;
+        require(VideoEditRules.validateFade(request.fade(), clipEnd != null ? clipEnd - request.startMs() : null));
+        Long clipMs = clipEnd != null ? clipEnd - request.startMs() : null;
+        require(VideoEditRules.validateFreeze(request.freeze(), clipMs));
+        require(VideoEditRules.validateBlurs(request.blurs(), video.getWidth(), video.getHeight()));
+        require(VideoEditRules.validateSpeedRange(request.speed(), clipMs));
+        require(VideoEditRules.validatePip(request.pip()));
+        if (request.pip() != null) {
+            Video other = findVideo(request.pip().videoId());
+            if (other.isDeleted() || other.getStorageKey() == null) {
+                throw new AppException(
+                        HttpStatus.BAD_REQUEST,
+                        "Picture in picture: that video isn't a stored file (or is in the trash)");
+            }
+        }
+        require(VideoEditRules.validateCards(request.cards()));
         AudioEditRules.Spec audio = null;
         if (request.audio() != null) {
+            // The audio pass runs on the trimmed (already faded) result, so added sound gets the same fades.
+            boolean fades = request.fade() != null && !request.fade().isNone();
             audio = toSpec(new AudioRequest(
                     request.audio().replaceKey(),
                     null,
                     null,
                     null,
-                    null,
-                    null,
+                    fades && request.fade().inMs() > 0 ? request.fade().inMs() : null,
+                    fades && request.fade().outMs() > 0 ? request.fade().outMs() : null,
                     null,
                     null,
                     null,
@@ -192,62 +231,78 @@ public class VideoEditService {
                     null,
                     null,
                     request.audio().music()));
-            Long total = durationMs(video);
+            Long total = videoMs;
             long end = request.endMs() != null ? request.endMs() : total != null ? total : -1;
             require(AudioEditRules.validate(audio, end > request.startMs() ? end - request.startMs() : null));
         }
         requireNoActiveJob(videoId);
 
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("operation", "TRIM");
-        params.put("startMs", request.startMs());
-        if (request.endMs() != null) {
-            params.put("endMs", request.endMs());
-        }
-        if (request.crop() != null) {
-            params.put(
-                    "crop",
-                    Map.of(
-                            "x",
-                            request.crop().x(),
-                            "y",
-                            request.crop().y(),
-                            "w",
-                            request.crop().w(),
-                            "h",
-                            request.crop().h()));
-        }
-        if (request.scale() != null) {
-            params.put(
-                    "scale",
-                    Map.of("w", request.scale().w(), "h", request.scale().h()));
-        }
-        if (request.rotate() != null && request.rotate() != 0) {
-            params.put("rotate", request.rotate());
-        }
-        if (Boolean.TRUE.equals(request.flipH())) {
-            params.put("flipH", true);
-        }
-        if (Boolean.TRUE.equals(request.flipV())) {
-            params.put("flipV", true);
-        }
-        if (audio != null) {
-            params.put("audio", audio);
-        }
-        if (padMs > 0) {
-            params.put("padMs", padMs);
-        }
-        if (request.look() != null && !request.look().isPlain()) {
-            params.put("look", request.look());
-        }
+        EditJobParams.Trim params = new EditJobParams.Trim(
+                "TRIM",
+                request.startMs(),
+                request.endMs(),
+                request.crop() == null
+                        ? null
+                        : new MediaTools.CropRect(
+                                request.crop().x(),
+                                request.crop().y(),
+                                request.crop().w(),
+                                request.crop().h()),
+                request.scale() == null
+                        ? null
+                        : new MediaTools.ScaleSize(
+                                request.scale().w(), request.scale().h()),
+                request.rotate() != null && request.rotate() != 0 ? request.rotate() : null,
+                Boolean.TRUE.equals(request.flipH()) ? true : null,
+                Boolean.TRUE.equals(request.flipV()) ? true : null,
+                audio,
+                padMs > 0 ? padMs : null,
+                request.look() != null && !request.look().isPlain() ? request.look() : null,
+                request.effect() != null && !"NONE".equals(request.effect()) ? request.effect() : null,
+                request.fade() != null && !request.fade().isNone() ? request.fade() : null,
+                request.freeze(),
+                request.blurs() == null || request.blurs().isEmpty() ? null : request.blurs(),
+                request.speed(),
+                request.pip(),
+                request.cards());
         ProcessingJob job = jobService.enqueue(
                 videoId, ProcessingJobType.EDIT, toJson(params), "Trim/crop requested by " + username);
         return jobService.getJob(job.getId());
     }
 
     @Transactional
+    public ProcessingJobResponse startGif(Long videoId, GifRequest request, String username) {
+        Video video = lockVideo(videoId);
+        requireEditable(video);
+        int width = request.width() == null ? 480 : request.width();
+        require(VideoEditRules.validateGif(request.startMs(), request.endMs(), width, durationMs(video)));
+        requireNoActiveJob(videoId);
+        ProcessingJob job = jobService.enqueue(
+                videoId,
+                ProcessingJobType.EDIT,
+                toJson(Map.of(
+                        "operation", "GIF", "startMs", request.startMs(), "endMs", request.endMs(), "width", width)),
+                "GIF requested by " + username);
+        return jobService.getJob(job.getId());
+    }
+
+    @Transactional
+    public ProcessingJobResponse startStill(Long videoId, StillRequest request, String username) {
+        Video video = lockVideo(videoId);
+        requireEditable(video);
+        require(VideoEditRules.validateStill(request.atMs(), durationMs(video)));
+        requireNoActiveJob(videoId);
+        ProcessingJob job = jobService.enqueue(
+                videoId,
+                ProcessingJobType.EDIT,
+                toJson(Map.of("operation", "STILL", "atMs", request.atMs())),
+                "Still picture requested by " + username);
+        return jobService.getJob(job.getId());
+    }
+
+    @Transactional
     public ProcessingJobResponse startSplit(Long videoId, SplitRequest request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         List<SegmentRange> segments = request.segments() == null ? List.of() : request.segments();
         require(VideoEditRules.validateSegments(
@@ -257,19 +312,11 @@ public class VideoEditService {
                 durationMs(video)));
         requireNoActiveJob(videoId);
 
-        List<Map<String, Object>> segmentParams = segments.stream()
-                .map(s -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("startMs", s.startMs());
-                    if (s.endMs() != null) {
-                        m.put("endMs", s.endMs());
-                    }
-                    return m;
-                })
-                .toList();
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("operation", "SPLIT");
-        params.put("segments", segmentParams);
+        EditJobParams.Split params = new EditJobParams.Split(
+                "SPLIT",
+                segments.stream()
+                        .map(seg -> new EditJobParams.Range(seg.startMs(), seg.endMs()))
+                        .toList());
         ProcessingJob job = jobService.enqueue(
                 videoId,
                 ProcessingJobType.EDIT,
@@ -280,7 +327,7 @@ public class VideoEditService {
 
     @Transactional
     public ProcessingJobResponse startCut(Long videoId, CutRequest request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         List<SegmentRange> cuts = request == null || request.cuts() == null ? List.of() : request.cuts();
         List<VideoEditRules.Segment> segments = cuts.stream()
@@ -289,30 +336,21 @@ public class VideoEditService {
         require(VideoEditRules.validateCuts(segments, durationMs(video)));
         requireNoActiveJob(videoId);
 
-        List<Map<String, Object>> cutParams = VideoEditRules.mergeCuts(segments).stream()
-                .map(c -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("startMs", c.startMs());
-                    if (c.endMs() != null) {
-                        m.put("endMs", c.endMs());
-                    }
-                    return m;
-                })
+        List<EditJobParams.Range> merged = VideoEditRules.mergeCuts(segments).stream()
+                .map(c -> new EditJobParams.Range(c.startMs(), c.endMs()))
                 .toList();
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("operation", "CUT");
-        params.put("cuts", cutParams);
+        EditJobParams.Cut params = new EditJobParams.Cut("CUT", merged);
         ProcessingJob job = jobService.enqueue(
                 videoId,
                 ProcessingJobType.EDIT,
                 toJson(params),
-                "Cut out " + cutParams.size() + " range(s) requested by " + username);
+                "Cut out " + merged.size() + " range(s) requested by " + username);
         return jobService.getJob(job.getId());
     }
 
     @Transactional
     public ProcessingJobResponse startAudio(Long videoId, AudioRequest request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         AudioEditRules.Spec spec = toSpec(request);
         require(AudioEditRules.validate(spec, durationMs(video)));
@@ -333,7 +371,7 @@ public class VideoEditService {
 
     @Transactional
     public ProcessingJobResponse startExtract(Long videoId, ExtractRequest request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         String format = request == null || request.format() == null
                 ? "MP3"
@@ -352,10 +390,16 @@ public class VideoEditService {
 
     @Transactional
     public ProcessingJobResponse startOverlay(Long videoId, OverlayRules.Spec request, String username) {
-        Video video = findVideo(videoId);
+        Video video = lockVideo(videoId);
         requireEditable(video);
         OverlayRules.Spec spec = request == null ? new OverlayRules.Spec(List.of()) : request;
         require(OverlayRules.validate(spec, durationMs(video)));
+        if (spec.captions() != null) {
+            requireOwnTranscript(spec.captions().transcriptId(), videoId);
+            if (spec.captions().secondTranscriptId() != null) {
+                requireOwnTranscript(spec.captions().secondTranscriptId(), videoId);
+            }
+        }
         if (spec.layers().stream()
                 .anyMatch(l -> l.textual() && !TextRenderer.fonts().contains(l.font()))) {
             throw new AppException(
@@ -373,6 +417,16 @@ public class VideoEditService {
                 toJson(params),
                 "Text & overlay (" + summary + ") requested by " + username);
         return jobService.getJob(job.getId());
+    }
+
+    private void requireOwnTranscript(Long transcriptId, Long videoId) {
+        boolean ok = transcriptRepository
+                .findById(transcriptId)
+                .map(t -> videoId.equals(t.getVideoId()))
+                .orElse(false);
+        if (!ok) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Subtitles: that transcript isn't one of this video's");
+        }
     }
 
     public List<String> fonts() {
@@ -404,10 +458,9 @@ public class VideoEditService {
         try {
             dir = Files.createTempDirectory(Path.of(pipelineProps.workDirectory()), "waveform-");
             String input = key != null && !key.isBlank()
-                    ? steps.download(key, dir, "audio").toString()
+                    ? sourceFiles.get(key).toString()
                     : video.getStorageKey() != null
-                            ? steps.download(video.getStorageKey(), dir, "video")
-                                    .toString()
+                            ? sourceFiles.get(video.getStorageKey()).toString()
                             : video.getVideoUrl();
             MediaTools.Peaks peaks = media.peaks(input, n, dir);
             Waveform result = new Waveform(peaks.durationMs(), peaks.values());
@@ -451,7 +504,7 @@ public class VideoEditService {
             if (heat == null || width == null || height == null) {
                 dir = Files.createTempDirectory(Path.of(pipelineProps.workDirectory()), "autocrop-");
                 String input = video.getStorageKey() != null
-                        ? steps.download(video.getStorageKey(), dir, "video").toString()
+                        ? sourceFiles.get(video.getStorageKey()).toString()
                         : video.getVideoUrl();
                 if (width == null || height == null) {
                     MediaTools.Probe probe = media.probe(input, dir);
@@ -552,12 +605,22 @@ public class VideoEditService {
     @Transactional
     public PromoteResult promote(Long videoId, Long clipId, String username, boolean asNew, String title) {
         VideoClip clip = findClip(videoId, clipId);
-        if (clip.getOperation() == VideoClip.Operation.EXTRACT) {
+        if (clip.getOperation().downloadOnly()) {
             throw new AppException(
-                    HttpStatus.BAD_REQUEST, "An extracted audio file can't replace the video — download it instead");
+                    HttpStatus.BAD_REQUEST,
+                    (clip.getOperation() == VideoClip.Operation.EXTRACT
+                                    ? "An extracted audio file"
+                                    : clip.getOperation() == VideoClip.Operation.GIF ? "A GIF" : "A picture")
+                            + " can't become a video — download it instead");
         }
         if (clip.getOperation().replacesVideo() && !asNew) {
-            Video video = findVideo(videoId);
+            Video video = lockVideo(videoId);
+            if (isStale(clip, video)) {
+                throw new AppException(
+                        HttpStatus.CONFLICT,
+                        "The video has been replaced since this edit was made, so applying it would undo that change"
+                                + " — add it as a new video instead, or redo the edit");
+            }
             // The superseded file becomes a version instead of being deleted.
             versionService.snapshot(
                     video,
@@ -572,6 +635,7 @@ public class VideoEditService {
             if (clip.getDurationSeconds() != null) {
                 video.setDurationSeconds(clip.getDurationSeconds());
             }
+            video.setDurationMs(clip.getDurationMs());
             if (clip.getWidth() != null) {
                 video.setWidth(clip.getWidth());
             }
@@ -594,6 +658,7 @@ public class VideoEditService {
                 .storageKey(clip.getStorageKey())
                 .source(VideoSource.UPLOAD)
                 .durationSeconds(clip.getDurationSeconds())
+                .durationMs(clip.getDurationMs())
                 .width(clip.getWidth())
                 .height(clip.getHeight())
                 .fileSize(clip.getSizeBytes())
@@ -608,6 +673,11 @@ public class VideoEditService {
                 videoId,
                 username);
         return new PromoteResult("NEW_VIDEO", created.getId());
+    }
+
+    /** Made from a file the video no longer has. Results made before the source was recorded aren't checked. */
+    static boolean isStale(VideoClip clip, Video video) {
+        return clip.getSourceKey() != null && !clip.getSourceKey().equals(video.getStorageKey());
     }
 
     /** The longest a video title may be (the column's length). */
@@ -629,6 +699,9 @@ public class VideoEditService {
             case AUDIO -> " (edited audio)";
             case OVERLAY -> " (with text & overlays)";
             case EXTRACT -> " (audio)";
+            // Never promoted (downloadOnly), but every result type needs a name.
+            case GIF -> " (GIF)";
+            case STILL -> " (picture)";
         };
         String base = sourceTitle == null ? "Video" : sourceTitle.strip();
         // The end of the title is the part that says what this is, so the original's is what gets shortened.
@@ -640,7 +713,7 @@ public class VideoEditService {
     public void remove(Long videoId, Long clipId) {
         VideoClip clip = findClip(videoId, clipId);
         clipRepository.delete(clip);
-        steps.deleteObject(clip.getStorageKey());
+        afterCommit(() -> steps.deleteObject(clip.getStorageKey()));
     }
 
     // Unpromoted clips are temporary: remove expired ones and their files.
@@ -648,10 +721,9 @@ public class VideoEditService {
     @Transactional
     public void deleteExpired() {
         List<VideoClip> expired = clipRepository.findByExpiresAtBefore(LocalDateTime.now());
-        for (VideoClip c : expired) {
-            steps.deleteObject(c.getStorageKey());
-        }
         clipRepository.deleteAll(expired);
+        List<String> keys = expired.stream().map(VideoClip::getStorageKey).toList();
+        afterCommit(() -> keys.forEach(steps::deleteObject));
         if (!expired.isEmpty()) {
             log.info("Deleted {} expired video clip(s)", expired.size());
         }
@@ -690,6 +762,20 @@ public class VideoEditService {
         }
     }
 
+    // A file removed before the commit would be lost if the commit then failed, leaving a row that points at nothing.
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
     private static void require(String error) {
         if (error != null) {
             throw new AppException(HttpStatus.BAD_REQUEST, error);
@@ -697,7 +783,14 @@ public class VideoEditService {
     }
 
     private static Long durationMs(Video video) {
-        return video.getDurationSeconds() == null ? null : video.getDurationSeconds() * 1000L;
+        return PipelineSteps.durationMs(video);
+    }
+
+    // Queued edits are counted then added, so requests for the same video take turns (see requireNoActiveJob).
+    private Video lockVideo(Long videoId) {
+        return videoRepository
+                .findByIdForUpdate(videoId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + videoId));
     }
 
     private Video findVideo(Long videoId) {
@@ -721,7 +814,7 @@ public class VideoEditService {
         }
     }
 
-    private static ClipResponse toResponse(VideoClip c) {
+    private ClipResponse toResponse(VideoClip c) {
         CropRect crop = c.hasCrop() ? new CropRect(c.getCropX(), c.getCropY(), c.getCropW(), c.getCropH()) : null;
         ScaleSize scale =
                 c.getScaleW() != null && c.getScaleH() != null ? new ScaleSize(c.getScaleW(), c.getScaleH()) : null;
@@ -734,13 +827,14 @@ public class VideoEditService {
                 c.getEndMs(),
                 crop,
                 scale,
-                c.getUrl(),
+                mediaUrls.forBrowser(c.getUrl()),
                 c.getSizeBytes(),
                 c.getDurationSeconds(),
                 c.getWidth(),
                 c.getHeight(),
                 c.getSummary(),
                 c.getCreatedAt(),
-                c.getExpiresAt());
+                c.getExpiresAt(),
+                c.getDurationMs());
     }
 }

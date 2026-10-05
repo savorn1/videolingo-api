@@ -49,4 +49,16 @@ class PromotedTitleTest {
     void aMissingOriginalTitleStillGivesATitle() {
         assertEquals("Video (trimmed)", VideoEditService.promotedTitle(null, Operation.TRIM, null, null));
     }
+
+    @Test
+    void downloadOnlyResultsAreKnown() {
+        org.junit.jupiter.api.Assertions.assertTrue(
+                com.example.videolingo.entity.VideoClip.Operation.GIF.downloadOnly());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                com.example.videolingo.entity.VideoClip.Operation.STILL.downloadOnly());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                com.example.videolingo.entity.VideoClip.Operation.EXTRACT.downloadOnly());
+        org.junit.jupiter.api.Assertions.assertFalse(
+                com.example.videolingo.entity.VideoClip.Operation.TRIM.downloadOnly());
+    }
 }

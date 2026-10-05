@@ -11,6 +11,7 @@ import com.example.videolingo.repository.VideoDubRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.ProcessingJobService;
+import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -60,6 +61,7 @@ public class DubService {
     public record CreateDubRequest(String language, String voice) {}
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final VideoDubRepository dubRepository;
     private final ProcessingJobRepository jobRepository;
     private final ProcessingJobService jobService;
@@ -198,7 +200,7 @@ public class DubService {
                 translator.name(d.getLanguage()),
                 d.getVoice(),
                 voiceName,
-                d.getAudioUrl(),
+                mediaUrls.forBrowser(d.getAudioUrl()),
                 d.getMimeType(),
                 d.getDurationMs(),
                 d.getSizeBytes(),

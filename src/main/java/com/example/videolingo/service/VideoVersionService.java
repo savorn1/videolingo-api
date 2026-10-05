@@ -5,6 +5,7 @@ import com.example.videolingo.entity.VideoVersion;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.repository.VideoVersionRepository;
+import com.example.videolingo.storage.MediaUrls;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class VideoVersionService {
             LocalDateTime createdAt) {}
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final VideoVersionRepository versionRepository;
     private final S3Client s3;
 
@@ -48,7 +50,7 @@ public class VideoVersionService {
     public List<VersionResponse> list(Long videoId) {
         requireVideo(videoId);
         return versionRepository.findByVideoIdOrderByIdDesc(videoId).stream()
-                .map(VideoVersionService::toResponse)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -80,6 +82,8 @@ public class VideoVersionService {
         // The current file becomes a version too, so restoring is never a one-way trip.
         snapshot(video, "Replaced by restoring an earlier version", actingUsername);
         video.setStorageKey(version.getStorageKey());
+        // Versions keep only the rounded length; the exact one is re-read by the next edit.
+        video.setDurationMs(null);
         video.setVideoUrl(version.getUrl());
         video.setFileSize(version.getFileSize());
         video.setMimeType(version.getMimeType());
@@ -152,10 +156,10 @@ public class VideoVersionService {
         }
     }
 
-    private static VersionResponse toResponse(VideoVersion v) {
+    private VersionResponse toResponse(VideoVersion v) {
         return new VersionResponse(
                 v.getId(),
-                v.getUrl(),
+                mediaUrls.forBrowser(v.getUrl()),
                 v.getFileSize(),
                 v.getMimeType(),
                 v.getDurationSeconds(),

@@ -25,6 +25,7 @@ import com.example.videolingo.revision.RevisionService;
 import com.example.videolingo.service.LanguageService;
 import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.TranscriptService;
+import com.example.videolingo.storage.MediaUrls;
 import com.example.videolingo.util.PageableUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,6 +68,7 @@ public class TranscriptServiceImpl implements TranscriptService {
     private static final int MIN_SEARCH_LENGTH = 2;
 
     private final TranscriptRepository transcriptRepository;
+    private final MediaUrls mediaUrls;
     private final TranscriptSegmentRepository segmentRepository;
     private final VideoRepository videoRepository;
     private final ProcessingJobRepository jobRepository;
@@ -598,7 +600,7 @@ public class TranscriptServiceImpl implements TranscriptService {
                 .videoTitle(video != null ? video.getTitle() : null)
                 .videoLanguage(video != null ? video.getLanguage() : null)
                 .videoDurationSeconds(video != null ? video.getDurationSeconds() : null)
-                .videoUrl(video != null ? video.getVideoUrl() : null)
+                .videoUrl(video != null ? mediaUrls.forBrowser(video.getVideoUrl()) : null)
                 .language(t.getLanguage())
                 .source(t.getSource())
                 .segmentCount(t.getSegmentCount())

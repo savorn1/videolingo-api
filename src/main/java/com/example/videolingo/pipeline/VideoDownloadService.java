@@ -15,6 +15,7 @@ import com.example.videolingo.repository.VideoExportRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.settings.SettingsService;
+import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -62,6 +63,7 @@ public class VideoDownloadService {
             List<ProcessingJobResponse> jobs) {}
 
     private final VideoRepository videoRepository;
+    private final MediaUrls mediaUrls;
     private final VideoExportRepository exportRepository;
     private final VideoDubRepository dubRepository;
     private final SubtitleRepository subtitleRepository;
@@ -77,7 +79,7 @@ public class VideoDownloadService {
         boolean link = PipelineSteps.isLink(video.getSource());
         List<ExportResponse> exports =
                 exportRepository.findByVideoIdAndExpiresAtAfterOrderByIdDesc(videoId, LocalDateTime.now()).stream()
-                        .map(VideoDownloadService::toResponse)
+                        .map(this::toResponse)
                         .toList();
         List<ProcessingJobResponse> jobs =
                 jobRepository.findTop10ByVideoIdAndTypeOrderByIdDesc(videoId, ProcessingJobType.DOWNLOAD).stream()
@@ -212,14 +214,14 @@ public class VideoDownloadService {
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + videoId));
     }
 
-    private static ExportResponse toResponse(VideoExport e) {
+    private ExportResponse toResponse(VideoExport e) {
         return new ExportResponse(
                 e.getId(),
                 e.getJobId(),
                 e.getAudioLanguage(),
                 e.getSubtitleLabel(),
                 e.getFileName(),
-                e.getUrl(),
+                mediaUrls.forBrowser(e.getUrl()),
                 e.getSizeBytes(),
                 e.getCreatedAt(),
                 e.getExpiresAt());

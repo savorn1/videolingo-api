@@ -26,6 +26,7 @@ import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.review.SubtitleReviewService;
 import com.example.videolingo.service.CollectionService;
 import com.example.videolingo.service.VideoService;
+import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -76,6 +77,7 @@ public class LearnService {
     public record LearnCollection(CollectionResponse collection, List<CollectionVideoResponse> videos) {}
 
     private final VideoService videoService;
+    private final MediaUrls mediaUrls;
     private final VideoRepository videoRepository;
     private final SubtitleRepository subtitleRepository;
     private final SubtitleCueRepository cueRepository;
@@ -123,7 +125,7 @@ public class LearnService {
                                 .findByCodeIgnoreCase(d.getLanguage())
                                 .map(l -> l.getName())
                                 .orElse(d.getLanguage()),
-                        d.getAudioUrl()))
+                        mediaUrls.forBrowser(d.getAudioUrl())))
                 .toList();
         return new WatchPage(video, tracks, dubs);
     }

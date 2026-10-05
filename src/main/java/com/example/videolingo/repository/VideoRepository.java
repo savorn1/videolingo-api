@@ -20,6 +20,17 @@ public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecific
             @org.springframework.data.repository.query.Param("externalId") String externalId,
             @org.springframework.data.repository.query.Param("url") String url);
 
+    /** The video, locked until the transaction ends — so two requests can't both pass a check-then-enqueue. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from Video v where v.id = :id")
+    java.util.Optional<Video> findByIdForUpdate(@Param("id") Long id);
+
+    /** Records the exact length without saving the rest of the row (it may be being edited meanwhile). */
+    @Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("update Video v set v.durationMs = :ms where v.id = :id")
+    int updateDurationMs(@Param("id") Long id, @Param("ms") long ms);
+
     /** Everything currently in the trash — used to clear it out. */
     List<Video> findByDeletedAtIsNotNull();
 
