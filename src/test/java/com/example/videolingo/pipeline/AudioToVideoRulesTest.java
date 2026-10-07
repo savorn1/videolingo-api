@@ -508,7 +508,7 @@ class AudioToVideoRulesTest {
     void barLayoutsUseWholePixelsAndStayInsideTheFrame() {
         for (Size size :
                 new Size[] {new Size(640, 360), new Size(854, 480), new Size(1280, 720), new Size(1920, 1080)}) {
-            for (String style : AudioToVideoRules.BAR_STYLES) {
+            for (String style : AudioToVideoRules.CUT_BAR_STYLES) {
                 AudioToVideoRules.BarLayout l = AudioToVideoRules.barLayout(style, size);
                 assertTrue(l.bar() >= 2 && l.bar() < l.pitch(), style + " " + size);
                 assertTrue(
@@ -535,5 +535,38 @@ class AudioToVideoRulesTest {
         assertTrue(fine.bars() > pulse.bars() && pulse.bars() > stripes.bars() && stripes.bars() > blocks.bars());
         assertTrue(AudioToVideoRules.isCentered("FINE") && AudioToVideoRules.isCentered("STRIPES"));
         assertFalse(AudioToVideoRules.isCentered("BARS"));
+    }
+
+    @Test
+    void reflectionIsCentredWithAFadedLowerHalf() {
+        String g = AudioToVideoRules.filterGraph(
+                styled(null, "REFLECT", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(AudioToVideoRules.isCentered("REFLECT"));
+        assertTrue(g.contains("if(gt(Y,H/2),alpha(X,Y)*0.35,alpha(X,Y))"), g);
+        assertTrue(g.contains("overlay=(W-w)/2:(H-h)/2"), g);
+    }
+
+    @Test
+    void columnsStandOnTheBottomEdge() {
+        Size hd = new Size(1280, 720);
+        String g = AudioToVideoRules.filterGraph(styled(null, "COLUMNS", false, false, false), hd, 0, false);
+        AudioToVideoRules.BarLayout lay = AudioToVideoRules.barLayout("COLUMNS", hd);
+        assertFalse(AudioToVideoRules.isCentered("COLUMNS"));
+        // A quarter of the frame tall by default, like the other bottom styles; drawn twice as tall and the top half
+        // kept.
+        assertEquals(180, lay.height());
+        assertTrue(g.contains("x360:mode=cline"), g);
+        assertTrue(g.contains("crop=" + lay.bars() + ":180:0:0"), g);
+        assertTrue(g.contains("overlay=(W-w)/2:H-h-36"), g);
+        assertEquals(504, AudioToVideoRules.barLayout("COLUMNS", hd, 70).height());
+    }
+
+    @Test
+    void stereoDrawsOneBandPerChannel() {
+        String g = AudioToVideoRules.filterGraph(
+                styled(null, "STEREO", false, false, false), new Size(1280, 720), 0, false);
+        assertTrue(g.contains("split_channels=1"), g);
+        assertTrue(g.contains("overlay=0:H-h-36"), g);
+        assertTrue(AudioToVideoRules.WAVEFORMS.containsAll(java.util.List.of("REFLECT", "COLUMNS", "STEREO")));
     }
 }

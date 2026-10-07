@@ -1,6 +1,7 @@
 package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.VideoSource;
+import com.example.videolingo.pipeline.AudioToVideoRules;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -90,6 +91,43 @@ public final class VideoIngestDtos {
             Instant expiresAt,
             String publicUrl,
             String contentType) {}
+
+    /**
+     * A large upload started in parts: ask for each part's URL ({@link PartRequest}), PUT the bytes to it, then
+     * complete it. {@code publicUrl} is where the file can be read once completed.
+     */
+    public record MultipartTicket(
+            String key, String uploadId, long partSize, int partCount, String publicUrl, String contentType) {}
+
+    @Data
+    public static class PartRequest {
+        @NotBlank
+        private String key;
+
+        @NotBlank
+        private String uploadId;
+
+        @NotNull
+        @Min(1)
+        private Integer partNumber;
+
+        /** The whole file's size, which fixes each part's length. */
+        @NotNull
+        @Min(1)
+        private Long size;
+    }
+
+    /** A signed PUT for one part: send exactly {@code length} bytes. */
+    public record PartUrl(int partNumber, String url, long length, Instant expiresAt) {}
+
+    @Data
+    public static class MultipartRef {
+        @NotBlank
+        private String key;
+
+        @NotBlank
+        private String uploadId;
+    }
 
     @Data
     public static class CreateVideoRequest {
@@ -212,7 +250,42 @@ public final class VideoIngestDtos {
         private String language;
 
         private List<Long> categoryIds;
+
+        // WIDE (default), TALL (9:16) or SQUARE.
+        @Size(max = 10)
+        private String shape;
+        // A slow zoom on the pictures, and dissolves between them.
+        private boolean motion;
+        private boolean crossfade;
+        // A strip of text (e.g. the episode and speaker) over the picture, and a logo (an OVERLAY upload) in a corner.
+        @Size(max = 120)
+        private String stripText;
+
+        @Size(max = 500)
+        private String logoKey;
+        // Take the silence off the start and end of the recording.
+        private boolean trimSilence;
+        // Only this part of the recording (a chapter); null = from the start / to the end.
+        @Min(0)
+        private Long audioStartMs;
+
+        @Min(0)
+        private Long audioEndMs;
+        // Burn the transcript into the picture once it is made (needs transcribe).
+        private BurnSubtitlesDto burnSubtitles;
+        // The waveform's height, % of the picture (10–80); null = 25 % along the bottom, 40 % in the middle.
+        private Integer waveHeightPct;
     }
+
+    /** style CLASSIC / BOX / YELLOW, position BOTTOM / TOP. */
+    public record BurnSubtitlesDto(String style, String position) {}
+
+    /** Where to cut a long recording into parts of about `partMinutes`. */
+    public record ChaptersRequest(
+            @NotBlank @Size(max = 500) String audioKey,
+            @Min(2) @Max(60) int partMinutes) {}
+
+    public record ChaptersResponse(long totalMs, List<AudioToVideoRules.Range> parts) {}
 
     /** A short test render of a look with the real sound: just what shows in the picture. */
     @Data
@@ -233,6 +306,7 @@ public final class VideoIngestDtos {
 
         private boolean normalize;
         private boolean denoise;
+        private Integer waveHeightPct;
     }
 
     public record AudioPreviewResponse(String url, long seconds) {}

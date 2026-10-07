@@ -4,12 +4,18 @@ import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewRequest;
 import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewResponse;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoResponse;
+import com.example.videolingo.dto.VideoIngestDtos.ChaptersRequest;
+import com.example.videolingo.dto.VideoIngestDtos.ChaptersResponse;
 import com.example.videolingo.dto.VideoIngestDtos.CreateVideoRequest;
 import com.example.videolingo.dto.VideoIngestDtos.Duplicate;
 import com.example.videolingo.dto.VideoIngestDtos.InspectResponse;
 import com.example.videolingo.dto.VideoIngestDtos.LanguageGuess;
 import com.example.videolingo.dto.VideoIngestDtos.MergeVideosRequest;
 import com.example.videolingo.dto.VideoIngestDtos.MergeVideosResponse;
+import com.example.videolingo.dto.VideoIngestDtos.MultipartRef;
+import com.example.videolingo.dto.VideoIngestDtos.MultipartTicket;
+import com.example.videolingo.dto.VideoIngestDtos.PartRequest;
+import com.example.videolingo.dto.VideoIngestDtos.PartUrl;
 import com.example.videolingo.dto.VideoIngestDtos.ReplaceRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
@@ -39,6 +45,7 @@ import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,14 +58,25 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListPartsRequest;
+import software.amazon.awssdk.services.s3.model.ListPartsResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.Part;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 // Add Video: inspect a pasted link, sign direct-to-storage uploads, and create
 // the video record from either. Metadata the admin reviewed in the form is
@@ -198,9 +216,141 @@ public class VideoIngestService {
 
     // ── uploads ───────────────────────────────────────────────────────────
 
+    /** Where an upload goes: a fresh key and the content type it is stored with. */
+    private record UploadTarget(String key, String contentType) {}
+
     /** Signs a PUT of exactly {@code size} bytes of the declared type to a fresh key. */
     public UploadTicket presignUpload(UploadRequest r) {
         requireStorage();
+        UploadTarget target = uploadTarget(r);
+        String key = target.key();
+        String contentType = target.contentType();
+        PresignedPutObjectRequest signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
+                .signatureDuration(TICKET_TTL)
+                .putObjectRequest(PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .contentType(contentType)
+                        .contentLength(r.getSize())
+                        .build())
+                .build());
+        return new UploadTicket(
+                key,
+                signed.url().toString(),
+                "PUT",
+                Map.of("Content-Type", contentType),
+                signed.expiration(),
+                // Signed for reading, so the browser can preview the upload; saved back without the signature.
+                mediaUrls.forBrowser(publicUrl(key)),
+                contentType);
+    }
+
+    // ── uploads in parts (large files; see MultipartRules) ───────────────
+
+    /** Starts a large upload in parts, after the same checks as a single one. */
+    public MultipartTicket startMultipart(UploadRequest r) {
+        requireStorage();
+        UploadTarget target = uploadTarget(r);
+        String uploadId = s3.createMultipartUpload(CreateMultipartUploadRequest.builder()
+                        .bucket(bucket)
+                        .key(target.key())
+                        .contentType(target.contentType())
+                        .build())
+                .uploadId();
+        long partSize = MultipartRules.partSize(r.getSize());
+        return new MultipartTicket(
+                target.key(),
+                uploadId,
+                partSize,
+                MultipartRules.partCount(r.getSize(), partSize),
+                mediaUrls.forBrowser(publicUrl(target.key())),
+                target.contentType());
+    }
+
+    /** Signs the PUT of one part, for exactly that part's bytes. */
+    public PartUrl signPart(PartRequest r) {
+        requireStorage();
+        requireUploadKey(r.getKey());
+        long partSize = MultipartRules.partSize(r.getSize());
+        long length = MultipartRules.partLength(r.getSize(), partSize, r.getPartNumber());
+        if (length <= 0) {
+            throw new AppException(
+                    HttpStatus.BAD_REQUEST, "There is no part " + r.getPartNumber() + " in a file that size");
+        }
+        PresignedUploadPartRequest signed = presigner.presignUploadPart(UploadPartPresignRequest.builder()
+                .signatureDuration(TICKET_TTL)
+                .uploadPartRequest(UploadPartRequest.builder()
+                        .bucket(bucket)
+                        .key(r.getKey())
+                        .uploadId(r.getUploadId())
+                        .partNumber(r.getPartNumber())
+                        .contentLength(length)
+                        .build())
+                .build());
+        return new PartUrl(r.getPartNumber(), signed.url().toString(), length, signed.expiration());
+    }
+
+    /** Puts the parts together, from the list storage keeps (so the browser never needs to read ETags). */
+    public void completeMultipart(MultipartRef r) {
+        requireStorage();
+        requireUploadKey(r.getKey());
+        List<CompletedPart> parts = new ArrayList<>();
+        long total = 0;
+        Integer marker = null;
+        while (true) {
+            ListPartsResponse page = s3.listParts(ListPartsRequest.builder()
+                    .bucket(bucket)
+                    .key(r.getKey())
+                    .uploadId(r.getUploadId())
+                    .partNumberMarker(marker)
+                    .build());
+            for (Part p : page.parts()) {
+                parts.add(CompletedPart.builder()
+                        .partNumber(p.partNumber())
+                        .eTag(p.eTag())
+                        .build());
+                total += p.size();
+            }
+            if (!Boolean.TRUE.equals(page.isTruncated())) {
+                break;
+            }
+            marker = page.nextPartNumberMarker();
+        }
+        if (parts.isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "No parts have been uploaded");
+        }
+        long max = settings.video().maxVideoUploadMb() * 1024L * 1024L;
+        if (total > max) {
+            abortMultipart(r);
+            throw new AppException(HttpStatus.BAD_REQUEST, "The file is larger than " + (max / (1024 * 1024)) + " MB");
+        }
+        s3.completeMultipartUpload(CompleteMultipartUploadRequest.builder()
+                .bucket(bucket)
+                .key(r.getKey())
+                .uploadId(r.getUploadId())
+                .multipartUpload(CompletedMultipartUpload.builder().parts(parts).build())
+                .build());
+    }
+
+    /** Gives up on an upload in parts; storage drops the parts sent so far. */
+    public void abortMultipart(MultipartRef r) {
+        requireStorage();
+        requireUploadKey(r.getKey());
+        s3.abortMultipartUpload(AbortMultipartUploadRequest.builder()
+                .bucket(bucket)
+                .key(r.getKey())
+                .uploadId(r.getUploadId())
+                .build());
+    }
+
+    private static void requireUploadKey(String key) {
+        if (!MultipartRules.isUploadKey(key)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "That isn't an upload this server started");
+        }
+    }
+
+    /** The checks every upload passes (type, size), and the fresh key it goes to. */
+    private UploadTarget uploadTarget(UploadRequest r) {
         boolean video = r.getKind().equals("VIDEO");
         boolean audio = r.getKind().equals("AUDIO");
         boolean overlay = r.getKind().equals("OVERLAY");
@@ -250,24 +400,7 @@ public class VideoIngestService {
                         ? "videos/"
                         : audio ? AudioEditRules.UPLOAD_PREFIX : overlay ? OverlayRules.UPLOAD_PREFIX : "thumbnails/")
                 + UUID.randomUUID() + "." + fileExt;
-        PresignedPutObjectRequest signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
-                .signatureDuration(TICKET_TTL)
-                .putObjectRequest(PutObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(key)
-                        .contentType(contentType)
-                        .contentLength(r.getSize())
-                        .build())
-                .build());
-        return new UploadTicket(
-                key,
-                signed.url().toString(),
-                "PUT",
-                Map.of("Content-Type", contentType),
-                signed.expiration(),
-                // Signed for reading, so the browser can preview the upload; saved back without the signature.
-                mediaUrls.forBrowser(publicUrl(key)),
-                contentType);
+        return new UploadTarget(key, contentType);
     }
 
     // ── create ────────────────────────────────────────────────────────────
@@ -342,10 +475,35 @@ public class VideoIngestService {
                         : null,
                 r.isNormalize(),
                 r.isDenoise(),
-                slides);
+                slides,
+                blankToNull(r.getShape()),
+                r.isMotion(),
+                r.isCrossfade(),
+                blankToNull(r.getStripText()),
+                blankToNull(r.getLogoKey()),
+                r.getWaveHeightPct());
         String problem = AudioToVideoRules.validate(spec);
+        if (problem == null) {
+            problem = AudioToVideoRules.validateRange(r.getAudioStartMs(), r.getAudioEndMs());
+        }
+        if (problem == null && r.getBurnSubtitles() != null) {
+            if (!r.isTranscribe()) {
+                problem = "Burning in subtitles needs “Transcribe when ready”";
+            } else if (r.getBurnSubtitles().style() != null
+                    && !OverlayRules.CAPTION_STYLES.contains(
+                            r.getBurnSubtitles().style())) {
+                problem = "Subtitles: unknown style";
+            } else if (r.getBurnSubtitles().position() != null
+                    && !OverlayRules.CAPTION_POSITIONS.contains(
+                            r.getBurnSubtitles().position())) {
+                problem = "Subtitles: unknown position";
+            }
+        }
         if (problem != null) {
             throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+        if (spec.logoKey() != null && head(spec.logoKey()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The logo wasn't found — the upload may not have finished");
         }
         if (head(spec.audioKey()) == null) {
             throw new AppException(
@@ -407,6 +565,9 @@ public class VideoIngestService {
             if (spec.waveColor() != null) {
                 params.put("waveColor", spec.waveColor());
             }
+            if (spec.waveHeightPct() != null) {
+                params.put("waveHeightPct", spec.waveHeightPct());
+            }
         }
         if (spec.drawsTitle()) {
             params.put("titleCard", true);
@@ -417,6 +578,44 @@ public class VideoIngestService {
         }
         if (spec.denoise()) {
             params.put("denoise", true);
+        }
+        if (spec.shape() != null && !"WIDE".equals(spec.shape())) {
+            params.put("shape", spec.shape());
+        }
+        if (spec.motion() && !spec.slides().isEmpty()) {
+            params.put("motion", true);
+        }
+        if (spec.crossfade() && spec.slides().size() > 1) {
+            params.put("crossfade", true);
+        }
+        if (spec.hasStrip()) {
+            params.put("stripText", spec.stripText().strip());
+        }
+        if (spec.logoKey() != null) {
+            params.put("logoKey", spec.logoKey());
+        }
+        if (r.isTrimSilence()) {
+            params.put("trimSilence", true);
+        }
+        if (r.getAudioStartMs() != null) {
+            params.put("audioStartMs", r.getAudioStartMs());
+        }
+        if (r.getAudioEndMs() != null) {
+            params.put("audioEndMs", r.getAudioEndMs());
+        }
+        if (r.getBurnSubtitles() != null) {
+            Map<String, Object> burn = new java.util.LinkedHashMap<>();
+            burn.put(
+                    "style",
+                    r.getBurnSubtitles().style() == null
+                            ? "BOX"
+                            : r.getBurnSubtitles().style());
+            burn.put(
+                    "position",
+                    r.getBurnSubtitles().position() == null
+                            ? "BOTTOM"
+                            : r.getBurnSubtitles().position());
+            params.put("burnSubtitles", burn);
         }
         if (r.isTranscribe()) {
             if (language == null) {
@@ -439,6 +638,19 @@ public class VideoIngestService {
         return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
     }
 
+    /** Where to cut a long recording into chapters, at its pauses. See PipelineSteps.chapters. */
+    public ChaptersResponse chaptersFromAudio(ChaptersRequest r) {
+        requireStorage();
+        if (!AudioEditRules.isUploadKey(r.audioKey()) || head(r.audioKey()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Upload the audio file first");
+        }
+        try {
+            return steps.chapters(r.audioKey(), r.partMinutes());
+        } catch (com.example.videolingo.pipeline.JobFailure e) {
+            throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
     /** A short test render of a waveform look with the real sound, for the page's preview. See PipelineSteps.previewAudioToVideo. */
     public AudioPreviewResponse previewFromAudio(AudioPreviewRequest r) {
         requireStorage();
@@ -453,7 +665,13 @@ public class VideoIngestService {
                 null,
                 r.isNormalize(),
                 r.isDenoise(),
-                List.of());
+                List.of(),
+                null,
+                false,
+                false,
+                null,
+                null,
+                r.getWaveHeightPct());
         String problem = AudioToVideoRules.validate(spec);
         if (problem != null) {
             throw new AppException(HttpStatus.BAD_REQUEST, problem);

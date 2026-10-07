@@ -151,7 +151,9 @@ class AudioToVideoFfmpegTest {
 
     @Test
     void everyWaveformStyleRenders(@TempDir Path dir) throws IOException {
-        for (String style : new String[] {"SPIKES", "DOTS", "SPECTRUM", "PULSE", "BLOCKS", "FINE", "STRIPES"}) {
+        for (String style : new String[] {
+            "SPIKES", "DOTS", "SPECTRUM", "PULSE", "BLOCKS", "FINE", "STRIPES", "REFLECT", "COLUMNS", "STEREO"
+        }) {
             Path sub = Files.createDirectory(dir.resolve(style.toLowerCase()));
             render(
                     new Spec(AUDIO, null, "#101820", null, style, "#ffcc00", false, null, false, false),

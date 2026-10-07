@@ -432,13 +432,48 @@ public class PipelineSteps {
                     null,
                     spec.normalize(),
                     spec.denoise(),
-                    List.of());
+                    List.of(),
+                    null,
+                    false,
+                    false,
+                    null,
+                    null,
+                    spec.waveHeightPct());
             Path out = media.audioToVideoQuick(shown, audio, Math.min(PREVIEW_MS, probe.durationMs()), dir);
             String key = OverlayRules.UPLOAD_PREFIX + "preview-" + java.util.UUID.randomUUID() + ".mp4";
             upload(key, out, "video/mp4", null);
             return publicUrl(key);
         } catch (IOException e) {
             throw new JobFailure("Couldn't prepare the test render: " + e.getMessage(), e);
+        } finally {
+            previewSlots.release();
+            deleteDirQuietly(dir);
+        }
+    }
+
+    /** Where to cut a long recording into parts of about `partMinutes`, at its pauses. Runs on the spot, not queued. */
+    public com.example.videolingo.dto.VideoIngestDtos.ChaptersResponse chapters(String audioKey, int partMinutes) {
+        if (partMinutes < AudioToVideoRules.MIN_PART_MINUTES || partMinutes > AudioToVideoRules.MAX_PART_MINUTES) {
+            throw new JobFailure("A part is between " + AudioToVideoRules.MIN_PART_MINUTES + " and "
+                    + AudioToVideoRules.MAX_PART_MINUTES + " minutes");
+        }
+        if (!previewSlots.tryAcquire()) {
+            throw new JobFailure("Other test renders are running — try again in a moment");
+        }
+        Path dir = null;
+        try {
+            dir = Files.createTempDirectory(Path.of(props.workDirectory()), "chapters-");
+            JobContext ctx = new JobContext(null, 0, dir);
+            Path audio = fetch(audioKey, "source-audio", ctx);
+            MediaTools.Probe probe = media.probe(audio.toString(), dir);
+            if (!probe.hasAudio() || probe.durationMs() == null || probe.durationMs() <= 0) {
+                throw new JobFailure("That file has no audio in it, or its length can't be read");
+            }
+            List<AudioToVideoRules.Range> parts = AudioToVideoRules.chapterRanges(
+                    media.silences(audio, dir), probe.durationMs(), partMinutes * 60_000L);
+            return new com.example.videolingo.dto.VideoIngestDtos.ChaptersResponse(probe.durationMs(), parts);
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't read the recording: " + e.getMessage(), e);
         } finally {
             previewSlots.release();
             deleteDirQuietly(dir);
@@ -478,13 +513,27 @@ public class PipelineSteps {
                 text(p, "titleText", null),
                 p.path("normalize").asBoolean(false),
                 p.path("denoise").asBoolean(false),
-                requested);
+                requested,
+                text(p, "shape", null),
+                p.path("motion").asBoolean(false),
+                p.path("crossfade").asBoolean(false),
+                text(p, "stripText", null),
+                text(p, "logoKey", null),
+                p.hasNonNull("waveHeightPct") ? p.get("waveHeightPct").asInt() : null);
         String problem = AudioToVideoRules.validate(spec);
         if (problem != null) {
             throw new JobFailure(problem);
         }
         ctx.progress(5, "Fetching the audio file");
         Path audio = fetch(spec.audioKey(), "source-audio", ctx);
+        // A part of the recording (a chapter) and/or the silence off its ends: the video is made from that.
+        Long partStart = p.hasNonNull("audioStartMs") ? p.get("audioStartMs").asLong() : null;
+        Long partEnd = p.hasNonNull("audioEndMs") ? p.get("audioEndMs").asLong() : null;
+        boolean trimSilence = p.path("trimSilence").asBoolean(false);
+        if (partStart != null || partEnd != null || trimSilence) {
+            ctx.progress(6, trimSilence ? "Trimming the silence" : "Cutting out the part");
+            audio = media.prepareAudio(audio, partStart, partEnd, trimSilence, ctx);
+        }
         MediaTools.Probe probe = media.probe(audio.toString(), ctx.workDir());
         if (!probe.hasAudio()) {
             throw new JobFailure("That file has no audio in it");
@@ -508,7 +557,7 @@ public class PipelineSteps {
             covers.add(fetch(shown.get(i).key(), "cover-" + i, ctx));
         }
         Path cover = covers.isEmpty() ? null : covers.get(0);
-        AudioToVideoRules.Size frame = AudioToVideoRules.size(spec.resolution());
+        AudioToVideoRules.Size frame = AudioToVideoRules.size(spec.resolution(), spec.shape());
 
         // The title, drawn like a text layer of the editor, wrapped to fit the frame.
         Path titlePng = null;
@@ -539,8 +588,35 @@ public class PipelineSteps {
             TextRenderer.write(TextRenderer.render(layer, frame.h()), titlePng);
         }
 
+        // A strip of text (white on a dark band) and a logo, both laid over the picture.
+        Path stripPng = null;
+        if (spec.hasStrip()) {
+            OverlayRules.Layer strip = new OverlayRules.Layer(
+                    "TEXT",
+                    spec.stripText().strip(),
+                    "SansSerif",
+                    600,
+                    4.5,
+                    "#ffffff",
+                    "#000000",
+                    0.55,
+                    "LEFT",
+                    null,
+                    0.0,
+                    0.5,
+                    0.5,
+                    1.0,
+                    0L,
+                    null,
+                    "NONE");
+            stripPng = ctx.workDir().resolve("strip.png");
+            TextRenderer.write(TextRenderer.render(strip, frame.h()), stripPng);
+        }
+        Path logo = spec.logoKey() != null ? fetch(spec.logoKey(), "logo", ctx) : null;
+
         ctx.progress(15, "Making the video");
-        Path out = media.audioToVideo(spec, audio, covers, titlePng, frame, probe.durationMs(), ctx.slice(15, 92));
+        Path out = media.audioToVideo(
+                spec, audio, covers, titlePng, stripPng, logo, frame, probe.durationMs(), ctx.slice(15, 92));
         ctx.progress(93, "Saving the video");
         String key = "videos/" + java.util.UUID.randomUUID() + ".mp4";
         upload(key, out, "video/mp4", null);
@@ -573,12 +649,54 @@ public class PipelineSteps {
                         "No spoken language is set, so no transcript was made. Set it and transcribe from the video's page.");
             } else {
                 try {
-                    transcribe(video, video.getLanguage(), job.getId(), ctx.slice(94, 100));
+                    transcribe(video, video.getLanguage(), job.getId(), ctx.slice(94, 98));
+                    if (p.hasNonNull("burnSubtitles")) {
+                        burnInTranscript(video, out, frame, p.get("burnSubtitles"), ctx);
+                    }
                 } catch (JobFailure e) {
-                    ctx.warn("The video is ready, but its transcript could not be made: " + e.getMessage());
+                    ctx.warn("The video is ready, but its transcript (or subtitles) could not be made: "
+                            + e.getMessage());
                 }
             }
         }
+    }
+
+    /**
+     * Burns the transcript just made into the video (CaptionRules), and makes that the video's file; the version
+     * without subtitles is deleted. A failure leaves the video as it was.
+     */
+    private void burnInTranscript(
+            Video video, Path made, AudioToVideoRules.Size frame, JsonNode options, JobContext ctx) {
+        ctx.progress(98, "Burning in the subtitles");
+        var transcript = transcriptRepository
+                .findByVideoIdAndLanguage(video.getId(), video.getLanguage())
+                .orElseThrow(() -> new JobFailure("The transcript wasn't saved"));
+        List<CaptionRules.Line> lines = captionLines(transcript.getId());
+        if (lines.isEmpty()) {
+            throw new JobFailure("The transcript has no lines to show");
+        }
+        String style = text(options, "style", "BOX");
+        String position = text(options, "position", "BOTTOM");
+        Path ass = ctx.workDir().resolve("subtitles.ass");
+        try {
+            Files.writeString(
+                    ass,
+                    CaptionRules.toAss(CaptionRules.pair(lines, List.of()), style, position, 5, frame.w(), frame.h()));
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't write the subtitles: " + e.getMessage());
+        }
+        Path burned = media.burnSubtitles(made.toString(), ass, ctx);
+        String oldKey = video.getStorageKey();
+        String key = "videos/" + java.util.UUID.randomUUID() + ".mp4";
+        upload(key, burned, "video/mp4", null);
+        video.setStorageKey(key);
+        video.setVideoUrl(publicUrl(key));
+        video.setFileSize(size(burned));
+        videoRepository.save(video);
+        if (oldKey != null) {
+            deleteObject(oldKey);
+        }
+        ctx.info("Subtitles burned into the video");
     }
 
     // Several stored videos become one. The video row was created, hidden, when the request

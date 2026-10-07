@@ -1268,14 +1268,85 @@ public class MediaTools {
             AudioToVideoRules.Size frame,
             long durationMs,
             JobContext ctx) {
+        return audioToVideo(spec, audio, covers, titlePng, null, null, frame, durationMs, ctx);
+    }
+
+    /** Same, with a strip of text and a logo laid over the picture when given. */
+    public Path audioToVideo(
+            AudioToVideoRules.Spec spec,
+            Path audio,
+            List<Path> covers,
+            Path titlePng,
+            Path stripPng,
+            Path logo,
+            AudioToVideoRules.Size frame,
+            long durationMs,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("audio-video.mp4");
         run(
-                AudioToVideoRules.command(props.ffmpeg(), spec, audio, covers, titlePng, frame, durationMs, out),
+                AudioToVideoRules.command(
+                        props.ffmpeg(), spec, audio, covers, titlePng, stripPng, logo, frame, durationMs, out),
                 Duration.ofMinutes(120),
                 ctx,
                 "ffmpeg",
                 durationMs);
         return out;
+    }
+
+    /**
+     * The sound to make the video from: `startMs`–`endMs` of the recording (a chapter; null = all of it), with the
+     * silence taken off its start and end when `trimSilence`. The file itself when nothing is asked.
+     */
+    public Path prepareAudio(Path audio, Long startMs, Long endMs, boolean trimSilence, JobContext ctx) {
+        if (startMs == null && endMs == null && !trimSilence) {
+            return audio;
+        }
+        Path out = ctx.workDir().resolve("prepared-audio.m4a");
+        List<String> command = new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y"));
+        if (startMs != null && startMs > 0) {
+            command.addAll(List.of("-ss", millis(startMs)));
+        }
+        if (endMs != null) {
+            command.addAll(List.of("-to", millis(endMs)));
+        }
+        command.addAll(List.of("-i", audio.toString(), "-vn"));
+        if (trimSilence) {
+            command.addAll(List.of("-af", AudioToVideoRules.trimSilenceFilter()));
+        }
+        command.addAll(List.of("-c:a", "aac", "-b:a", "192k", out.toString()));
+        run(command, Duration.ofMinutes(30), ctx, "ffmpeg");
+        return out;
+    }
+
+    /** The pauses in a recording (at least half a second below -40 dB), for cutting it into chapters. */
+    public List<AudioToVideoRules.Silence> silences(Path audio, Path workDir) {
+        Path log = workDir.resolve("silences.log");
+        try {
+            Process process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-nostats",
+                            "-i",
+                            audio.toString(),
+                            "-af",
+                            "silencedetect=noise=-40dB:d=0.5",
+                            "-f",
+                            "null",
+                            "-")
+                    .redirectErrorStream(true)
+                    .redirectOutput(log.toFile())
+                    .start();
+            if (!process.waitFor(10, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new JobFailure("Finding the pauses took too long");
+            }
+            return AudioToVideoRules.parseSilences(Files.readString(log, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't look for the pauses: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new JobFailure("Interrupted while looking for the pauses");
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.example.videolingo.controller;
 
 import com.example.videolingo.dto.ApiResponse;
+import com.example.videolingo.dto.VideoIngestDtos;
 import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewRequest;
 import com.example.videolingo.dto.VideoIngestDtos.AudioPreviewResponse;
 import com.example.videolingo.dto.VideoIngestDtos.AudioToVideoRequest;
@@ -12,6 +13,10 @@ import com.example.videolingo.dto.VideoIngestDtos.InspectResponse;
 import com.example.videolingo.dto.VideoIngestDtos.LanguageGuess;
 import com.example.videolingo.dto.VideoIngestDtos.MergeVideosRequest;
 import com.example.videolingo.dto.VideoIngestDtos.MergeVideosResponse;
+import com.example.videolingo.dto.VideoIngestDtos.MultipartRef;
+import com.example.videolingo.dto.VideoIngestDtos.MultipartTicket;
+import com.example.videolingo.dto.VideoIngestDtos.PartRequest;
+import com.example.videolingo.dto.VideoIngestDtos.PartUrl;
 import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
 import com.example.videolingo.dto.VideoResponse;
@@ -60,6 +65,29 @@ public class VideoIngestController {
         return ResponseEntity.ok(ApiResponse.success(ingest.presignUpload(request)));
     }
 
+    // Large files in parts (MultipartRules): start, sign each part as it goes, then complete (or abort).
+    @PostMapping("/uploads/multipart")
+    public ResponseEntity<ApiResponse<MultipartTicket>> startMultipart(@Valid @RequestBody UploadRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.startMultipart(request)));
+    }
+
+    @PostMapping("/uploads/multipart/part")
+    public ResponseEntity<ApiResponse<PartUrl>> signPart(@Valid @RequestBody PartRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.signPart(request)));
+    }
+
+    @PostMapping("/uploads/multipart/complete")
+    public ResponseEntity<ApiResponse<Void>> completeMultipart(@Valid @RequestBody MultipartRef request) {
+        ingest.completeMultipart(request);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/uploads/multipart/abort")
+    public ResponseEntity<ApiResponse<Void>> abortMultipart(@Valid @RequestBody MultipartRef request) {
+        ingest.abortMultipart(request);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     // A video made from an uploaded sound (a still picture plus the audio). Queues a job;
     // the video stays disabled until an admin has looked at the result.
     @PostMapping("/from-audio")
@@ -78,6 +106,13 @@ public class VideoIngestController {
     public ResponseEntity<ApiResponse<AudioPreviewResponse>> previewFromAudio(
             @Valid @RequestBody AudioPreviewRequest request) {
         return ResponseEntity.ok(ApiResponse.success(ingest.previewFromAudio(request)));
+    }
+
+    // Where to cut a long recording into chapters of about N minutes, at its pauses (found on the spot).
+    @PostMapping("/from-audio/chapters")
+    public ResponseEntity<ApiResponse<VideoIngestDtos.ChaptersResponse>> chaptersFromAudio(
+            @Valid @RequestBody VideoIngestDtos.ChaptersRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.chaptersFromAudio(request)));
     }
 
     // Joins stored videos into one new video, in the order given. Queues a job; the video

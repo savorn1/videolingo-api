@@ -1,6 +1,11 @@
 package com.example.videolingo.controller;
 
 import com.example.videolingo.dto.ApiResponse;
+import com.example.videolingo.pipeline.AudioEditRules;
+import com.example.videolingo.pipeline.AudioToVideoRules;
+import com.example.videolingo.pipeline.MergeRules;
+import com.example.videolingo.pipeline.VideoEditRules;
+import com.example.videolingo.pipeline.VideoEditService;
 import com.example.videolingo.settings.Settings;
 import com.example.videolingo.settings.SettingsService;
 import java.util.List;
@@ -36,7 +41,33 @@ public class ClientSettingsController {
             // Starting rules for new subtitle tracks (compactRules for compactLanguages).
             Settings.SubtitleRulesSetting standardRules,
             Settings.SubtitleRulesSetting compactRules,
-            List<String> compactLanguages) {}
+            List<String> compactLanguages,
+            MediaRules mediaRules) {}
+
+    /**
+     * The fixed rules of the media tools (not settings: they change only with a release). The UI keeps its own copies for
+     * inline checks; sending them lets it offer only what this server can do (e.g. waveform styles) and notice when its copy
+     * is out of step.
+     */
+    public record MediaRules(
+            int maxSegments,
+            int maxQueuedEdits,
+            int maxAudioClips,
+            int maxMergeVideos,
+            long maxMergeMs,
+            int maxSlides,
+            int maxStrip,
+            List<String> waveforms) {}
+
+    static final MediaRules MEDIA_RULES = new MediaRules(
+            VideoEditRules.MAX_SEGMENTS,
+            VideoEditService.MAX_QUEUED_EDITS_PER_VIDEO,
+            AudioEditRules.MAX_CLIPS,
+            MergeRules.MAX_PARTS,
+            MergeRules.MAX_TOTAL_MS,
+            AudioToVideoRules.MAX_SLIDES,
+            AudioToVideoRules.MAX_STRIP,
+            AudioToVideoRules.WAVEFORMS);
 
     @GetMapping
     public ResponseEntity<ApiResponse<ClientSettings>> get() {
@@ -58,6 +89,7 @@ public class ClientSettingsController {
                 s.maxSubtitleUploadMb(),
                 t.standardRules(),
                 t.compactRules(),
-                t.compactLanguages())));
+                t.compactLanguages(),
+                MEDIA_RULES)));
     }
 }

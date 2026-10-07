@@ -748,7 +748,7 @@ public class VideoEditService {
     }
 
     /** At most this many of a video's edits may be queued/running at once — they still run one at a time (the worker is single-threaded), this just caps how far ahead you can queue. */
-    static final int MAX_QUEUED_EDITS_PER_VIDEO = 3;
+    public static final int MAX_QUEUED_EDITS_PER_VIDEO = 3;
 
     private void requireNoActiveJob(Long videoId) {
         long active = jobRepository.findTop10ByVideoIdAndTypeOrderByIdDesc(videoId, ProcessingJobType.EDIT).stream()
