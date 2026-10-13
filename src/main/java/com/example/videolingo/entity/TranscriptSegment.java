@@ -47,4 +47,8 @@ public class TranscriptSegment {
 
     @Column(length = 64)
     private String speaker;
+
+    // Word timings as JSON [{startMs,endMs,text}] (dto.TranscriptWord), from speech-to-text; null when unknown.
+    @Column(columnDefinition = "text")
+    private String words;
 }

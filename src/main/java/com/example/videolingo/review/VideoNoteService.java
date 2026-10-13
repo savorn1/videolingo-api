@@ -27,7 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class VideoNoteService {
 
-    public record NoteRequest(@NotBlank @Size(max = 2000) String body) {}
+    /** atMs: the moment of the video the note is about; null = the whole video. */
+    public record NoteRequest(@NotBlank @Size(max = 2000) String body, Long atMs) {}
 
     public record ResolveRequest(boolean resolved) {}
 
@@ -35,6 +36,7 @@ public class VideoNoteService {
             Long id,
             Long videoId,
             String body,
+            Long atMs,
             String author,
             boolean resolved,
             String resolvedBy,
@@ -57,9 +59,13 @@ public class VideoNoteService {
     @Transactional
     public NoteResponse addNote(Long videoId, NoteRequest request, String actor) {
         Video video = findVideo(videoId);
+        if (request.atMs() != null && request.atMs() < 0) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The note's time can't be before the start");
+        }
         VideoNote note = noteRepository.save(VideoNote.builder()
                 .videoId(videoId)
                 .body(request.body().strip())
+                .atMs(request.atMs())
                 .author(actor)
                 .build());
         String owner = video.getOwnerId() == null
@@ -115,6 +121,7 @@ public class VideoNoteService {
                 n.getId(),
                 n.getVideoId(),
                 n.getBody(),
+                n.getAtMs(),
                 n.getAuthor(),
                 n.isResolved(),
                 n.getResolvedBy(),

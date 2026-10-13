@@ -36,6 +36,10 @@ public class VideoNote {
     @Column(nullable = false, length = 2000)
     private String body;
 
+    // The moment of the video it is about; null = the whole video.
+    @Column(name = "at_ms")
+    private Long atMs;
+
     @Column(nullable = false, length = 100)
     private String author;
 

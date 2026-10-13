@@ -80,7 +80,9 @@ class MediaToolsFiltersTest {
         assertEquals(
                 List.of(
                         "scale=w='trunc(iw*(1+0.200*min(1,max(0,(t-1.000)/4.000)))/2)*2':h=-2:eval=frame",
-                        "crop=640:360"),
+                        // Centred from t (crop's own iw stays at the first frame's width while the picture grows).
+                        "crop=640:360:x='max(0,min(trunc(640*(1+0.200*min(1,max(0,(t-1.000)/4.000)))/2)*2-640,0.5000*trunc(640*(1+0.200*min(1,max(0,(t-1.000)/4.000)))/2)*2-320))'"
+                                + ":y='max(0,min(trunc(360*(1+0.200*min(1,max(0,(t-1.000)/4.000)))/2)*2-360,0.5000*trunc(360*(1+0.200*min(1,max(0,(t-1.000)/4.000)))/2)*2-180))'"),
                 MediaTools.zoomFilters("ZOOM_IN", 1000, 5000, 640, 360));
         assertTrue(MediaTools.zoomFilters("ZOOM_OUT", 0, 2000, 640, 360).get(0).contains("(1-min(1"));
     }

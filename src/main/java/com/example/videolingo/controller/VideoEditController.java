@@ -122,6 +122,13 @@ public class VideoEditController {
         return ResponseEntity.ok(ApiResponse.success(editService.suggestCrop(videoId, aspect)));
     }
 
+    // "Remove the pauses": the quiet stretches in the video's sound (quieter than noiseDb, default -40).
+    @GetMapping("/pauses")
+    public ResponseEntity<ApiResponse<VideoEditService.Pauses>> pauses(
+            @PathVariable Long videoId, @RequestParam(defaultValue = "-40") int noiseDb) {
+        return ResponseEntity.ok(ApiResponse.success(editService.pauses(videoId, noiseDb)));
+    }
+
     @GetMapping("/waveform")
     public ResponseEntity<ApiResponse<VideoEditService.Waveform>> waveform(
             @PathVariable Long videoId,

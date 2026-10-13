@@ -64,7 +64,12 @@ public class VideoEditService {
             List<VideoEditRules.BlurBox> blurs,
             VideoEditRules.SpeedRange speed,
             VideoEditRules.Pip pip,
-            VideoEditRules.Cards cards) {}
+            VideoEditRules.Cards cards,
+            Boolean reverse,
+            Boolean stabilize,
+            VideoEditRules.ZoomTo zoomTo,
+            VideoEditRules.GreenScreen greenScreen,
+            ReframeRules.Reframe reframe) {}
 
     /** A GIF of a short range (endMs required); width 320/480/640, 480 when left out. */
     public record GifRequest(long startMs, long endMs, Integer width) {}
@@ -131,6 +136,9 @@ public class VideoEditService {
 
     public record EditOverview(List<ClipResponse> clips, List<ProcessingJobResponse> jobs) {}
 
+    /** One result on the "Edit results" page: which video it was made from, and the result itself. */
+    public record ResultRow(Long videoId, String videoTitle, boolean videoDeleted, ClipResponse clip) {}
+
     // kind: "REPLACED" (TRIM promoted onto the video) or "NEW_VIDEO" (a split segment became its own video).
     public record PromoteResult(String kind, Long newVideoId) {}
 
@@ -157,6 +165,23 @@ public class VideoEditService {
             });
 
     @Transactional(readOnly = true)
+    /** Every edit result still kept, newest first (at most 200), with the video each was made from. */
+    public List<ResultRow> allResults() {
+        List<VideoClip> clips = clipRepository.findTop200ByExpiresAtAfterOrderByIdDesc(LocalDateTime.now());
+        Map<Long, Video> videos = new java.util.HashMap<>();
+        videoRepository
+                .findAllById(
+                        clips.stream().map(VideoClip::getVideoId).distinct().toList())
+                .forEach(v -> videos.put(v.getId(), v));
+        return clips.stream()
+                .map(c -> {
+                    Video v = videos.get(c.getVideoId());
+                    return new ResultRow(
+                            c.getVideoId(), v == null ? null : v.getTitle(), v == null || v.isDeleted(), toResponse(c));
+                })
+                .toList();
+    }
+
     public EditOverview overview(Long videoId) {
         findVideo(videoId);
         List<ClipResponse> clips =
@@ -214,6 +239,11 @@ public class VideoEditService {
             }
         }
         require(VideoEditRules.validateCards(request.cards()));
+        require(VideoEditRules.validateReverse(request.reverse(), clipMs));
+        require(VideoEditRules.validateZoomTo(request.zoomTo()));
+        require(VideoEditRules.validateGreenScreen(request.greenScreen()));
+        require(ReframeRules.validate(
+                request.reframe(), request.crop() != null, request.rotate() != null && request.rotate() != 0));
         AudioEditRules.Spec audio = null;
         if (request.audio() != null) {
             // The audio pass runs on the trimmed (already faded) result, so added sound gets the same fades.
@@ -232,7 +262,9 @@ public class VideoEditService {
                     null,
                     null,
                     null,
-                    request.audio().music()));
+                    request.audio().music(),
+                    null,
+                    null));
             Long total = videoMs;
             long end = request.endMs() != null ? request.endMs() : total != null ? total : -1;
             require(AudioEditRules.validate(audio, end > request.startMs() ? end - request.startMs() : null));
@@ -266,7 +298,12 @@ public class VideoEditService {
                 request.blurs() == null || request.blurs().isEmpty() ? null : request.blurs(),
                 request.speed(),
                 request.pip(),
-                request.cards());
+                request.cards(),
+                Boolean.TRUE.equals(request.reverse()) ? true : null,
+                Boolean.TRUE.equals(request.stabilize()) ? true : null,
+                request.zoomTo(),
+                request.greenScreen(),
+                request.reframe());
         ProcessingJob job = jobService.enqueue(
                 videoId, ProcessingJobType.EDIT, toJson(params), "Trim/crop requested by " + username);
         return jobService.getJob(job.getId());
@@ -467,6 +504,59 @@ public class VideoEditService {
             MediaTools.Peaks peaks = media.peaks(input, n, dir);
             Waveform result = new Waveform(peaks.durationMs(), peaks.values());
             waveforms.put(cacheKey, result);
+            return result;
+        } catch (JobFailure e) {
+            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't create a temporary folder");
+        } finally {
+            deleteQuietly(dir);
+        }
+    }
+
+    /** The pauses found in a video's sound, and how long the sound is. */
+    public record Pauses(long durationMs, List<AudioToVideoRules.Silence> pauses) {}
+
+    private final Map<String, Pauses> pauseCache =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Pauses> eldest) {
+                    return size() > 32;
+                }
+            });
+
+    /** The pauses in the video's sound (quieter than `noiseDb`, at least PauseRules.MIN_PAUSE_MS), for "Remove the pauses". */
+    public Pauses pauses(Long videoId, int noiseDb) {
+        String problem = PauseRules.validateNoise(noiseDb);
+        if (problem != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+        Video video = findVideo(videoId);
+        if (PipelineSteps.isLink(video.getSource())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Link videos have no sound file to look at");
+        }
+        String source = video.getStorageKey() != null ? video.getStorageKey() : video.getVideoUrl();
+        String cacheKey = source + "@" + noiseDb;
+        Pauses cached = pauseCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        Path dir = null;
+        try {
+            dir = Files.createTempDirectory(Path.of(pipelineProps.workDirectory()), "pauses-");
+            String input = video.getStorageKey() != null
+                    ? sourceFiles.get(video.getStorageKey()).toString()
+                    : video.getVideoUrl();
+            MediaTools.Probe probe = media.probe(input, dir);
+            if (!probe.hasAudio()) {
+                throw new AppException(
+                        HttpStatus.UNPROCESSABLE_ENTITY, "This video has no sound to look for pauses in");
+            }
+            long durationMs = probe.durationMs() == null ? 0 : probe.durationMs();
+            Pauses result = new Pauses(
+                    durationMs,
+                    PauseRules.clamp(media.silences(input, noiseDb, PauseRules.MIN_PAUSE_MS, dir), durationMs));
+            pauseCache.put(cacheKey, result);
             return result;
         } catch (JobFailure e) {
             throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());

@@ -37,7 +37,12 @@ class EditJobParamsTest {
                 java.util.List.of(new VideoEditRules.BlurBox(10, 10, 100, 50)),
                 new VideoEditRules.SpeedRange(1000, 3000, 0.5),
                 new VideoEditRules.Pip(7L, "TOP_LEFT", 30),
-                new VideoEditRules.Cards(new VideoEditRules.Card("Hello", 3000), null, "#1e3a8a", "#ffffff", null));
+                new VideoEditRules.Cards(new VideoEditRules.Card("Hello", 3000), null, "#1e3a8a", "#ffffff", null),
+                true,
+                true,
+                new VideoEditRules.ZoomTo(0.3, 0.6, 0.5),
+                new VideoEditRules.GreenScreen(null, 0.3, "#112233"),
+                new ReframeRules.Reframe(0.5625));
         String json = writer.writeValueAsString(trim);
         assertFalse(json.contains("flipV"), "unused settings are left out");
         assertFalse(json.contains("plain") || json.contains("\"none\""), "derived flags aren't stored");

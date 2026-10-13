@@ -35,6 +35,11 @@ public class VideoMarker {
     @Column(length = 20)
     private String color;
 
+    // Also shown to learners as a chapter on the watch page.
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean chapter = false;
+
     @Column(name = "created_by", length = 100)
     private String createdBy;
 

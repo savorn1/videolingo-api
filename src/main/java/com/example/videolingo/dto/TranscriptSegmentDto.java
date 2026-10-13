@@ -32,4 +32,7 @@ public class TranscriptSegmentDto {
 
     @Size(max = 64)
     private String speaker;
+
+    /** When each word is said, if speech-to-text timed them; kept on a save only for unchanged segments. */
+    private java.util.List<TranscriptWord> words;
 }

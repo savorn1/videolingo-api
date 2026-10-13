@@ -33,7 +33,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class WhisperClient {
 
-    public record Segment(long startMs, long endMs, String text) {}
+    /** `words`: its words with their own times (relative to the file), when the service timed them. */
+    public record Segment(
+            long startMs, long endMs, String text, List<com.example.videolingo.dto.TranscriptWord> words) {}
 
     /** `detectedLanguage` is what the model reports hearing, as a lower-case name ("khmer"), or null. */
     public record Result(List<Segment> segments, String detectedLanguage) {}
@@ -88,6 +90,7 @@ public class WhisperClient {
             field(body, boundary, "model", props.whisper());
             field(body, boundary, "response_format", "verbose_json");
             field(body, boundary, "timestamp_granularities[]", "segment");
+            field(body, boundary, "timestamp_granularities[]", "word");
             String hint = languageHint(language);
             if (hint != null) {
                 field(body, boundary, "language", hint);
@@ -125,22 +128,45 @@ public class WhisperClient {
                     "Speech-to-text failed (HTTP " + response.statusCode() + "): " + errorText(response.body()));
         }
         try {
-            JsonNode root = objectMapper.readTree(response.body());
-            List<Segment> out = new ArrayList<>();
-            for (JsonNode s : root.path("segments")) {
-                String text = s.path("text").asText("").strip();
-                if (text.isEmpty()) {
-                    continue;
-                }
-                long start = Math.round(s.path("start").asDouble() * 1000);
-                long end = Math.max(start + 1, Math.round(s.path("end").asDouble() * 1000));
-                out.add(new Segment(start, end, text));
-            }
-            String detected = root.path("language").asText("");
-            return new Result(out, detected.isBlank() ? null : detected.toLowerCase(Locale.ROOT));
+            return parse(objectMapper.readTree(response.body()));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the speech-to-text response", e);
         }
+    }
+
+    /** The segments of a verbose_json answer, each with the words timed within it (when `words` was asked for). */
+    static Result parse(JsonNode root) {
+        List<long[]> times = new ArrayList<>();
+        List<String> texts = new ArrayList<>();
+        for (JsonNode s : root.path("segments")) {
+            String text = s.path("text").asText("").strip();
+            if (text.isEmpty()) {
+                continue;
+            }
+            long start = Math.round(s.path("start").asDouble() * 1000);
+            long end = Math.max(start + 1, Math.round(s.path("end").asDouble() * 1000));
+            times.add(new long[] {start, end});
+            texts.add(text);
+        }
+        List<com.example.videolingo.dto.TranscriptWord> words = new ArrayList<>();
+        for (JsonNode w : root.path("words")) {
+            words.add(new com.example.videolingo.dto.TranscriptWord(
+                    Math.round(w.path("start").asDouble() * 1000),
+                    Math.round(w.path("end").asDouble() * 1000),
+                    w.path("word").asText("")));
+        }
+        List<List<com.example.videolingo.dto.TranscriptWord>> perSegment =
+                com.example.videolingo.subtitle.WordTimings.assign(times, words);
+        List<Segment> out = new ArrayList<>();
+        for (int i = 0; i < times.size(); i++) {
+            out.add(new Segment(
+                    times.get(i)[0],
+                    times.get(i)[1],
+                    texts.get(i),
+                    perSegment.get(i).isEmpty() ? null : perSegment.get(i)));
+        }
+        String detected = root.path("language").asText("");
+        return new Result(out, detected.isBlank() ? null : detected.toLowerCase(Locale.ROOT));
     }
 
     private String errorText(String body) {

@@ -35,7 +35,12 @@ public final class EditJobParams {
             List<VideoEditRules.BlurBox> blurs,
             VideoEditRules.SpeedRange speed,
             VideoEditRules.Pip pip,
-            VideoEditRules.Cards cards) {}
+            VideoEditRules.Cards cards,
+            Boolean reverse,
+            Boolean stabilize,
+            VideoEditRules.ZoomTo zoomTo,
+            VideoEditRules.GreenScreen greenScreen,
+            ReframeRules.Reframe reframe) {}
 
     public record Split(String operation, List<Range> segments) {}
 

@@ -374,6 +374,84 @@ public final class VideoEditRules {
         return (r.speed() < 1 ? "slow motion " : "sped up ") + speed + "× for " + seconds(r.endMs() - r.startMs());
     }
 
+    // ── Reverse, stabilise, zoom to an area, green screen ────────────────────
+
+    /** Reversing holds the whole clip in memory, so only short clips can be played backwards. */
+    public static final long MAX_REVERSE_MS = 60_000;
+
+    public static String validateReverse(Boolean reverse, Long clipMs) {
+        if (Boolean.TRUE.equals(reverse) && clipMs != null && clipMs > MAX_REVERSE_MS) {
+            return "Only a clip up to " + MAX_REVERSE_MS / 1000 + " s can be played backwards — trim it shorter";
+        }
+        return null;
+    }
+
+    /**
+     * Zoom from the whole picture into an area over the clip: the area's centre (cx, cy, 0–1 of the trimmed
+     * picture) and its final size (a fraction of the picture, its shape kept).
+     */
+    public record ZoomTo(double cx, double cy, double size) {}
+
+    public static final double MIN_ZOOM_SIZE = 0.25;
+    public static final double MAX_ZOOM_SIZE = 0.95;
+
+    public static String validateZoomTo(ZoomTo z) {
+        if (z == null) {
+            return null;
+        }
+        if (z.cx() < 0 || z.cx() > 1 || z.cy() < 0 || z.cy() > 1) {
+            return "Zoom: the area must be inside the picture";
+        }
+        if (z.size() < MIN_ZOOM_SIZE || z.size() > MAX_ZOOM_SIZE) {
+            return "Zoom: the area is between " + Math.round(MIN_ZOOM_SIZE * 100) + "% and "
+                    + Math.round(MAX_ZOOM_SIZE * 100) + "% of the picture";
+        }
+        return null;
+    }
+
+    public static String describeZoomTo(ZoomTo z) {
+        return z == null ? null : "zoom into " + Math.round(z.size() * 100) + "% of the picture";
+    }
+
+    /** Green screen: `keyColor` (#RRGGBB, green when left out) becomes `background` (#RRGGBB). */
+    public record GreenScreen(String keyColor, double similarity, String background) {
+        public String key() {
+            return keyColor == null ? "#00FF00" : keyColor;
+        }
+    }
+
+    public static final double MIN_KEY_SIMILARITY = 0.05;
+    public static final double MAX_KEY_SIMILARITY = 0.6;
+
+    public static String validateGreenScreen(GreenScreen g) {
+        if (g == null) {
+            return null;
+        }
+        if (!isHexColour(g.key()) || !isHexColour(g.background())) {
+            return "Green screen: pick the colours";
+        }
+        if (g.similarity() < MIN_KEY_SIMILARITY || g.similarity() > MAX_KEY_SIMILARITY) {
+            return "Green screen: the tolerance is between " + Math.round(MIN_KEY_SIMILARITY * 100) + " and "
+                    + Math.round(MAX_KEY_SIMILARITY * 100);
+        }
+        return null;
+    }
+
+    /** "played backwards, stabilised, green screen" — whichever apply; null for none. */
+    public static String describeMotion(Boolean reverse, Boolean stabilize, GreenScreen green) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (Boolean.TRUE.equals(reverse)) {
+            parts.add("played backwards");
+        }
+        if (Boolean.TRUE.equals(stabilize)) {
+            parts.add("stabilised");
+        }
+        if (green != null) {
+            parts.add("green screen");
+        }
+        return parts.isEmpty() ? null : String.join(", ", parts);
+    }
+
     /** Another stored video in a corner, `sizePct` of the width, muted; it starts with the clip and disappears when it ends. */
     public record Pip(Long videoId, String corner, double sizePct) {}
 

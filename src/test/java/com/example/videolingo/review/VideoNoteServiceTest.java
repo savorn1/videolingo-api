@@ -45,15 +45,21 @@ class VideoNoteServiceTest {
 
     @Test
     void aNoteIsKeptTrimmedAndTheOwnerIsTold() {
-        var note = service.addNote(7L, new NoteRequest("  The intro is too loud  "), "sok");
+        var note = service.addNote(7L, new NoteRequest("  The intro is too loud  ", 42_000L), "sok");
         assertEquals("The intro is too loud", note.body());
         assertEquals("sok", note.author());
+        assertEquals(42_000L, note.atMs());
         verify(notifications).notifyInApp(eq(List.of("dara")), eq("New note on “Lesson 4”"), anyString(), eq("sok"));
     }
 
     @Test
+    void aNoteCantBeBeforeTheStart() {
+        assertThrows(AppException.class, () -> service.addNote(7L, new NoteRequest("x", -1L), "sok"));
+    }
+
+    @Test
     void theOwnerIsNotToldAboutTheirOwnNote() {
-        service.addNote(7L, new NoteRequest("Fixed the title"), "dara");
+        service.addNote(7L, new NoteRequest("Fixed the title", null), "dara");
         verify(notifications, never()).notifyInApp(any(), anyString(), anyString(), anyString());
     }
 
@@ -63,7 +69,8 @@ class VideoNoteServiceTest {
                 .when(notifications)
                 .notifyInApp(any(), anyString(), anyString(), anyString());
         assertEquals(
-                "Check", service.addNote(7L, new NoteRequest("Check"), "sok").body());
+                "Check",
+                service.addNote(7L, new NoteRequest("Check", null), "sok").body());
     }
 
     @Test

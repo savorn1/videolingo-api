@@ -18,9 +18,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class VideoMarkerService {
 
     public record MarkerResponse(
-            Long id, long atMs, String label, String color, String createdBy, LocalDateTime createdAt) {}
+            Long id,
+            long atMs,
+            String label,
+            String color,
+            boolean chapter,
+            String createdBy,
+            LocalDateTime createdAt) {}
 
-    public record MarkerRequest(long atMs, String label, String color) {}
+    /** chapter: also a chapter learners see; left out on an update keeps it as it was. */
+    public record MarkerRequest(long atMs, String label, String color, Boolean chapter) {}
 
     private final VideoRepository videoRepository;
     private final VideoMarkerRepository markerRepository;
@@ -42,6 +49,7 @@ public class VideoMarkerService {
                 .atMs(request.atMs())
                 .label(label)
                 .color(blankToNull(request.color()))
+                .chapter(Boolean.TRUE.equals(request.chapter()))
                 .createdBy(actingUsername)
                 .build());
         return toResponse(marker);
@@ -54,6 +62,9 @@ public class VideoMarkerService {
         marker.setAtMs(request.atMs());
         marker.setLabel(label);
         marker.setColor(blankToNull(request.color()));
+        if (request.chapter() != null) {
+            marker.setChapter(request.chapter());
+        }
         return toResponse(markerRepository.save(marker));
     }
 
@@ -101,6 +112,6 @@ public class VideoMarkerService {
 
     private static MarkerResponse toResponse(VideoMarker m) {
         return new MarkerResponse(
-                m.getId(), m.getAtMs(), m.getLabel(), m.getColor(), m.getCreatedBy(), m.getCreatedAt());
+                m.getId(), m.getAtMs(), m.getLabel(), m.getColor(), m.isChapter(), m.getCreatedBy(), m.getCreatedAt());
     }
 }

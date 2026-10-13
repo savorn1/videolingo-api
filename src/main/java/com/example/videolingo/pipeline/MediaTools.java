@@ -466,6 +466,95 @@ public class MediaTools {
         return out;
     }
 
+    /** The clip played backwards, its sound too. */
+    public Path reverse(String video, boolean hasAudio, JobContext ctx) {
+        return pass(video, "reversed.mp4", reverseGraph(hasAudio), hasAudio, ctx);
+    }
+
+    static String reverseGraph(boolean hasAudio) {
+        return "[0:v]reverse[v]" + (hasAudio ? ";[0:a]areverse[a]" : "");
+    }
+
+    /** The clip steadied (ffmpeg's deshake), its sound as it was. */
+    public Path stabilize(String video, boolean hasAudio, JobContext ctx) {
+        return pass(video, "stabilised.mp4", "[0:v]deshake[v]" + (hasAudio ? ";[0:a]anull[a]" : ""), hasAudio, ctx);
+    }
+
+    /** Zooms from the whole picture into an area over the clip (see VideoEditRules.ZoomTo); width × height stays. */
+    public Path zoomTo(
+            String video,
+            VideoEditRules.ZoomTo z,
+            int width,
+            int height,
+            long clipMs,
+            boolean hasAudio,
+            JobContext ctx) {
+        return pass(
+                video,
+                "zoomed.mp4",
+                "[0:v]" + String.join(",", zoomToFilters(z, clipMs, width, height)) + "[v]"
+                        + (hasAudio ? ";[0:a]anull[a]" : ""),
+                hasAudio,
+                ctx);
+    }
+
+    /**
+     * The picture is scaled up frame by frame (to 1/size by the end) and cut back to its own size around the chosen
+     * centre, kept inside the picture — the same way as the slow zoom effect, but aimed.
+     */
+    static List<String> zoomToFilters(VideoEditRules.ZoomTo z, long clipMs, int width, int height) {
+        double length = Math.max(0.001, clipMs / 1000.0);
+        String progress = String.format(java.util.Locale.ROOT, "min(1,max(0,t/%.3f))", length);
+        String factor = String.format(java.util.Locale.ROOT, "(1+%.4f*%s)", 1 / z.size() - 1, progress);
+        return zoomAt(factor, z.cx(), z.cy(), width, height);
+    }
+
+    /** Green screen: the key colour is made see-through and the background colour shows there. */
+    public Path greenScreen(
+            String video, VideoEditRules.GreenScreen g, int width, int height, boolean hasAudio, JobContext ctx) {
+        return pass(
+                video,
+                "keyed.mp4",
+                greenScreenGraph(g, width, height) + (hasAudio ? ";[0:a]anull[a]" : ""),
+                hasAudio,
+                ctx);
+    }
+
+    static String greenScreenGraph(VideoEditRules.GreenScreen g, int width, int height) {
+        return String.format(
+                java.util.Locale.ROOT,
+                "color=c=0x%s:s=%dx%d[bg];[0:v]chromakey=0x%s:%.3f:0.08[fg];[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[v]",
+                g.background().substring(1),
+                width,
+                height,
+                g.key().substring(1),
+                g.similarity());
+    }
+
+    /** One re-encode of `video` through `graph` (which yields [v], and [a] when there's sound). */
+    private Path pass(String video, String name, String graph, boolean hasAudio, JobContext ctx) {
+        Path out = ctx.workDir().resolve(name);
+        List<String> command = new ArrayList<>(List.of(
+                props.ffmpeg(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-filter_complex",
+                graph,
+                "-map",
+                "[v]"));
+        if (hasAudio) {
+            command.addAll(List.of("-map", "[a]", "-c:a", "aac", "-b:a", "128k"));
+        }
+        command.addAll(h264(20));
+        command.addAll(List.of("-movflags", "+faststart", out.toString()));
+        run(command, Duration.ofMinutes(60), ctx, "ffmpeg");
+        return out;
+    }
+
     /** The picture up to `atMs` with its last frame held, then the rest; the sound gets the same gap as silence. */
     static String freezeGraph(long atMs, long durationMs, boolean hasAudio) {
         String at = String.format(java.util.Locale.ROOT, "%.3f", atMs / 1000.0);
@@ -792,13 +881,35 @@ public class MediaTools {
         double length = Math.max(0.001, (endMs - startMs) / 1000.0);
         String progress = String.format(java.util.Locale.ROOT, "min(1,max(0,(t-%.3f)/%.3f))", from, length);
         String amount = "ZOOM_OUT".equals(effect) ? "(1-" + progress + ")" : progress;
+        String factor = String.format(java.util.Locale.ROOT, "(1+%.3f*%s)", VideoEditRules.ZOOM_AMOUNT, amount);
+        return zoomAt(factor, 0.5, 0.5, width, height);
+    }
+
+    /**
+     * Scale the picture by `factor` (an expression of t) frame by frame, then cut it back to width × height around
+     * (cx, cy). The crop's position is worked out from t, not from iw: crop keeps the width of its first frame in
+     * iw, so a position from iw would stay at the top-left corner while the picture grows.
+     */
+    static List<String> zoomAt(String factor, double cx, double cy, int width, int height) {
+        String scaledW = "trunc(" + width + "*" + factor + "/2)*2";
+        String scaledH = "trunc(" + height + "*" + factor + "/2)*2";
         return List.of(
+                "scale=w='trunc(iw*" + factor + "/2)*2':h=-2:eval=frame",
                 String.format(
                         java.util.Locale.ROOT,
-                        "scale=w='trunc(iw*(1+%.3f*%s)/2)*2':h=-2:eval=frame",
-                        VideoEditRules.ZOOM_AMOUNT,
-                        amount),
-                "crop=" + width + ":" + height);
+                        "crop=%d:%d:x='max(0,min(%s-%d,%.4f*%s-%d))':y='max(0,min(%s-%d,%.4f*%s-%d))'",
+                        width,
+                        height,
+                        scaledW,
+                        width,
+                        cx,
+                        scaledW,
+                        width / 2,
+                        scaledH,
+                        height,
+                        cy,
+                        scaledH,
+                        height / 2));
     }
 
     /** Fade in at the start and out at the end; `kind` is "fade" (picture, to the fade's colour) or "afade" (sound). */
@@ -1219,6 +1330,108 @@ public class MediaTools {
         return heat;
     }
 
+    /**
+     * Where the picture moves in each `stepSeconds` of a clip, as the motion's centre (x, y fractions of the frame);
+     * NaN for a step where nothing moved. Same coarse decode as the heatmap, over the whole clip.
+     */
+    public double[][] motionTrack(String input, double stepSeconds, Path workDir) {
+        Path logFile = workDir.resolve("motion-track.log");
+        Process process;
+        try {
+            process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-loglevel",
+                            "error",
+                            "-i",
+                            input,
+                            "-vf",
+                            "fps=2,scale=" + MOTION_COLS + ":" + MOTION_ROWS,
+                            "-f",
+                            "rawvideo",
+                            "-pix_fmt",
+                            "rgb24",
+                            "-")
+                    .redirectError(logFile.toFile())
+                    .start();
+        } catch (IOException e) {
+            throw new JobFailure(
+                    "ffmpeg isn't installed on the server (or isn't on the PATH). Install it, or set FFMPEG_PATH.", e);
+        }
+        int frameBytes = MOTION_COLS * MOTION_ROWS * 3;
+        int framesPerStep = Math.max(1, (int) Math.round(stepSeconds * 2));
+        List<double[]> steps = new ArrayList<>();
+        float[] heat = new float[MOTION_COLS * MOTION_ROWS];
+        byte[] prev = null;
+        byte[] cur = new byte[frameBytes];
+        int frame = 0;
+        try (var in = new java.io.BufferedInputStream(process.getInputStream(), 1 << 16)) {
+            while (readFully(in, cur, frameBytes)) {
+                if (prev != null) {
+                    for (int cell = 0; cell < heat.length; cell++) {
+                        int base = cell * 3;
+                        heat[cell] += Math.abs((cur[base] & 0xff) - (prev[base] & 0xff))
+                                + Math.abs((cur[base + 1] & 0xff) - (prev[base + 1] & 0xff))
+                                + Math.abs((cur[base + 2] & 0xff) - (prev[base + 2] & 0xff));
+                    }
+                }
+                byte[] swap = prev;
+                prev = cur;
+                cur = swap != null ? swap : new byte[frameBytes];
+                if (++frame % framesPerStep == 0) {
+                    steps.add(stepCentre(heat));
+                    heat = new float[heat.length];
+                }
+            }
+            if (frame % framesPerStep != 0) {
+                steps.add(stepCentre(heat));
+            }
+            if (!process.waitFor(5, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+            }
+        } catch (IOException e) {
+            process.destroyForcibly();
+            throw new JobFailure("Couldn't read the video: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new JobFailure("Interrupted while reading the video", e);
+        }
+        return steps.toArray(new double[0][]);
+    }
+
+    /** One step's motion centre (x, y), or NaN, NaN when nothing moved in it. */
+    private static double[] stepCentre(float[] heat) {
+        float max = 0;
+        for (float v : heat) {
+            max = Math.max(max, v);
+        }
+        if (max <= 0) {
+            return new double[] {Double.NaN, Double.NaN};
+        }
+        float[] norm = new float[heat.length];
+        for (int i = 0; i < heat.length; i++) {
+            norm[i] = heat[i] / max;
+        }
+        AutoCropRules.Centroid c = AutoCropRules.centroid(norm, MOTION_COLS, MOTION_ROWS);
+        return new double[] {c.x(), c.y()};
+    }
+
+    /** A crop of width × height whose x and y follow expressions of t, then resized when `scale` is given. */
+    public Path reframe(
+            String video,
+            int width,
+            int height,
+            String x,
+            String y,
+            ScaleSize scale,
+            boolean hasAudio,
+            JobContext ctx) {
+        String chain = "crop=" + width + ":" + height + ":x='" + x + "':y='" + y + "'"
+                + (scale != null ? ",scale=" + scale.w() + ":" + scale.h() : "") + ",setsar=1";
+        return pass(video, "reframed.mp4", "[0:v]" + chain + "[v]" + (hasAudio ? ";[0:a]anull[a]" : ""), hasAudio, ctx);
+    }
+
     // Reads exactly `len` bytes into `buf`, or stops (returning false) at EOF partway through.
     private static boolean readFully(java.io.InputStream in, byte[] buf, int len) throws IOException {
         int off = 0;
@@ -1317,6 +1530,11 @@ public class MediaTools {
 
     /** The pauses in a recording (at least half a second below -40 dB), for cutting it into chapters. */
     public List<AudioToVideoRules.Silence> silences(Path audio, Path workDir) {
+        return silences(audio.toString(), -40, 500, workDir);
+    }
+
+    /** The pauses in a file's sound: at least `minMs` long below `noiseDb` (see PauseRules). */
+    public List<AudioToVideoRules.Silence> silences(String input, int noiseDb, long minMs, Path workDir) {
         Path log = workDir.resolve("silences.log");
         try {
             Process process = new ProcessBuilder(
@@ -1324,9 +1542,10 @@ public class MediaTools {
                             "-hide_banner",
                             "-nostats",
                             "-i",
-                            audio.toString(),
+                            input,
+                            "-vn",
                             "-af",
-                            "silencedetect=noise=-40dB:d=0.5",
+                            "silencedetect=noise=" + noiseDb + "dB:d=" + AudioEditRules.num(minMs / 1000.0),
                             "-f",
                             "null",
                             "-")

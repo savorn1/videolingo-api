@@ -49,12 +49,80 @@ public final class OverlayRules {
             double opacity,
             long startMs,
             Long endMs,
-            String animation) {
+            String animation,
+            Double toX,
+            Double toY,
+            Double toScale) {
+
+        /** As before layers could move: it stays where it is, at its size. */
+        public Layer(
+                String kind,
+                String text,
+                String font,
+                int weight,
+                double sizePct,
+                String color,
+                String background,
+                double backgroundOpacity,
+                String align,
+                String imageKey,
+                double widthPct,
+                double x,
+                double y,
+                double opacity,
+                long startMs,
+                Long endMs,
+                String animation) {
+            this(
+                    kind,
+                    text,
+                    font,
+                    weight,
+                    sizePct,
+                    color,
+                    background,
+                    backgroundOpacity,
+                    align,
+                    imageKey,
+                    widthPct,
+                    x,
+                    y,
+                    opacity,
+                    startMs,
+                    endMs,
+                    animation,
+                    null,
+                    null,
+                    null);
+        }
+
         // Not isText(): Jackson would take that for the `text` property and drop the real one.
         public boolean textual() {
             return "TEXT".equals(kind);
         }
+
+        /** Whether it moves or changes size over its time: from (x, y) at its size to (toX, toY) at toScale × it. */
+        public boolean moving() {
+            return toX != null || toY != null || (toScale != null && toScale != 1);
+        }
+
+        public double endX() {
+            return toX == null ? x : toX;
+        }
+
+        public double endY() {
+            return toY == null ? y : toY;
+        }
+
+        public double endScale() {
+            return toScale == null ? 1 : toScale;
+        }
     }
+
+    /** How much a moving layer can grow or shrink by its end. */
+    public static final double MIN_TO_SCALE = 0.25;
+
+    public static final double MAX_TO_SCALE = 4;
 
     /**
      * Subtitles burned in from a transcript of the video (rendered as an ASS file, see CaptionRules). A second
@@ -186,6 +254,13 @@ public final class OverlayRules {
         if (l.animation() == null || !ANIMATIONS.contains(l.animation())) {
             return "unknown animation";
         }
+        if ((l.toX() != null && (l.toX() < 0 || l.toX() > 1)) || (l.toY() != null && (l.toY() < 0 || l.toY() > 1))) {
+            return "where it moves to must be inside the frame";
+        }
+        if (l.toScale() != null && (l.toScale() < MIN_TO_SCALE || l.toScale() > MAX_TO_SCALE)) {
+            return "it can grow to at most " + (int) MAX_TO_SCALE + "× or shrink to " + (int) (MIN_TO_SCALE * 100)
+                    + "% of its size";
+        }
         return null;
     }
 
@@ -243,8 +318,17 @@ public final class OverlayRules {
 
             List<String> f = new ArrayList<>();
             f.add("format=rgba");
+            // How far through its time on screen it is (0–1), for a layer that moves or changes size.
+            String along = "min(1,max(0,(t-" + num(st) + ")/" + num(Math.max(0.01, et - st)) + "))";
+            String grow = "(1+" + num(l.endScale() - 1) + "*" + along + ")";
             if (!l.textual()) {
-                f.add("scale=w=" + Math.max(2, Math.round(videoWidth * l.widthPct() / 100)) + ":h=-1");
+                long w = Math.max(2, Math.round(videoWidth * l.widthPct() / 100));
+                f.add(
+                        l.endScale() != 1
+                                ? "scale=w='max(2,trunc(" + w + "*" + grow + "/2)*2)':h=-1:eval=frame"
+                                : "scale=w=" + w + ":h=-1");
+            } else if (l.endScale() != 1) {
+                f.add("scale=w='max(2,trunc(iw*" + grow + "/2)*2)':h=-1:eval=frame");
             }
             if (l.opacity() < 1) {
                 f.add("colorchannelmixer=aa=" + num(l.opacity()));
@@ -255,8 +339,12 @@ public final class OverlayRules {
             }
             graph.add("[" + (i + 1) + ":v]" + String.join(",", f) + "[l" + i + "]");
 
-            String x = "main_w*" + num(l.x()) + "-overlay_w/2";
-            String y = "main_h*" + num(l.y()) + "-overlay_h/2";
+            String cx =
+                    l.endX() == l.x() ? num(l.x()) : "(" + num(l.x()) + "+" + num(l.endX() - l.x()) + "*" + along + ")";
+            String cy =
+                    l.endY() == l.y() ? num(l.y()) : "(" + num(l.y()) + "+" + num(l.endY() - l.y()) + "*" + along + ")";
+            String x = "main_w*" + cx + "-overlay_w/2";
+            String y = "main_h*" + cy + "-overlay_h/2";
             String progress = "max(0,1-(t-" + num(st) + ")/" + num(Math.max(d, 0.01)) + ")";
             if ("SLIDE_UP".equals(l.animation())) {
                 y = y + "+main_h*0.06*" + progress;

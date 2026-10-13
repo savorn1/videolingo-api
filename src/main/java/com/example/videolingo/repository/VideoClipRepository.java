@@ -10,4 +10,7 @@ public interface VideoClipRepository extends JpaRepository<VideoClip, Long> {
     List<VideoClip> findByVideoIdAndExpiresAtAfterOrderByIdDesc(Long videoId, LocalDateTime now);
 
     List<VideoClip> findByExpiresAtBefore(LocalDateTime now);
+
+    /** The newest results still kept, across every video (the "Edit results" page). */
+    List<VideoClip> findTop200ByExpiresAtAfterOrderByIdDesc(LocalDateTime now);
 }

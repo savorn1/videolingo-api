@@ -63,7 +63,8 @@ public class LearnService {
 
     public record VoiceOver(String language, String languageName, String audioUrl) {}
 
-    public record WatchPage(VideoResponse video, List<Track> tracks, List<VoiceOver> voiceOvers) {}
+    public record WatchPage(
+            VideoResponse video, List<Track> tracks, List<VoiceOver> voiceOvers, List<ChapterRules.Chapter> chapters) {}
 
     public record Cue(long startMs, long endMs, String text) {}
 
@@ -90,6 +91,7 @@ public class LearnService {
     private final GlossaryService glossaryService;
     private final SubtitleReviewService reviewService;
     private final NotificationService notifications;
+    private final com.example.videolingo.repository.VideoMarkerRepository markerRepository;
 
     // ── Videos ────────────────────────────────────────────────────────────
 
@@ -127,7 +129,12 @@ public class LearnService {
                                 .orElse(d.getLanguage()),
                         mediaUrls.forBrowser(d.getAudioUrl())))
                 .toList();
-        return new WatchPage(video, tracks, dubs);
+        Long lengthMs = video.getDurationMs() != null
+                ? video.getDurationMs()
+                : video.getDurationSeconds() == null ? null : video.getDurationSeconds() * 1000L;
+        List<ChapterRules.Chapter> chapters =
+                ChapterRules.fromMarkers(markerRepository.findByVideoIdOrderByAtMsAsc(videoId), lengthMs);
+        return new WatchPage(video, tracks, dubs, chapters);
     }
 
     /** Cues of a published track on a watchable video. */

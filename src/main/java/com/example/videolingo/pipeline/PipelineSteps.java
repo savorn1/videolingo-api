@@ -1171,12 +1171,15 @@ public class PipelineSteps {
         VideoEditRules.Fade fade = t.fade();
 
         ctx.progress(20, "Trimming");
+        // Following the action crops (and resizes) after the trim, along the motion it measures in the trimmed clip.
+        ReframeRules.Reframe reframe = t.reframe();
+        int[] reframed = null;
         Path out = media.trim(
                 input,
                 startMs,
                 endMs,
                 crop,
-                scale,
+                reframe != null ? null : scale,
                 rotate,
                 flipH,
                 flipV,
@@ -1186,8 +1189,60 @@ public class PipelineSteps {
                 fade,
                 t.blurs() == null ? List.of() : t.blurs(),
                 ctx.slice(20, t.audio() != null ? 60 : 90));
-        // Then, in order: a part at another speed, a held frame, a video in a corner (times on the trimmed clip as the
-        // editor shows it — the freeze is moved along by the speed change), the added audio, and last the cards.
+        if (reframe != null) {
+            ctx.progress(40, "Following the action");
+            MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
+            if (info.width() == null || info.height() == null) {
+                throw new JobFailure("Couldn't read the clip's picture size");
+            }
+            long clipLength = info.durationMs() != null ? info.durationMs() : 0;
+            double step = ReframeRules.stepSeconds(clipLength);
+            double[][] track = media.motionTrack(out.toString(), step, ctx.workDir());
+            double[] xs = new double[track.length];
+            double[] ys = new double[track.length];
+            for (int i = 0; i < track.length; i++) {
+                xs[i] = track[i][0];
+                ys[i] = track[i][1];
+            }
+            AutoCropRules.CropRect box =
+                    AutoCropRules.suggestCrop(reframe.aspect(), info.width(), info.height(), 0.5, 0.5);
+            int w = box.w() & ~1;
+            int h = box.h() & ~1;
+            reframed = new int[] {w, h};
+            out = media.reframe(
+                    out.toString(),
+                    w,
+                    h,
+                    ReframeRules.offsetExpression(ReframeRules.smooth(xs), info.width(), w, step),
+                    ReframeRules.offsetExpression(ReframeRules.smooth(ys), info.height(), h, step),
+                    scale,
+                    info.hasAudio(),
+                    ctx);
+        }
+        // Then, in order: steadied, green screen, zoomed into an area (on the trimmed picture), a part at another
+        // speed, a held frame, played backwards, a video in a corner (times on the trimmed clip as the editor shows
+        // it — the freeze is moved along by the speed change), the added audio, and last the cards.
+        if (Boolean.TRUE.equals(t.stabilize()) || t.greenScreen() != null || t.zoomTo() != null) {
+            MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
+            if (info.width() == null || info.height() == null) {
+                throw new JobFailure("Couldn't read the clip's picture size");
+            }
+            if (Boolean.TRUE.equals(t.stabilize())) {
+                ctx.progress(45, "Steadying the picture");
+                out = media.stabilize(out.toString(), info.hasAudio(), ctx);
+            }
+            if (t.greenScreen() != null) {
+                ctx.progress(48, "Replacing the green screen");
+                out = media.greenScreen(
+                        out.toString(), t.greenScreen(), info.width(), info.height(), info.hasAudio(), ctx);
+            }
+            if (t.zoomTo() != null) {
+                ctx.progress(52, "Zooming in");
+                long clipLength = info.durationMs() != null ? info.durationMs() : 0;
+                out = media.zoomTo(
+                        out.toString(), t.zoomTo(), info.width(), info.height(), clipLength, info.hasAudio(), ctx);
+            }
+        }
         if (t.speed() != null) {
             ctx.progress(55, "Changing the speed");
             MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
@@ -1200,6 +1255,14 @@ public class PipelineSteps {
             boolean sound = media.probe(out.toString(), ctx.workDir()).hasAudio();
             long at = VideoEditRules.rampedMs(t.freeze().atMs(), t.speed());
             out = media.freeze(out.toString(), at, t.freeze().durationMs(), sound, ctx);
+        }
+        if (Boolean.TRUE.equals(t.reverse())) {
+            ctx.progress(59, "Playing it backwards");
+            MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
+            if (info.durationMs() != null && info.durationMs() > VideoEditRules.MAX_REVERSE_MS + 15_000) {
+                throw new JobFailure("The clip is too long to play backwards — trim it shorter");
+            }
+            out = media.reverse(out.toString(), info.hasAudio(), ctx);
         }
         if (t.pip() != null) {
             ctx.progress(60, "Adding the picture in picture");
@@ -1239,8 +1302,12 @@ public class PipelineSteps {
         // A quarter turn swaps the sides of the picture that was cropped (or the whole one); a resize is already the
         // final size.
         boolean swap = VideoEditRules.swapsSides(rotate);
-        Integer baseW = crop != null ? Integer.valueOf(crop.w()) : video.getWidth();
-        Integer baseH = crop != null ? Integer.valueOf(crop.h()) : video.getHeight();
+        Integer baseW = reframed != null
+                ? Integer.valueOf(reframed[0])
+                : crop != null ? Integer.valueOf(crop.w()) : video.getWidth();
+        Integer baseH = reframed != null
+                ? Integer.valueOf(reframed[1])
+                : crop != null ? Integer.valueOf(crop.h()) : video.getHeight();
         Integer width = scale != null ? Integer.valueOf(scale.w()) : swap ? baseH : baseW;
         Integer height = scale != null ? Integer.valueOf(scale.h()) : swap ? baseW : baseH;
         clipRepository.save(VideoClip.builder()
@@ -1268,7 +1335,12 @@ public class PipelineSteps {
                                         joinSummary(
                                                 VideoEditRules.describeEffect(effect),
                                                 VideoEditRules.describeFade(fade)),
-                                        VideoEditRules.describeFreeze(t.freeze()))),
+                                        joinSummary(
+                                                VideoEditRules.describeFreeze(t.freeze()),
+                                                joinSummary(
+                                                        VideoEditRules.describeZoomTo(t.zoomTo()),
+                                                        VideoEditRules.describeMotion(
+                                                                t.reverse(), t.stabilize(), t.greenScreen()))))),
                         audioSummary))
                 .storageKey(key)
                 .sourceKey(video.getStorageKey())
@@ -1497,6 +1569,13 @@ public class PipelineSteps {
                         .startMs(offset + s.startMs())
                         .endMs(offset + s.endMs())
                         .text(s.text().length() > 2000 ? s.text().substring(0, 2000) : s.text())
+                        .words(
+                                s.words() == null
+                                        ? null
+                                        : s.words().stream()
+                                                .map(w -> new com.example.videolingo.dto.TranscriptWord(
+                                                        offset + w.startMs(), offset + w.endMs(), w.text()))
+                                                .toList())
                         .build());
             }
         }
