@@ -11,6 +11,14 @@ import org.springframework.data.repository.query.Param;
 
 public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecificationExecutor<Video> {
 
+    /** Disabled, live videos whose scheduled publish time has come. */
+    @org.springframework.data.jpa.repository.Query("""
+            select v from Video v
+            where v.publishAt is not null and v.publishAt <= :now and v.enabled = false and v.deletedAt is null
+            """)
+    java.util.List<Video> findDueToPublish(
+            @org.springframework.data.repository.query.Param("now") java.time.LocalDateTime now);
+
     /** Same platform video, or the same link — used to warn about adding a video twice. */
     @org.springframework.data.jpa.repository.Query("""
             select v from Video v where (v.source = :source and v.externalId = :externalId) or v.videoUrl = :url order by v.id

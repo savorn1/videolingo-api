@@ -988,25 +988,22 @@ public class MediaTools {
      * The video with its sound re-rendered by `graph` (AudioEditRules). The
      * picture is copied as-is unless the graph changes it (speed).
      */
+    /** A sound bed mixed under the main sound (the music, or an extra track): its file, and whether it loops. */
+    public record Bed(Path file, boolean loop) {}
+
     public Path editAudio(
-            String video,
-            Path replacement,
-            Path music,
-            boolean loopMusic,
-            AudioEditRules.Graph graph,
-            long outMs,
-            JobContext ctx) {
+            String video, Path replacement, List<Bed> beds, AudioEditRules.Graph graph, long outMs, JobContext ctx) {
         Path out = ctx.workDir().resolve("audio-edit.mp4");
         List<String> command =
                 new ArrayList<>(List.of(props.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", video));
         if (replacement != null) {
             command.addAll(List.of("-i", replacement.toString()));
         }
-        if (music != null) {
-            if (loopMusic) {
+        for (Bed bed : beds) {
+            if (bed.loop()) {
                 command.addAll(List.of("-stream_loop", "-1"));
             }
-            command.addAll(List.of("-i", music.toString()));
+            command.addAll(List.of("-i", bed.file().toString()));
         }
         command.addAll(List.of("-filter_complex", graph.filter()));
         if (graph.picture()) {

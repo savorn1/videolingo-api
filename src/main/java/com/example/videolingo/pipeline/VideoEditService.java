@@ -101,7 +101,9 @@ public class VideoEditService {
             Double pitchSemitones,
             Double balance,
             String channels,
-            MusicInput music) {}
+            MusicInput music,
+            List<MusicInput> tracks,
+            Boolean keepSoundSpeed) {}
 
     // format: "MP3" (default) or "WAV".
     public record ExtractRequest(String format) {}
@@ -567,14 +569,13 @@ public class VideoEditService {
                 : r.mutes().stream()
                         .map(m -> new AudioEditRules.Range(m.startMs(), m.endMs()))
                         .toList();
-        AudioEditRules.Music music = r.music() == null || r.music().key() == null
-                ? null
-                : new AudioEditRules.Music(
-                        r.music().key(),
-                        r.music().volume() == null ? 0.3 : r.music().volume(),
-                        r.music().loop() == null || r.music().loop(),
-                        Boolean.TRUE.equals(r.music().duck()),
-                        r.music().startMs() == null ? 0 : r.music().startMs());
+        AudioEditRules.Music music = r.music() == null || r.music().key() == null ? null : toMusic(r.music());
+        List<AudioEditRules.Music> tracks = r.tracks() == null
+                ? List.of()
+                : r.tracks().stream()
+                        .filter(t -> t != null && t.key() != null)
+                        .map(VideoEditService::toMusic)
+                        .toList();
         String replaceKey = r.replaceKey() == null || r.replaceKey().isBlank() ? null : r.replaceKey();
         return new AudioEditRules.Spec(
                 replaceKey,
@@ -590,7 +591,18 @@ public class VideoEditService {
                 r.pitchSemitones() == null ? 0 : r.pitchSemitones(),
                 r.balance() == null ? 0 : r.balance(),
                 r.channels() == null ? "KEEP" : r.channels(),
-                music);
+                music,
+                tracks,
+                Boolean.TRUE.equals(r.keepSoundSpeed()));
+    }
+
+    private static AudioEditRules.Music toMusic(MusicInput m) {
+        return new AudioEditRules.Music(
+                m.key(),
+                m.volume() == null ? 0.3 : m.volume(),
+                m.loop() == null || m.loop(),
+                Boolean.TRUE.equals(m.duck()),
+                m.startMs() == null ? 0 : m.startMs());
     }
 
     public PromoteResult promote(Long videoId, Long clipId, String username) {

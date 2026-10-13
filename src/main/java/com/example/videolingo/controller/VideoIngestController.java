@@ -29,6 +29,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -98,6 +100,19 @@ public class VideoIngestController {
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success("Video from audio queued", ingest.createFromAudio(request, auth.getName())));
+    }
+
+    // "Make again": whether a video made from audio can be rendered once more with its last settings, and doing it.
+    @GetMapping("/{id}/remake")
+    public ResponseEntity<ApiResponse<VideoIngestService.RemakeStatus>> remakeStatus(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.remakeStatus(id)));
+    }
+
+    @PostMapping("/{id}/remake")
+    public ResponseEntity<ApiResponse<com.example.videolingo.dto.ProcessingJobResponse>> remake(
+            @PathVariable Long id, Authentication auth) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success("Making the video again", ingest.remake(id, auth.getName())));
     }
 
     // A few seconds of a waveform look drawn from the real sound, so it can be judged before the video is made.

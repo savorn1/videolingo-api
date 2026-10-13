@@ -77,6 +77,7 @@ public class PipelineSteps {
     private final S3Client s3;
     private final ObjectMapper objectMapper;
     private final PipelineProperties props;
+    private final com.example.videolingo.service.VideoVersionService versionService;
 
     @Value("${s3.bucket:}")
     private String bucket;
@@ -630,6 +631,11 @@ public class PipelineSteps {
             upload(thumbKey, cover, ext.equals("jpg") ? "image/jpeg" : "image/" + ext, null);
             video.setThumbnailUrl(publicUrl(thumbKey));
         }
+        // Made again: the file it had is kept under Versions (only now, when it is really replaced —
+        // a version's file is deleted with it, so it must never be the one still in use).
+        if (video.getStorageKey() != null) {
+            versionService.snapshot(video, "Replaced by making it again", null);
+        }
         video.setStorageKey(key);
         video.setVideoUrl(publicUrl(key));
         video.setSource(VideoSource.UPLOAD);
@@ -866,13 +872,18 @@ public class PipelineSteps {
                 throw new JobFailure("The replacement file has no audio in it");
             }
         }
-        Path music = null;
-        if (spec.music() != null) {
-            ctx.progress(20, "Fetching the background music");
-            music = fetch(spec.music().key(), "music", ctx);
-            if (!media.probe(music.toString(), ctx.workDir()).hasAudio()) {
-                throw new JobFailure("The background music file has no audio in it");
+        // The music, then the extra tracks — the order the graph reads them in.
+        List<MediaTools.Bed> beds = new ArrayList<>();
+        List<AudioEditRules.Music> wanted = spec.beds();
+        for (int i = 0; i < wanted.size(); i++) {
+            boolean isMusic = i == 0 && spec.music() != null;
+            String name = isMusic ? "The background music" : "Sound track " + (spec.music() != null ? i : i + 1);
+            ctx.progress(20, isMusic ? "Fetching the background music" : "Fetching the sound tracks");
+            Path file = fetch(wanted.get(i).key(), isMusic ? "music" : "track-" + i, ctx);
+            if (!media.probe(file.toString(), ctx.workDir()).hasAudio()) {
+                throw new JobFailure(name + " file has no audio in it");
             }
+            beds.add(new MediaTools.Bed(file, wanted.get(i).loop()));
         }
 
         boolean mono = replacementProbe != null ? replacementProbe.mono() : source.mono();
@@ -885,14 +896,7 @@ public class PipelineSteps {
         long outMs = Math.round(source.durationMs() / spec.speed());
 
         ctx.progress(25, graph.picture() ? "Rendering the sound and re-timing the picture" : "Rendering the sound");
-        Path out = media.editAudio(
-                input,
-                replacement,
-                music,
-                spec.music() != null && spec.music().loop(),
-                graph,
-                outMs,
-                ctx.slice(25, 90));
+        Path out = media.editAudio(input, replacement, beds, graph, outMs, ctx.slice(25, 90));
         return new AudioRender(out, outMs);
     }
 

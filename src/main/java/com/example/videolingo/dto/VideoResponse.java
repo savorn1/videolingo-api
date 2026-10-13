@@ -41,6 +41,9 @@ public class VideoResponse {
     private Long fileSize;
     private String mimeType;
     private boolean enabled;
+    /** When the (disabled) video will be enabled by itself; null when not scheduled. */
+    private LocalDateTime publishAt;
+
     private boolean archived;
     private LocalDateTime archivedAt;
     private VideoVisibility visibility;

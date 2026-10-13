@@ -21,6 +21,7 @@ import com.example.videolingo.dto.VideoIngestDtos.UploadRequest;
 import com.example.videolingo.dto.VideoIngestDtos.UploadTicket;
 import com.example.videolingo.dto.VideoResponse;
 import com.example.videolingo.entity.Language;
+import com.example.videolingo.entity.ProcessingJobStatus;
 import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.entity.User;
 import com.example.videolingo.entity.Video;
@@ -32,6 +33,7 @@ import com.example.videolingo.pipeline.JobFailure;
 import com.example.videolingo.pipeline.MergeRules;
 import com.example.videolingo.pipeline.OverlayRules;
 import com.example.videolingo.pipeline.PipelineSteps;
+import com.example.videolingo.pipeline.RemakeRules;
 import com.example.videolingo.repository.LanguageRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.repository.VideoRepository;
@@ -45,6 +47,7 @@ import com.example.videolingo.storage.MediaUrls;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -137,6 +140,7 @@ public class VideoIngestService {
     private final SettingsService settings;
     private final VideoVersionService versionService;
     private final ProcessingJobService jobService;
+    private final com.example.videolingo.repository.ProcessingJobRepository jobRepository;
     private final ObjectMapper objectMapper;
     private final S3Client s3;
     private final PipelineSteps steps;
@@ -636,6 +640,97 @@ public class VideoIngestService {
                 json,
                 AudioToVideoRules.describe(spec) + " requested by " + actor);
         return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
+    }
+
+    // ── Make again ─────────────────────────────────────────────────────────
+
+    /** Whether a video can be made again from its recording, and if not, why; `keptUntil` is when its uploads go. */
+    public record RemakeStatus(boolean available, String reason, LocalDateTime keptUntil) {}
+
+    /** Whether "Make again" is possible for this video now (see RemakeRules). */
+    @Transactional(readOnly = true)
+    public RemakeStatus remakeStatus(Long videoId) {
+        Remake r = findRemake(videoId);
+        return new RemakeStatus(r.problem == null, r.problem, r.keptUntil);
+    }
+
+    /**
+     * Renders a video made from audio once more with its last render's settings, as a new job. The file it has now
+     * is kept under Versions when the new one replaces it; the transcript isn't made again.
+     */
+    @Transactional
+    public com.example.videolingo.dto.ProcessingJobResponse remake(Long videoId, String actor) {
+        Remake r = findRemake(videoId);
+        if (r.problem != null) {
+            throw new AppException(HttpStatus.CONFLICT, r.problem);
+        }
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(RemakeRules.remakeParams(r.params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+        var job = jobService.enqueue(
+                videoId,
+                ProcessingJobType.EDIT,
+                json,
+                r.params.path("summary").asText("Video from audio") + " — made again by " + actor);
+        return jobService.getJob(job.getId());
+    }
+
+    private record Remake(com.fasterxml.jackson.databind.JsonNode params, String problem, LocalDateTime keptUntil) {}
+
+    private Remake findRemake(Long videoId) {
+        Video video = videoRepository
+                .findById(videoId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found with id: " + videoId));
+        // The last render from audio of this video, and when it was asked for (its uploads are as old).
+        var last = jobRepository.findTop10ByVideoIdAndTypeOrderByIdDesc(videoId, ProcessingJobType.EDIT).stream()
+                .map(j -> java.util.Map.entry(j, readParams(j.getParameters())))
+                .filter(e -> RemakeRules.isFromAudio(e.getValue()))
+                .findFirst()
+                .orElse(null);
+        if (last == null) {
+            return new Remake(null, "Only a video made from audio can be made again", null);
+        }
+        var params = last.getValue();
+        LocalDateTime keptUntil = last.getKey().getCreatedAt() == null
+                ? null
+                : last.getKey().getCreatedAt().plusHours(RemakeRules.UPLOADS_KEPT_HOURS);
+        if (video.isDeleted()) {
+            return new Remake(params, "Restore the video before making it again", keptUntil);
+        }
+        boolean busy = !jobRepository
+                .findByVideoIdAndTypeInAndStatusInOrderByIdAsc(
+                        videoId,
+                        List.of(ProcessingJobType.EDIT),
+                        List.of(ProcessingJobStatus.QUEUED, ProcessingJobStatus.RUNNING))
+                .isEmpty();
+        if (busy) {
+            return new Remake(params, "Wait for the video's current job to finish", keptUntil);
+        }
+        for (String key : RemakeRules.uploadKeys(params)) {
+            if (head(key) == null) {
+                return new Remake(
+                        params,
+                        "The recording or pictures it was made from are no longer kept (uploads are kept "
+                                + RemakeRules.UPLOADS_KEPT_HOURS
+                                + " hours) — make it again from the file under Video from audio",
+                        null);
+            }
+        }
+        return new Remake(params, null, keptUntil);
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode readParams(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
     }
 
     /** Where to cut a long recording into chapters, at its pauses. See PipelineSteps.chapters. */

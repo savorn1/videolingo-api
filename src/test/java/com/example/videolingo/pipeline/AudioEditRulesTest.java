@@ -221,7 +221,7 @@ class AudioEditRulesTest {
                 g.contains(
                         "[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.3,adelay=delays=1500:all=1[music]"),
                 g);
-        assertTrue(g.contains("[music][key]sidechaincompress"), g);
+        assertTrue(g.contains("[music][key0]sidechaincompress"), g);
         assertTrue(g.contains("[voice][ducked]amix=inputs=2:duration=first:normalize=0[withmusic]"), g);
     }
 

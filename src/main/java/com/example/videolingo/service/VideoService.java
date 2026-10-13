@@ -18,6 +18,12 @@ public interface VideoService {
 
     VideoResponse updateStatus(Long id, boolean enabled);
 
+    /** Sets (or, with null, clears) when a disabled video is enabled by itself. */
+    VideoResponse schedulePublish(Long id, java.time.LocalDateTime publishAt);
+
+    /** Enables the videos whose scheduled time has come; returns how many. */
+    int publishDue();
+
     // Soft delete — moves the video to the trash.
     void deleteVideo(Long id);
 

@@ -4,6 +4,7 @@ import com.example.videolingo.dto.ApiResponse;
 import com.example.videolingo.dto.AssignTagsRequest;
 import com.example.videolingo.dto.MoveVideoOwnerRequest;
 import com.example.videolingo.dto.PageResponse;
+import com.example.videolingo.dto.ScheduleVideoRequest;
 import com.example.videolingo.dto.UpdateVideoRequest;
 import com.example.videolingo.dto.UpdateVideoStatusRequest;
 import com.example.videolingo.dto.VideoFilterRequest;
@@ -14,6 +15,8 @@ import com.example.videolingo.exception.AppException;
 import com.example.videolingo.ingest.VideoIngestService;
 import com.example.videolingo.service.VideoService;
 import jakarta.validation.Valid;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +63,19 @@ public class VideoController {
         return ResponseEntity.ok(ApiResponse.success(
                 request.getEnabled() ? "Video enabled" : "Video disabled",
                 videoService.updateStatus(id, request.getEnabled())));
+    }
+
+    // Enables a disabled video by itself at a set time; a null time clears the schedule.
+    @PutMapping("/{id}/schedule")
+    public ResponseEntity<ApiResponse<VideoResponse>> schedule(
+            @PathVariable Long id, @RequestBody ScheduleVideoRequest request) {
+        LocalDateTime at = request.getPublishAt() == null
+                ? null
+                : request.getPublishAt()
+                        .atZoneSameInstant(ZoneId.systemDefault())
+                        .toLocalDateTime();
+        return ResponseEntity.ok(ApiResponse.success(
+                at == null ? "Schedule cleared" : "Video scheduled", videoService.schedulePublish(id, at)));
     }
 
     @DeleteMapping("/{id}")

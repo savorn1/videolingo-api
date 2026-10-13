@@ -10,9 +10,12 @@ import java.util.Set;
 // An audio edit of a video, as one ffmpeg filter graph: which sound to start
 // from (the video's own, or an uploaded file), which pieces of it go where on
 // the video's timeline (clips — split, moved, duplicated, deleted in the
-// editor), then muted ranges, level, clean-up, background music, balance,
-// pitch/speed, loudness and fades. Pure — validation and graph building only,
-// so both are unit-tested without running ffmpeg.
+// editor), then muted ranges, level, clean-up, background music and up to
+// MAX_TRACKS more sound tracks, balance, pitch/speed, loudness and fades. Speed
+// changes the sound with the picture, unless keepSoundSpeed: then only the
+// picture is re-timed and the sound plays at its own speed (slow motion with
+// real-speed sound; it is padded with silence or cut at the new end). Pure —
+// validation and graph building only, so both are unit-tested without ffmpeg.
 public final class AudioEditRules {
 
     public static final int MAX_CLIPS = 50;
@@ -22,6 +25,8 @@ public final class AudioEditRules {
     public static final double MAX_PITCH = 12;
     public static final double MAX_GAIN = 4;
     public static final long MAX_FADE_MS = 60_000;
+    /** Extra sound tracks (effects, a second bed) besides the background music. */
+    public static final int MAX_TRACKS = 4;
     /** Uploaded audio lives under this prefix; nothing else in the bucket may be named in a request. */
     public static final String UPLOAD_PREFIX = "audio-uploads/";
 
@@ -40,7 +45,8 @@ public final class AudioEditRules {
     /**
      * A complete edit, with defaults filled in. clips empty = the source sound
      * as-is, from 0. Times are on the video's own (1×) timeline; speed then
-     * scales the whole result, picture included.
+     * scales the whole result, picture included — or only the picture, with
+     * keepSoundSpeed. tracks: more sound beds besides `music`, mixed the same way.
      */
     public record Spec(
             String replaceKey,
@@ -56,13 +62,68 @@ public final class AudioEditRules {
             double pitchSemitones,
             double balance,
             String channels,
-            Music music) {
+            Music music,
+            List<Music> tracks,
+            boolean keepSoundSpeed) {
 
         public Spec {
             clips = clips == null ? List.of() : List.copyOf(clips);
             mutes = mutes == null ? List.of() : List.copyOf(mutes);
             denoise = denoise == null ? "OFF" : denoise;
             channels = channels == null ? "KEEP" : channels;
+            tracks = tracks == null ? List.of() : List.copyOf(tracks);
+        }
+
+        /** As before there were extra tracks: the sound follows the speed. */
+        public Spec(
+                String replaceKey,
+                List<Clip> clips,
+                List<Range> mutes,
+                double volume,
+                long fadeInMs,
+                long fadeOutMs,
+                boolean normalize,
+                String denoise,
+                boolean enhanceVoice,
+                double speed,
+                double pitchSemitones,
+                double balance,
+                String channels,
+                Music music) {
+            this(
+                    replaceKey,
+                    clips,
+                    mutes,
+                    volume,
+                    fadeInMs,
+                    fadeOutMs,
+                    normalize,
+                    denoise,
+                    enhanceVoice,
+                    speed,
+                    pitchSemitones,
+                    balance,
+                    channels,
+                    music,
+                    List.of(),
+                    false);
+        }
+
+        /** The music, then the extra tracks: every bed mixed under the main sound, in input order. */
+        @JsonIgnore
+        public List<Music> beds() {
+            List<Music> all = new ArrayList<>();
+            if (music != null) {
+                all.add(music);
+            }
+            all.addAll(tracks);
+            return all;
+        }
+
+        /** How long the sound is mixed over: the finished video's length when the sound keeps its speed. */
+        @JsonIgnore
+        public long mixLengthMs(long videoDurationMs) {
+            return keepSoundSpeed ? Math.round(videoDurationMs / speed) : videoDurationMs;
         }
 
         @JsonIgnore
@@ -92,7 +153,8 @@ public final class AudioEditRules {
                     && pitchSemitones == 0
                     && balance == 0
                     && "KEEP".equals(channels)
-                    && music == null;
+                    && music == null
+                    && tracks.isEmpty();
         }
     }
 
@@ -167,16 +229,33 @@ public final class AudioEditRules {
             return "Balance must be between -1 (left) and 1 (right)";
         }
         if (s.music() != null) {
-            Music m = s.music();
-            if (!isUploadKey(m.key())) {
-                return "The background music must be a file uploaded here";
+            String problem = bedProblem(s.music(), "The background music", "Music volume", durationMs);
+            if (problem != null) {
+                return problem;
             }
-            if (m.volume() < 0 || m.volume() > 2) {
-                return "Music volume must be between 0% and 200%";
+        }
+        if (s.tracks().size() > MAX_TRACKS) {
+            return "At most " + MAX_TRACKS + " extra sound tracks";
+        }
+        for (int i = 0; i < s.tracks().size(); i++) {
+            String name = "Sound track " + (i + 1);
+            String problem = bedProblem(s.tracks().get(i), name, name + ": volume", durationMs);
+            if (problem != null) {
+                return problem;
             }
-            if (m.startMs() < 0 || (durationMs != null && m.startMs() >= durationMs)) {
-                return "The music must start within the video";
-            }
+        }
+        return null;
+    }
+
+    private static String bedProblem(Music m, String name, String volumeName, Long durationMs) {
+        if (m == null || !isUploadKey(m.key())) {
+            return name + " must be a file uploaded here";
+        }
+        if (m.volume() < 0 || m.volume() > 2) {
+            return volumeName + " must be between 0% and 200%";
+        }
+        if (m.startMs() < 0 || (durationMs != null && m.startMs() >= durationMs)) {
+            return name + " must start within the video";
         }
         return null;
     }
@@ -222,6 +301,9 @@ public final class AudioEditRules {
             parts.add("background music " + Math.round(s.music().volume() * 100) + "%"
                     + (s.music().duck() ? " (ducked)" : ""));
         }
+        if (!s.tracks().isEmpty()) {
+            parts.add(s.tracks().size() + (s.tracks().size() == 1 ? " sound track" : " sound tracks"));
+        }
         if (s.balance() != 0) {
             parts.add("balance " + (s.balance() < 0 ? "L " : "R ") + Math.round(Math.abs(s.balance()) * 100) + "%");
         }
@@ -229,7 +311,7 @@ public final class AudioEditRules {
             parts.add("pitch " + (s.pitchSemitones() > 0 ? "+" : "") + num(s.pitchSemitones()) + " st");
         }
         if (s.speed() != 1) {
-            parts.add(num(s.speed()) + "× speed");
+            parts.add(num(s.speed()) + "× speed" + (s.keepSoundSpeed() ? " (picture only)" : ""));
         }
         if (!"KEEP".equals(s.channels())) {
             parts.add(s.channels().toLowerCase());
@@ -243,13 +325,14 @@ public final class AudioEditRules {
 
     /**
      * Inputs: 0 = the video; 1 = the replacement audio (when replaceKey is
-     * set); then the music. Produces [aout], and [vout] when the speed changes
-     * the picture too. Everything is mixed as 48 kHz stereo over silence
-     * exactly as long as the video, so the sound always lines up with the picture.
+     * set); then the music; then each extra track. Produces [aout], and [vout]
+     * when the speed changes the picture too. Everything is mixed as 48 kHz
+     * stereo over silence exactly as long as the video (as the finished video,
+     * with keepSoundSpeed), so the sound always lines up with the picture.
      */
     public static Graph build(Spec s, Inputs in) {
         List<String> graph = new ArrayList<>();
-        String videoSec = sec(in.videoDurationMs());
+        String videoSec = sec(s.mixLengthMs(in.videoDurationMs()));
 
         // 1. The source sound (silence when the video has none and nothing replaces it).
         String source;
@@ -325,26 +408,44 @@ public final class AudioEditRules {
         graph.add("[placed]" + String.join(",", main) + "[main]");
         String current = "[main]";
 
-        // 4. Background music under it — quieter while there's speech when ducking.
-        if (s.music() != null) {
-            Music m = s.music();
-            int musicInput = s.replaceKey() != null ? 2 : 1;
-            List<String> mf = new ArrayList<>();
-            mf.add("aformat=sample_fmts=fltp:sample_rates=" + RATE + ":channel_layouts=stereo");
-            if (m.volume() != 1) {
-                mf.add("volume=" + num(m.volume()));
+        // 4. The music and any extra tracks under it — each quieter while there's speech when ducking.
+        List<Music> beds = s.beds();
+        if (!beds.isEmpty()) {
+            int firstBed = s.replaceKey() != null ? 2 : 1;
+            long ducked = beds.stream().filter(Music::duck).count();
+            String voice = "[main]";
+            if (ducked > 0) {
+                // One copy of the main sound to mix, and one for each ducked bed to listen to.
+                StringBuilder split = new StringBuilder("[main]asplit=" + (ducked + 1) + "[voice]");
+                for (int k = 0; k < ducked; k++) {
+                    split.append("[key").append(k).append(']');
+                }
+                graph.add(split.toString());
+                voice = "[voice]";
             }
-            if (m.startMs() > 0) {
-                mf.add("adelay=delays=" + m.startMs() + ":all=1");
+            StringBuilder mixInputs = new StringBuilder(voice);
+            int key = 0;
+            for (int i = 0; i < beds.size(); i++) {
+                Music m = beds.get(i);
+                List<String> mf = new ArrayList<>();
+                mf.add("aformat=sample_fmts=fltp:sample_rates=" + RATE + ":channel_layouts=stereo");
+                if (m.volume() != 1) {
+                    mf.add("volume=" + num(m.volume()));
+                }
+                if (m.startMs() > 0) {
+                    mf.add("adelay=delays=" + m.startMs() + ":all=1");
+                }
+                String bed = i == 0 && s.music() != null ? "[music]" : "[bed" + i + "]";
+                graph.add("[" + (firstBed + i) + ":a]" + String.join(",", mf) + bed);
+                if (m.duck()) {
+                    String quieter = i == 0 && s.music() != null ? "[ducked]" : "[ducked" + i + "]";
+                    graph.add(bed + "[key" + key++ + "]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400"
+                            + quieter);
+                    bed = quieter;
+                }
+                mixInputs.append(bed);
             }
-            graph.add("[" + musicInput + ":a]" + String.join(",", mf) + "[music]");
-            if (m.duck()) {
-                graph.add("[main]asplit=2[voice][key]");
-                graph.add("[music][key]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400[ducked]");
-                graph.add("[voice][ducked]amix=inputs=2:duration=first:normalize=0[withmusic]");
-            } else {
-                graph.add("[main][music]amix=inputs=2:duration=first:normalize=0[withmusic]");
-            }
+            graph.add(mixInputs + "amix=inputs=" + (beds.size() + 1) + ":duration=first:normalize=0[withmusic]");
             current = "[withmusic]";
         }
 
@@ -355,7 +456,8 @@ public final class AudioEditRules {
             double right = s.balance() < 0 ? 1 + s.balance() : 1;
             out.add("pan=stereo|c0=" + num(left) + "*c0|c1=" + num(right) + "*c1");
         }
-        double tempo = s.speed();
+        // With keepSoundSpeed the sound isn't re-timed: only the picture is.
+        double tempo = s.keepSoundSpeed() ? 1 : s.speed();
         if (s.pitchSemitones() != 0) {
             // Resampling shifts pitch and tempo together; atempo then puts the tempo back.
             double factor = Math.pow(2, s.pitchSemitones() / 12);

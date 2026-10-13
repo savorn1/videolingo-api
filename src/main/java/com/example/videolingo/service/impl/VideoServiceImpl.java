@@ -19,11 +19,13 @@ import com.example.videolingo.pipeline.DubService;
 import com.example.videolingo.repository.CategoryRepository;
 import com.example.videolingo.repository.TagRepository;
 import com.example.videolingo.repository.UserRepository;
+import com.example.videolingo.repository.VideoNoteRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.repository.VideoViewRepository;
 import com.example.videolingo.service.CategoryService;
 import com.example.videolingo.service.FileStorageService;
 import com.example.videolingo.service.LanguageService;
+import com.example.videolingo.service.PublishSchedule;
 import com.example.videolingo.service.VideoMarkerService;
 import com.example.videolingo.service.VideoService;
 import com.example.videolingo.service.VideoVersionService;
@@ -71,6 +73,7 @@ public class VideoServiceImpl implements VideoService {
     private final VideoMarkerService videoMarkerService;
     private final DubService dubService;
     private final FileStorageService fileStorageService;
+    private final VideoNoteRepository videoNoteRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -197,7 +200,35 @@ public class VideoServiceImpl implements VideoService {
     public VideoResponse updateStatus(Long id, boolean enabled) {
         Video video = requireLive(findVideo(id), enabled ? "enable" : "disable");
         video.setEnabled(enabled);
+        // Switched by hand: any schedule is over.
+        video.setPublishAt(null);
         return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public VideoResponse schedulePublish(Long id, LocalDateTime publishAt) {
+        Video video = requireLive(findVideo(id), "schedule");
+        if (publishAt != null) {
+            String problem = PublishSchedule.validate(video.isEnabled(), publishAt, LocalDateTime.now());
+            if (problem != null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, problem);
+            }
+        }
+        video.setPublishAt(publishAt);
+        return toResponse(videoRepository.save(video));
+    }
+
+    @Override
+    @Transactional
+    public int publishDue() {
+        List<Video> due = videoRepository.findDueToPublish(LocalDateTime.now());
+        for (Video video : due) {
+            video.setEnabled(true);
+            video.setPublishAt(null);
+        }
+        videoRepository.saveAll(due);
+        return due.size();
     }
 
     @Override
@@ -251,6 +282,7 @@ public class VideoServiceImpl implements VideoService {
     }
 
     private void purgeFiles(Video video) {
+        videoNoteRepository.deleteByVideoId(video.getId());
         dubService.purgeAllForVideo(video.getId());
         videoMarkerService.purgeAllForVideo(video.getId());
         videoVersionService.purgeAll(video.getId());
@@ -421,6 +453,7 @@ public class VideoServiceImpl implements VideoService {
                 .fileSize(video.getFileSize())
                 .mimeType(video.getMimeType())
                 .enabled(video.isEnabled())
+                .publishAt(video.getPublishAt())
                 .archived(video.isArchived())
                 .archivedAt(video.getArchivedAt())
                 .visibility(video.getVisibility())

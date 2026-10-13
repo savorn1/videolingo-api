@@ -115,6 +115,11 @@ public class Video {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    // A disabled video to be enabled by itself at this time (server-local, like the other
+    // timestamps); cleared when that happens, or when someone enables or disables it by hand.
+    @Column(name = "publish_at")
+    private LocalDateTime publishAt;
+
     // Put aside, out of the active library — distinct from enabled (a quick
     // on/off) and deletedAt (the trash). Learners can't watch it either way.
     @Column(name = "archived_at")
