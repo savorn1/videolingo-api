@@ -42,15 +42,19 @@ class MarkerTimingTest {
 
     @Test
     void aBackwardsTrimMirrorsTheMarkers() throws Exception {
-        LongFunction<Long> t = timing("{\"operation\":\"TRIM\",\"startMs\":0,\"endMs\":10000,\"reverse\":true}", null, 10_000L);
+        LongFunction<Long> t =
+                timing("{\"operation\":\"TRIM\",\"startMs\":0,\"endMs\":10000,\"reverse\":true}", null, 10_000L);
         assertEquals(7000L, t.apply(3000));
-        assertNull(timing("{\"operation\":\"TRIM\",\"startMs\":0,\"reverse\":true}", null, null).apply(3000));
+        assertNull(timing("{\"operation\":\"TRIM\",\"startMs\":0,\"reverse\":true}", null, null)
+                .apply(3000));
     }
 
     @Test
     void aCutTakesOutItsRanges() throws Exception {
         LongFunction<Long> t = timing(
-                "{\"operation\":\"CUT\",\"cuts\":[{\"startMs\":2000,\"endMs\":4000},{\"startMs\":6000,\"endMs\":7000}]}", null, null);
+                "{\"operation\":\"CUT\",\"cuts\":[{\"startMs\":2000,\"endMs\":4000},{\"startMs\":6000,\"endMs\":7000}]}",
+                null,
+                null);
         assertEquals(1000L, t.apply(1000));
         assertNull(t.apply(3000));
         assertEquals(3000L, t.apply(5000));
@@ -59,7 +63,8 @@ class MarkerTimingTest {
 
     @Test
     void aSplitPartKeepsItsOwnRange() throws Exception {
-        String json = "{\"operation\":\"SPLIT\",\"segments\":[{\"startMs\":0,\"endMs\":5000},{\"startMs\":5000,\"endMs\":null}]}";
+        String json =
+                "{\"operation\":\"SPLIT\",\"segments\":[{\"startMs\":0,\"endMs\":5000},{\"startMs\":5000,\"endMs\":null}]}";
         assertEquals(2000L, timing(json, 1, null).apply(7000));
         assertNull(timing(json, 1, null).apply(4000));
         assertNull(timing(json, 5, null));
@@ -67,7 +72,10 @@ class MarkerTimingTest {
 
     @Test
     void anAudioEditFollowsItsSpeedAndOverlaysChangeNothing() throws Exception {
-        assertEquals(5000L, timing("{\"operation\":\"AUDIO\",\"audio\":{\"speed\":2.0}}", null, null).apply(10_000));
+        assertEquals(
+                5000L,
+                timing("{\"operation\":\"AUDIO\",\"audio\":{\"speed\":2.0}}", null, null)
+                        .apply(10_000));
         assertEquals(10_000L, timing("{\"operation\":\"OVERLAY\"}", null, null).apply(10_000));
         assertNull(timing("{\"operation\":\"GIF\"}", null, null));
     }

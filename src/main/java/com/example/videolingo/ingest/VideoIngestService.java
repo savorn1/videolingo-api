@@ -389,8 +389,8 @@ public class VideoIngestService {
                                     : lut
                                             ? "Colour grades must be .cube files"
                                             : overlay
-                                            ? "Overlay images must be PNG, JPEG or WebP"
-                                            : "Thumbnails must be JPEG, PNG or WebP images");
+                                                    ? "Overlay images must be PNG, JPEG or WebP"
+                                                    : "Thumbnails must be JPEG, PNG or WebP images");
         }
         long max = video || audio
                 ? settings.video().maxVideoUploadMb() * 1024L * 1024L
@@ -398,8 +398,9 @@ public class VideoIngestService {
         if (r.getSize() > max) {
             throw new AppException(
                     HttpStatus.BAD_REQUEST,
-                    (video ? "Videos" : audio ? "Audio files" : lut ? "Colour grades" : "Thumbnails") + " can be at most "
-                            + (max / (1024 * 1024)) + " MB" + (video || audio ? " (Settings › Video)" : ""));
+                    (video ? "Videos" : audio ? "Audio files" : lut ? "Colour grades" : "Thumbnails")
+                            + " can be at most " + (max / (1024 * 1024)) + " MB"
+                            + (video || audio ? " (Settings › Video)" : ""));
         }
         String fileExt = types.entrySet().stream()
                 .filter(e -> e.getValue().equals(contentType) && e.getKey().equals(ext))
@@ -415,7 +416,9 @@ public class VideoIngestService {
                         ? "videos/"
                         : audio
                                 ? AudioEditRules.UPLOAD_PREFIX
-                                : overlay ? OverlayRules.UPLOAD_PREFIX : lut ? VideoEditRules.LUT_PREFIX : "thumbnails/")
+                                : overlay
+                                        ? OverlayRules.UPLOAD_PREFIX
+                                        : lut ? VideoEditRules.LUT_PREFIX : "thumbnails/")
                 + UUID.randomUUID() + "." + fileExt;
         return new UploadTarget(key, contentType);
     }

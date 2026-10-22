@@ -64,7 +64,9 @@ class PromotedTitleTest {
 
     @Test
     void aNamedSplitPartIsCalledByItsName() {
-        assertEquals("Lesson — Greetings", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 0, "  Greetings ", null));
+        assertEquals(
+                "Lesson — Greetings",
+                VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 0, "  Greetings ", null));
         assertEquals("Lesson — Part 2", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 1, "  ", null));
         assertEquals("Mine", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 0, "Greetings", "Mine"));
     }

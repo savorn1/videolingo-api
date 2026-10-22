@@ -17,7 +17,8 @@ class SplitPartRulesTest {
 
     @Test
     void aLongNameOrAStrangeShapeIsRefused() {
-        assertTrue(VideoEditRules.validateSplitPart("x".repeat(81), null, 1920, 1080).contains("80"));
+        assertTrue(VideoEditRules.validateSplitPart("x".repeat(81), null, 1920, 1080)
+                .contains("80"));
         assertTrue(VideoEditRules.validateSplitPart(null, 10.0, 1920, 1080).contains("shape"));
         assertTrue(VideoEditRules.validateSplitPart(null, 1.0, null, 1080).contains("size"));
     }

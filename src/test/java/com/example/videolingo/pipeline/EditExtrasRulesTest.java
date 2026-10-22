@@ -22,9 +22,12 @@ class EditExtrasRulesTest {
     void punchInMomentsMustBeLongEnoughInOrderAndInTheClip() {
         assertNull(VideoEditRules.validatePunchIn(null, 10_000L));
         assertNull(VideoEditRules.validatePunchIn(punch(0, 2000, 4000, 6000), 10_000L));
-        assertTrue(VideoEditRules.validatePunchIn(new VideoEditRules.PunchIn(2, punch(0, 2000).ranges()), 10_000L).contains("150%"));
+        assertTrue(VideoEditRules.validatePunchIn(
+                        new VideoEditRules.PunchIn(2, punch(0, 2000).ranges()), 10_000L)
+                .contains("150%"));
         assertTrue(VideoEditRules.validatePunchIn(punch(0, 100), 10_000L).contains("0.3"));
-        assertTrue(VideoEditRules.validatePunchIn(punch(0, 2000, 1000, 3000), 10_000L).contains("overlap"));
+        assertTrue(VideoEditRules.validatePunchIn(punch(0, 2000, 1000, 3000), 10_000L)
+                .contains("overlap"));
         assertTrue(VideoEditRules.validatePunchIn(punch(9000, 12_000), 10_000L).contains("past the end"));
     }
 
@@ -52,15 +55,35 @@ class EditExtrasRulesTest {
         assertNull(VideoEditRules.validateLutKey(null));
         assertNull(VideoEditRules.validateLutKey("luts/0b0c0d0e-0000-4000-8000-000000000000.cube"));
         assertTrue(VideoEditRules.validateLutKey("../etc/passwd").contains("upload"));
-        assertTrue(VideoEditRules.validateLutKey("luts/0b0c0d0e-0000-4000-8000-000000000000.png").contains("upload"));
+        assertTrue(VideoEditRules.validateLutKey("luts/0b0c0d0e-0000-4000-8000-000000000000.png")
+                .contains("upload"));
     }
 
     private static EditJobParams.Trim trim(long start, Long end, MediaTools.ScaleSize scale) {
         return new EditJobParams.Trim(
-                "TRIM", start, end, null, scale, null, null, null, null, null, null, null,
+                "TRIM",
+                start,
+                end,
+                null,
+                scale,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 new VideoEditRules.Fade(3000, 6000, "BLACK"),
                 new VideoEditRules.Freeze(20_000, 1000),
-                null, null, null, null, null, null, null, null, null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 List.of(new VideoEditRules.Freeze(2000, 1000), new VideoEditRules.Freeze(9000, 1000)),
                 List.of(new VideoEditRules.SpeedRange(6000, 12_000, 2)),
                 punch(1000, 3000, 7800, 9000),
@@ -82,13 +105,15 @@ class EditExtrasRulesTest {
         assertEquals(List.of(new VideoEditRules.Freeze(2000, 1000)), s.holds());
         assertEquals(List.of(new VideoEditRules.SpeedRange(6000, 8000, 2)), s.speeds());
         // The second punch-in is cut to 7.8–8 s, too short, so it goes.
-        assertEquals(List.of(new VideoEditRules.Segment(1000, 3000L)), s.punchIn().ranges());
+        assertEquals(
+                List.of(new VideoEditRules.Segment(1000, 3000L)), s.punchIn().ranges());
         assertEquals("#ffffff", s.progressBar());
     }
 
     @Test
     void aTestRenderKeepsAShortClipAndASmallSizeAndAPortraitShape() {
-        EditJobParams.Trim s = VideoEditRules.sample(trim(0, 5000L, new MediaTools.ScaleSize(1080, 1920)), 1920, 1080, 6000L);
+        EditJobParams.Trim s =
+                VideoEditRules.sample(trim(0, 5000L, new MediaTools.ScaleSize(1080, 1920)), 1920, 1080, 6000L);
         assertEquals(5000L, s.endMs());
         assertEquals(new MediaTools.ScaleSize(360, 640), s.scale());
         assertNull(VideoEditRules.sample(trim(0, 5000L, null), 320, 180, 6000L).scale());

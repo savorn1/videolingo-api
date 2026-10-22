@@ -533,7 +533,8 @@ public class MediaTools {
     }
 
     /** Quick zooms in (VideoEditRules.PunchIn) around the centre; width × height stays. */
-    public Path punchIn(String video, VideoEditRules.PunchIn p, int width, int height, boolean hasAudio, JobContext ctx) {
+    public Path punchIn(
+            String video, VideoEditRules.PunchIn p, int width, int height, boolean hasAudio, JobContext ctx) {
         return pass(
                 video,
                 "punched.mp4",
@@ -547,7 +548,11 @@ public class MediaTools {
     public Path progressBar(
             String video, String color, int width, int height, long clipMs, boolean hasAudio, JobContext ctx) {
         return pass(
-                video, "progress.mp4", VideoEditRules.progressBarGraph(width, height, color, clipMs, hasAudio), hasAudio, ctx);
+                video,
+                "progress.mp4",
+                VideoEditRules.progressBarGraph(width, height, color, clipMs, hasAudio),
+                hasAudio,
+                ctx);
     }
 
     /** Green screen: the key colour is made see-through and the background colour shows there. */
@@ -830,7 +835,8 @@ public class MediaTools {
             VideoEditRules.Fade fade,
             List<VideoEditRules.BlurBox> blurs,
             JobContext ctx) {
-        return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, effect, fade, blurs, null, ctx);
+        return trim(
+                video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, effect, fade, blurs, null, ctx);
     }
 
     /** Same, and a colour grade (a .cube file, null = none) after the look. */

@@ -123,14 +123,21 @@ class EditJobParamsTest {
                 {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":null}]}
                 """;
         EditJobParams.Split split = reader.readValue(json, EditJobParams.Split.class);
-        assertEquals(new EditJobParams.SplitPart(0, 5000L, null, null), split.segments().get(0));
-        assertEquals(new EditJobParams.SplitPart(5000, null, null, null), split.segments().get(1));
+        assertEquals(
+                new EditJobParams.SplitPart(0, 5000L, null, null),
+                split.segments().get(0));
+        assertEquals(
+                new EditJobParams.SplitPart(5000, null, null, null),
+                split.segments().get(1));
     }
 
     @Test
     void aNamedShapedSplitSurvivesTheRoundTrip() throws Exception {
         EditJobParams.Split split = new EditJobParams.Split(
-                "SPLIT", List.of(new EditJobParams.SplitPart(0, 5000L, "Greetings", 0.5625), new EditJobParams.SplitPart(5000, null, null, null)));
+                "SPLIT",
+                List.of(
+                        new EditJobParams.SplitPart(0, 5000L, "Greetings", 0.5625),
+                        new EditJobParams.SplitPart(5000, null, null, null)));
         assertEquals(split, reader.readValue(writer.writeValueAsString(split), EditJobParams.Split.class));
     }
 }

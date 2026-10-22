@@ -905,7 +905,9 @@ public final class VideoEditRules {
             java.util.regex.Pattern.compile("^luts/[0-9a-f-]{36}\\.cube$");
 
     public static String validateLutKey(String key) {
-        return key == null || LUT_KEY.matcher(key).matches() ? null : "The colour grade isn't an upload this server made";
+        return key == null || LUT_KEY.matcher(key).matches()
+                ? null
+                : "The colour grade isn't an upload this server made";
     }
 
     // ── Test render ──────────────────────────────────────────────────────────
@@ -991,7 +993,8 @@ public final class VideoEditRules {
                 return null;
             }
             if (t.reframe() != null) {
-                AutoCropRules.CropRect box = AutoCropRules.suggestCrop(t.reframe().aspect(), videoW, videoH, 0.5, 0.5);
+                AutoCropRules.CropRect box =
+                        AutoCropRules.suggestCrop(t.reframe().aspect(), videoW, videoH, 0.5, 0.5);
                 w = box.w();
                 h = box.h();
             } else if (t.crop() != null) {

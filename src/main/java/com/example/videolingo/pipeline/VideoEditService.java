@@ -408,7 +408,9 @@ public class VideoEditService {
                         .map(seg -> new EditJobParams.SplitPart(
                                 seg.startMs(),
                                 seg.endMs(),
-                                seg.label() == null || seg.label().isBlank() ? null : seg.label().strip(),
+                                seg.label() == null || seg.label().isBlank()
+                                        ? null
+                                        : seg.label().strip(),
                                 seg.aspect()))
                         .toList());
         ProcessingJob job = jobService.enqueue(
@@ -794,7 +796,9 @@ public class VideoEditService {
                                     ? "An extracted audio file"
                                     : clip.getOperation() == VideoClip.Operation.GIF
                                             ? "A GIF"
-                                            : clip.getOperation() == VideoClip.Operation.SAMPLE ? "A test render" : "A picture")
+                                            : clip.getOperation() == VideoClip.Operation.SAMPLE
+                                                    ? "A test render"
+                                                    : "A picture")
                             + " can't become a video — download it instead");
         }
         if (clip.getOperation().replacesVideo() && !asNew) {
@@ -904,7 +908,11 @@ public class VideoEditService {
 
     /** The source's markers whose moments are in the result, copied to the new video at their new times. */
     private int copyMarkers(
-            Long sourceId, Long newVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String username) {
+            Long sourceId,
+            Long newVideoId,
+            java.util.function.LongFunction<Long> timing,
+            Long lengthMs,
+            String username) {
         if (timing == null) {
             return 0;
         }
@@ -952,9 +960,10 @@ public class VideoEditService {
             return t.length() > MAX_TITLE ? t.substring(0, MAX_TITLE) : t;
         }
         String suffix = switch (operation) {
-            case SPLIT -> label != null && !label.isBlank()
-                    ? " — " + label.strip()
-                    : " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
+            case SPLIT ->
+                label != null && !label.isBlank()
+                        ? " — " + label.strip()
+                        : " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
             case TRIM -> " (trimmed)";
             case AUDIO -> " (edited audio)";
             case OVERLAY -> " (with text & overlays)";

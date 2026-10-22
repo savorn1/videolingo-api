@@ -137,8 +137,7 @@ class MotionFfmpegTest {
         Path out = media.punchIn(
                 clip(dir).toString(),
                 new VideoEditRules.PunchIn(
-                        1.15,
-                        List.of(new VideoEditRules.Segment(0, 1000L), new VideoEditRules.Segment(2000, 2800L))),
+                        1.15, List.of(new VideoEditRules.Segment(0, 1000L), new VideoEditRules.Segment(2000, 2800L))),
                 320,
                 180,
                 true,

@@ -1429,7 +1429,10 @@ public class PipelineSteps {
         // Then, in order: steadied, green screen, zoomed into an area (on the trimmed picture), a part at another
         // speed, a held frame, played backwards, a video in a corner (times on the trimmed clip as the editor shows
         // it — the freeze is moved along by the speed change), the added audio, and last the cards.
-        if (Boolean.TRUE.equals(t.stabilize()) || t.greenScreen() != null || t.zoomTo() != null || t.punchIn() != null) {
+        if (Boolean.TRUE.equals(t.stabilize())
+                || t.greenScreen() != null
+                || t.zoomTo() != null
+                || t.punchIn() != null) {
             MediaTools.Probe info = media.probe(out.toString(), ctx.workDir());
             if (info.width() == null || info.height() == null) {
                 throw new JobFailure("Couldn't read the clip's picture size");
@@ -1562,26 +1565,32 @@ public class PipelineSteps {
                 .durationSeconds(seconds(outMs))
                 .width(width)
                 .height(height)
-                .summary(Boolean.TRUE.equals(t.sample()) ? VideoEditRules.SAMPLE_SUMMARY : joinSummary(
-                        joinSummary(
-                                joinSummary(
-                                        VideoEditRules.describeOrientation(rotate, flipH, flipV),
-                                        VideoEditRules.describeLook(look)),
-                                joinSummary(
-                                        joinSummary(
-                                                VideoEditRules.describeEffect(effect),
-                                                VideoEditRules.describeFade(fade)),
+                .summary(
+                        Boolean.TRUE.equals(t.sample())
+                                ? VideoEditRules.SAMPLE_SUMMARY
+                                : joinSummary(
                                         joinSummary(
                                                 joinSummary(
-                                                        VideoEditRules.describeFreeze(t.freeze()),
+                                                        VideoEditRules.describeOrientation(rotate, flipH, flipV),
+                                                        VideoEditRules.describeLook(look)),
+                                                joinSummary(
                                                         joinSummary(
-                                                                VideoEditRules.describeHolds(t.holds()),
-                                                                VideoEditRules.describeSpeedParts(speedParts))),
-                                                joinSummary(
-                                                        VideoEditRules.describeZoomTo(t.zoomTo()),
-                                                        VideoEditRules.describeMotion(
-                                                                t.reverse(), t.stabilize(), t.greenScreen()))))),
-                        audioSummary))
+                                                                VideoEditRules.describeEffect(effect),
+                                                                VideoEditRules.describeFade(fade)),
+                                                        joinSummary(
+                                                                joinSummary(
+                                                                        VideoEditRules.describeFreeze(t.freeze()),
+                                                                        joinSummary(
+                                                                                VideoEditRules.describeHolds(t.holds()),
+                                                                                VideoEditRules.describeSpeedParts(
+                                                                                        speedParts))),
+                                                                joinSummary(
+                                                                        VideoEditRules.describeZoomTo(t.zoomTo()),
+                                                                        VideoEditRules.describeMotion(
+                                                                                t.reverse(),
+                                                                                t.stabilize(),
+                                                                                t.greenScreen()))))),
+                                        audioSummary))
                 .storageKey(key)
                 .sourceKey(video.getStorageKey())
                 .url(publicUrl(key))

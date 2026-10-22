@@ -33,7 +33,9 @@ final class MarkerTiming {
             }
             case "SPLIT" -> {
                 EditJobParams.Split s = reader.treeToValue(p, EditJobParams.Split.class);
-                if (segmentIndex == null || s.segments() == null || segmentIndex >= s.segments().size()) {
+                if (segmentIndex == null
+                        || s.segments() == null
+                        || segmentIndex >= s.segments().size()) {
                     return null;
                 }
                 EditJobParams.SplitPart part = s.segments().get(segmentIndex);
@@ -86,10 +88,14 @@ final class MarkerTiming {
         long y = parts.isEmpty() ? x : VideoEditRules.rampedAcross(x, parts);
         List<long[]> holds = new ArrayList<>();
         if (t.freeze() != null) {
-            holds.add(new long[] {VideoEditRules.rampedAcross(t.freeze().atMs(), parts), t.freeze().durationMs()});
+            holds.add(new long[] {
+                VideoEditRules.rampedAcross(t.freeze().atMs(), parts),
+                t.freeze().durationMs()
+            });
         }
         if (t.holds() != null) {
-            t.holds().forEach(h -> holds.add(new long[] {VideoEditRules.rampedAcross(h.atMs(), parts), h.durationMs()}));
+            t.holds()
+                    .forEach(h -> holds.add(new long[] {VideoEditRules.rampedAcross(h.atMs(), parts), h.durationMs()}));
         }
         holds.sort((a, b) -> Long.compare(a[0], b[0]));
         long held = 0;
@@ -99,8 +105,12 @@ final class MarkerTiming {
             }
         }
         y += held;
-        long intro = t.cards() != null && t.cards().intro() != null ? t.cards().intro().durationMs() : 0;
-        long outro = t.cards() != null && t.cards().outro() != null ? t.cards().outro().durationMs() : 0;
+        long intro = t.cards() != null && t.cards().intro() != null
+                ? t.cards().intro().durationMs()
+                : 0;
+        long outro = t.cards() != null && t.cards().outro() != null
+                ? t.cards().outro().durationMs()
+                : 0;
         if (Boolean.TRUE.equals(t.reverse())) {
             if (resultMs == null) {
                 return null;
