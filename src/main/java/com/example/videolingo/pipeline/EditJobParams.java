@@ -40,9 +40,21 @@ public final class EditJobParams {
             Boolean stabilize,
             VideoEditRules.ZoomTo zoomTo,
             VideoEditRules.GreenScreen greenScreen,
-            ReframeRules.Reframe reframe) {}
+            ReframeRules.Reframe reframe,
+            List<VideoEditRules.Freeze> holds,
+            List<VideoEditRules.SpeedRange> speeds,
+            VideoEditRules.PunchIn punchIn,
+            /** A thin bar along the bottom showing how far the clip has played, in this colour (#RRGGBB). */
+            String progressBar,
+            /** A colour grade (a .cube upload) applied after the look. */
+            String lutKey,
+            /** A test render (VideoEditRules.sample): kept as a SAMPLE result, never made into a video. */
+            Boolean sample) {}
 
-    public record Split(String operation, List<Range> segments) {}
+    /** A split part; `label` and `aspect` are left out by jobs queued before parts could have them. */
+    public record SplitPart(long startMs, Long endMs, String label, Double aspect) {}
+
+    public record Split(String operation, List<SplitPart> segments) {}
 
     /** Merged and sorted. */
     public record Cut(String operation, List<Range> cuts) {}

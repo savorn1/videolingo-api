@@ -18,6 +18,9 @@ public final class AudioToVideoRules {
     /** One picture of the slideshow: shown from `startMs` until the next picture starts (or the sound ends). */
     public record Slide(String key, long startMs) {}
 
+    /** A chapter of the recording: its title is shown on the picture for CHAPTER_SHOW_MS from `startMs`. */
+    public record Chapter(long startMs, String title) {}
+
     /**
      * What to make. waveform: NONE, WAVES or BARS (null = NONE); waveColor null
      * picks white or black to suit the background. titleCard writes titleText
@@ -41,15 +44,110 @@ public final class AudioToVideoRules {
             boolean crossfade,
             String stripText,
             String logoKey,
-            Integer waveHeightPct) {
+            Integer waveHeightPct,
+            boolean blurBackdrop,
+            boolean progressBar,
+            List<Chapter> chapters,
+            String waveColor2,
+            boolean waveGlow) {
 
         public Spec {
+            chapters = chapters == null ? List.of() : List.copyOf(chapters);
             slides = slides == null ? List.of() : List.copyOf(slides);
             if (slides.isEmpty() && coverKey != null) {
                 slides = List.of(new Slide(coverKey, 0));
             } else if (coverKey == null && !slides.isEmpty()) {
                 coverKey = slides.get(0).key();
             }
+        }
+
+        /** Without the waveform's gradient or glow. */
+        public Spec(
+                String audioKey,
+                String coverKey,
+                String background,
+                String resolution,
+                String waveform,
+                String waveColor,
+                boolean titleCard,
+                String titleText,
+                boolean normalize,
+                boolean denoise,
+                List<Slide> slides,
+                String shape,
+                boolean motion,
+                boolean crossfade,
+                String stripText,
+                String logoKey,
+                Integer waveHeightPct,
+                boolean blurBackdrop,
+                boolean progressBar,
+                List<Chapter> chapters) {
+            this(
+                    audioKey,
+                    coverKey,
+                    background,
+                    resolution,
+                    waveform,
+                    waveColor,
+                    titleCard,
+                    titleText,
+                    normalize,
+                    denoise,
+                    slides,
+                    shape,
+                    motion,
+                    crossfade,
+                    stripText,
+                    logoKey,
+                    waveHeightPct,
+                    blurBackdrop,
+                    progressBar,
+                    chapters,
+                    null,
+                    false);
+        }
+
+        /** Without the blurred backdrop, the progress bar or chapter titles. */
+        public Spec(
+                String audioKey,
+                String coverKey,
+                String background,
+                String resolution,
+                String waveform,
+                String waveColor,
+                boolean titleCard,
+                String titleText,
+                boolean normalize,
+                boolean denoise,
+                List<Slide> slides,
+                String shape,
+                boolean motion,
+                boolean crossfade,
+                String stripText,
+                String logoKey,
+                Integer waveHeightPct) {
+            this(
+                    audioKey,
+                    coverKey,
+                    background,
+                    resolution,
+                    waveform,
+                    waveColor,
+                    titleCard,
+                    titleText,
+                    normalize,
+                    denoise,
+                    slides,
+                    shape,
+                    motion,
+                    crossfade,
+                    stripText,
+                    logoKey,
+                    waveHeightPct,
+                    false,
+                    false,
+                    List.of());
         }
 
         /** Wide, still pictures cut one to the next, no strip or logo. */
@@ -120,7 +218,7 @@ public final class AudioToVideoRules {
                     crossfade,
                     stripText,
                     logoKey,
-                    null);
+                    (Integer) null);
         }
 
         /** Without pictures: the sound, waveform, title and options, nothing on the picture side. */
@@ -163,6 +261,11 @@ public final class AudioToVideoRules {
             return stripText != null && !stripText.isBlank();
         }
 
+        /** The pictures go on a blurred, darker copy of themselves instead of the plain colour. */
+        public boolean blursBackdrop() {
+            return blurBackdrop && !slides.isEmpty();
+        }
+
         public boolean hasWaveform() {
             return waveform != null && !waveform.equals("NONE");
         }
@@ -188,6 +291,13 @@ public final class AudioToVideoRules {
     static final double ZOOM_AMOUNT = 0.06;
 
     public static final int MAX_STRIP = 120;
+
+    /** Chapter titles: at most this many, each this long at most, shown this long, and this far apart at least. */
+    public static final int MAX_CHAPTERS = 30;
+
+    public static final int MAX_CHAPTER_TITLE = 80;
+    static final long CHAPTER_SHOW_MS = 4000;
+    public static final long MIN_CHAPTER_GAP_MS = 5000;
 
     public static final String DEFAULT_RESOLUTION = "720p";
     public static final String DEFAULT_BACKGROUND = "#111827";
@@ -263,6 +373,9 @@ public final class AudioToVideoRules {
         if (spec.waveColor() != null && !HEX_COLOR.matcher(spec.waveColor()).matches()) {
             return "The waveform colour must look like #ffffff";
         }
+        if (spec.waveColor2() != null && !HEX_COLOR.matcher(spec.waveColor2()).matches()) {
+            return "The waveform's second colour must look like #ffffff";
+        }
         if (spec.titleCard()
                 && spec.slides().isEmpty()
                 && (spec.titleText() == null || spec.titleText().isBlank())) {
@@ -285,7 +398,55 @@ public final class AudioToVideoRules {
         if (spec.logoKey() != null && !OverlayRules.isUploadKey(spec.logoKey())) {
             return "The logo must be an uploaded image";
         }
+        return validateChapters(spec.chapters());
+    }
+
+    /** Null when the chapters are usable: in time order from 0:00 on, at least MIN_CHAPTER_GAP_MS apart, each titled. */
+    public static String validateChapters(List<Chapter> chapters) {
+        if (chapters.size() > MAX_CHAPTERS) {
+            return "At most " + MAX_CHAPTERS + " chapters";
+        }
+        for (int i = 0; i < chapters.size(); i++) {
+            Chapter c = chapters.get(i);
+            String which = "Chapter " + (i + 1) + ": ";
+            if (c.title() == null || c.title().isBlank()) {
+                return which + "write its title";
+            }
+            if (c.title().length() > MAX_CHAPTER_TITLE) {
+                return which + "the title can be at most " + MAX_CHAPTER_TITLE + " characters";
+            }
+            if (c.startMs() < 0 || (i > 0 && c.startMs() - chapters.get(i - 1).startMs() < MIN_CHAPTER_GAP_MS)) {
+                return which + "chapters go in time order, at least " + MIN_CHAPTER_GAP_MS / 1000 + " s apart";
+            }
+        }
         return null;
+    }
+
+    /** The chapters that start before the sound ends (at least a second before). */
+    public static List<Chapter> usableChapters(List<Chapter> chapters, long totalMs) {
+        return chapters.stream().filter(c -> c.startMs() < totalMs - 1000).toList();
+    }
+
+    /**
+     * One picture laid on a blurred, darker copy of itself that fills the frame — made once into a still with
+     * `-frames:v 1`, which then stands in for the picture (it already fills the frame, so nothing is padded).
+     */
+    static String backdropGraph(Size size) {
+        return "[0:v]split[fg][bg];[bg]scale=" + size.w() + ":" + size.h()
+                + ":force_original_aspect_ratio=increase,crop=" + size.w() + ":" + size.h()
+                + ",gblur=sigma=" + Math.max(8, size.h() / 30) + ",eq=brightness=-0.12:saturation=1.1[back];[fg]scale="
+                + size.w() + ":" + size.h() + ":force_original_aspect_ratio=decrease[front];"
+                + "[back][front]overlay=(W-w)/2:(H-h)/2,setsar=1[v]";
+    }
+
+    /** The progress bar's height: a thin line, at least 4 px, kept even. */
+    static int progressHeight(Size size) {
+        return Math.max(4, (int) Math.round(size.h() * 0.012) / 2 * 2);
+    }
+
+    /** Where the chapter titles go: top left, below the strip when that is at the top too (y in px). */
+    static long chapterY(Spec spec, Size size) {
+        return spec.hasStrip() && stripAtTop(spec) ? Math.round(size.h() * 0.14) : Math.round(size.h() * 0.05);
     }
 
     public static Size size(String resolution) {
@@ -500,6 +661,32 @@ public final class AudioToVideoRules {
             List<Long> lengths,
             boolean hasStrip,
             boolean hasLogo) {
+        return filterGraph(
+                spec,
+                size,
+                pictureCount,
+                hasTitle,
+                lengths,
+                hasStrip,
+                hasLogo,
+                List.of(),
+                lengths.stream().mapToLong(Long::longValue).sum());
+    }
+
+    /**
+     * Same, with a title image per chapter in `chapters` (inputs after the logo) shown from its start for
+     * CHAPTER_SHOW_MS, and the progress bar (when the spec asks for it) across `totalMs`.
+     */
+    static String filterGraph(
+            Spec spec,
+            Size size,
+            int pictureCount,
+            boolean hasTitle,
+            List<Long> lengths,
+            boolean hasStrip,
+            boolean hasLogo,
+            List<Chapter> chapters,
+            long totalMs) {
         String color = ffmpegColor(spec.background());
         List<String> parts = new ArrayList<>();
 
@@ -582,6 +769,42 @@ public final class AudioToVideoRules {
                     + ":format=auto[logoed]");
             current = "logoed";
         }
+        int chapterIn = logoIn + (hasLogo ? 1 : 0);
+        for (int i = 0; i < chapters.size(); i++) {
+            Chapter c = chapters.get(i);
+            parts.add(String.format(
+                    Locale.ROOT,
+                    "[%s][%d:v]overlay=%d:%d:format=auto:enable='between(t,%.3f,%.3f)'[ch%d]",
+                    current,
+                    chapterIn + i,
+                    Math.round(size.w() * 0.04),
+                    chapterY(spec, size),
+                    c.startMs() / 1000.0,
+                    (c.startMs() + CHAPTER_SHOW_MS) / 1000.0,
+                    i));
+            current = "ch" + i;
+        }
+        if (spec.progressBar() && totalMs > 0) {
+            // A faint track along the bottom edge and the bar sliding in over it as the sound plays.
+            int h = progressHeight(size);
+            String barColor = spec.waveColor() != null ? spec.waveColor() : contrastColor(spec.background());
+            String col = "0x" + barColor.substring(1).toLowerCase(Locale.ROOT);
+            parts.add(String.format(
+                    Locale.ROOT,
+                    "color=c=%s:s=%dx%d:r=%d:d=%.3f[bar];[%s]drawbox=x=0:y=ih-%d:w=iw:h=%d:color=%s@0.25:t=fill[track];"
+                            + "[track][bar]overlay=x='-w+w*t/%.3f':y=H-h:eval=frame:shortest=0[progress]",
+                    col,
+                    size.w(),
+                    h,
+                    fps(spec),
+                    totalMs / 1000.0,
+                    current,
+                    h,
+                    h,
+                    col,
+                    Math.max(0.001, totalMs / 1000.0)));
+            current = "progress";
+        }
 
         // Sound: clean-up, then (optionally) split off a copy to draw the waveform from
         List<String> audio = new ArrayList<>();
@@ -652,7 +875,19 @@ public final class AudioToVideoRules {
                     parts.add("[aw]showwaves=s=" + band + ":mode=cline:colors=" + col + ":rate=" + fps(spec)
                             + ",format=rgba[wv]");
             }
-            parts.add("[" + current + "][wv]overlay="
+            String drawn = "wv";
+            if (spec.waveColor2() != null) {
+                // A gradient across the width, from the waveform colour to the second one; the drawing's shape is kept.
+                parts.add("[wv]" + gradientFilter(wave, spec.waveColor2()) + "[wvg]");
+                drawn = "wvg";
+            }
+            if (spec.waveGlow()) {
+                // A soft halo: a blurred, stronger copy under the sharp drawing.
+                parts.add("[" + drawn + "]split[wva][wvb];[wvb]gblur=sigma=" + Math.max(3, size.h() / 60)
+                        + ",colorchannelmixer=aa=2[wvl];[wvl][wva]overlay=format=auto[wvo]");
+                drawn = "wvo";
+            }
+            parts.add("[" + current + "][" + drawn + "]overlay="
                     + (centered
                             ? "(W-w)/2:(H-h)/2"
                             : ("COLUMNS".equals(spec.waveform()) ? "(W-w)/2" : "0") + ":H-h-"
@@ -694,6 +929,27 @@ public final class AudioToVideoRules {
             Size size,
             long durationMs,
             Path out) {
+        return command(ffmpeg, spec, audio, covers, titlePng, stripPng, logo, List.of(), size, durationMs, out);
+    }
+
+    /** Same, with a title image for each of {@link #usableChapters} (in order) shown at its chapter's start. */
+    public static List<String> command(
+            String ffmpeg,
+            Spec spec,
+            Path audio,
+            List<Path> covers,
+            Path titlePng,
+            Path stripPng,
+            Path logo,
+            List<Path> chapterPngs,
+            Size size,
+            long durationMs,
+            Path out) {
+        List<Chapter> chapters = usableChapters(spec.chapters(), durationMs);
+        if (chapterPngs.size() != chapters.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + chapters.size() + " chapter title(s), got " + chapterPngs.size());
+        }
         List<Slide> slides = usableSlides(spec.slides(), durationMs);
         if (covers.size() != (spec.slides().isEmpty() ? 0 : slides.size())) {
             throw new IllegalArgumentException("Expected " + slides.size() + " picture file(s), got " + covers.size());
@@ -722,14 +978,25 @@ public final class AudioToVideoRules {
                     covers.get(i).toString()));
         }
         cmd.addAll(List.of("-i", audio.toString()));
-        for (Path still : java.util.Arrays.asList(titlePng, stripPng, logo)) {
+        List<Path> stills = new ArrayList<>(java.util.Arrays.asList(titlePng, stripPng, logo));
+        stills.addAll(chapterPngs);
+        for (Path still : stills) {
             if (still != null) {
                 cmd.addAll(List.of("-loop", "1", "-framerate", String.valueOf(fps), "-i", still.toString()));
             }
         }
         cmd.addAll(List.of(
                 "-filter_complex",
-                filterGraph(spec, size, covers.size(), titlePng != null, lengths, stripPng != null, logo != null),
+                filterGraph(
+                        spec,
+                        size,
+                        covers.size(),
+                        titlePng != null,
+                        lengths,
+                        stripPng != null,
+                        logo != null,
+                        chapters,
+                        durationMs),
                 "-map",
                 "[v]",
                 "-map",
@@ -841,6 +1108,19 @@ public final class AudioToVideoRules {
         return once + ",areverse," + once + ",areverse";
     }
 
+    /** Recolours an RGBA drawing from `from` at the left to `to` at the right, keeping its transparency. */
+    static String gradientFilter(String from, String to) {
+        int a = Integer.parseInt(from.substring(1), 16);
+        int b = Integer.parseInt(to.substring(1), 16);
+        java.util.function.IntFunction<String> channel = shift -> {
+            int x = (a >> shift) & 255;
+            int y = (b >> shift) & 255;
+            return x + "+(" + (y - x) + ")*X/W";
+        };
+        return "geq=r='" + channel.apply(16) + "':g='" + channel.apply(8) + "':b='" + channel.apply(0)
+                + "':a='alpha(X,Y)'";
+    }
+
     /** What a waveform style is called in the job log. */
     static String waveLabel(String waveform) {
         return switch (waveform) {
@@ -892,6 +1172,23 @@ public final class AudioToVideoRules {
         }
         if (spec.logoKey() != null) {
             sb.append(", logo");
+        }
+        if (spec.hasWaveform() && spec.waveColor2() != null) {
+            sb.append(", gradient");
+        }
+        if (spec.hasWaveform() && spec.waveGlow()) {
+            sb.append(", glow");
+        }
+        if (spec.blursBackdrop()) {
+            sb.append(", blurred backdrop");
+        }
+        if (spec.progressBar()) {
+            sb.append(", progress bar");
+        }
+        if (!spec.chapters().isEmpty()) {
+            sb.append(", ")
+                    .append(spec.chapters().size())
+                    .append(spec.chapters().size() == 1 ? " chapter" : " chapters");
         }
         return sb.append(")").toString();
     }

@@ -122,6 +122,13 @@ public class VideoEditController {
         return ResponseEntity.ok(ApiResponse.success(editService.suggestCrop(videoId, aspect)));
     }
 
+    // "Speak a line": text spoken by the text-to-speech service, kept as an audio upload for the audio edit.
+    @PostMapping("/narration")
+    public ResponseEntity<ApiResponse<com.example.videolingo.pipeline.PipelineSteps.Narration>> narration(
+            @PathVariable Long videoId, @RequestBody com.example.videolingo.pipeline.NarrationRules.Request request) {
+        return ResponseEntity.ok(ApiResponse.success(editService.narrate(videoId, request)));
+    }
+
     // "Remove the pauses": the quiet stretches in the video's sound (quieter than noiseDb, default -40).
     @GetMapping("/pauses")
     public ResponseEntity<ApiResponse<VideoEditService.Pauses>> pauses(

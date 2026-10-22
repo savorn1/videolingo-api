@@ -231,6 +231,12 @@ public class MediaTools {
 
     /** Plays one part of the clip at another speed; the sound keeps its pitch. `clipMs` = the clip's length. */
     public Path speedRange(String video, VideoEditRules.SpeedRange r, boolean hasAudio, long clipMs, JobContext ctx) {
+        return speedParts(video, List.of(r), hasAudio, clipMs, ctx);
+    }
+
+    /** Plays each part (in time order, apart) at its speed in one pass; the sound keeps its pitch. */
+    public Path speedParts(
+            String video, List<VideoEditRules.SpeedRange> parts, boolean hasAudio, long clipMs, JobContext ctx) {
         Path out = ctx.workDir().resolve("ramped.mp4");
         List<String> command = new ArrayList<>(List.of(
                 props.ffmpeg(),
@@ -241,7 +247,7 @@ public class MediaTools {
                 "-i",
                 video,
                 "-filter_complex",
-                speedGraph(r, hasAudio, clipMs),
+                speedGraph(parts, hasAudio, clipMs),
                 "-map",
                 "[v]"));
         if (hasAudio) {
@@ -253,22 +259,34 @@ public class MediaTools {
         return out;
     }
 
-    /** Before / during / after, each a piece of the clip (empty ones left out), joined again. */
     static String speedGraph(VideoEditRules.SpeedRange r, boolean hasAudio, long clipMs) {
+        return speedGraph(List.of(r), hasAudio, clipMs);
+    }
+
+    /** The pieces between and inside the parts (empty ones left out), each at its speed, joined again. */
+    static String speedGraph(List<VideoEditRules.SpeedRange> ranges, boolean hasAudio, long clipMs) {
         java.util.function.LongFunction<String> sec = ms -> String.format(java.util.Locale.ROOT, "%.3f", ms / 1000.0);
         List<String> parts = new ArrayList<>();
         List<String> labels = new ArrayList<>();
-        String speed = String.format(java.util.Locale.ROOT, "%s", r.speed());
-        String[][] pieces = {
-            {r.startMs() > 0 ? "end=" + sec.apply(r.startMs()) : null, "1"},
-            {"start=" + sec.apply(r.startMs()) + ":end=" + sec.apply(r.endMs()), speed},
-            {r.endMs() < clipMs ? "start=" + sec.apply(r.endMs()) : null, "1"}
-        };
+        List<String[]> pieces = new ArrayList<>();
+        long from = 0;
+        for (VideoEditRules.SpeedRange r : ranges) {
+            if (r.startMs() > from) {
+                pieces.add(new String[] {
+                    (from > 0 ? "start=" + sec.apply(from) + ":" : "") + "end=" + sec.apply(r.startMs()), "1"
+                });
+            }
+            pieces.add(new String[] {
+                "start=" + sec.apply(r.startMs()) + ":end=" + sec.apply(r.endMs()),
+                String.format(java.util.Locale.ROOT, "%s", r.speed())
+            });
+            from = r.endMs();
+        }
+        if (from < clipMs) {
+            pieces.add(new String[] {"start=" + sec.apply(from), "1"});
+        }
         int n = 0;
         for (String[] piece : pieces) {
-            if (piece[0] == null) {
-                continue;
-            }
             boolean changed = !piece[1].equals("1");
             parts.add("[0:v]trim=" + piece[0] + ",setpts=" + (changed ? "(PTS-STARTPTS)/" + piece[1] : "PTS-STARTPTS")
                     + "[v" + n + "]");
@@ -509,6 +527,29 @@ public class MediaTools {
         return zoomAt(factor, z.cx(), z.cy(), width, height);
     }
 
+    /** The colour grade from a .cube file (ffmpeg lut3d); the path is quoted, so its separators are taken as they are. */
+    static String lutFilter(Path lut) {
+        return "lut3d=file='" + lut.toString().replace("\\", "/").replace("'", "") + "'";
+    }
+
+    /** Quick zooms in (VideoEditRules.PunchIn) around the centre; width × height stays. */
+    public Path punchIn(String video, VideoEditRules.PunchIn p, int width, int height, boolean hasAudio, JobContext ctx) {
+        return pass(
+                video,
+                "punched.mp4",
+                "[0:v]" + String.join(",", zoomAt(VideoEditRules.punchFactor(p), 0.5, 0.5, width, height)) + "[v]"
+                        + (hasAudio ? ";[0:a]anull[a]" : ""),
+                hasAudio,
+                ctx);
+    }
+
+    /** A progress bar along the bottom edge (VideoEditRules.progressBarGraph). */
+    public Path progressBar(
+            String video, String color, int width, int height, long clipMs, boolean hasAudio, JobContext ctx) {
+        return pass(
+                video, "progress.mp4", VideoEditRules.progressBarGraph(width, height, color, clipMs, hasAudio), hasAudio, ctx);
+    }
+
     /** Green screen: the key colour is made see-through and the background colour shows there. */
     public Path greenScreen(
             String video, VideoEditRules.GreenScreen g, int width, int height, boolean hasAudio, JobContext ctx) {
@@ -556,6 +597,64 @@ public class MediaTools {
     }
 
     /** The picture up to `atMs` with its last frame held, then the rest; the sound gets the same gap as silence. */
+    /** Several held frames in one pass: (atMs, durationMs) pairs in time order, on the clip's own clock. */
+    public Path holdFrames(String video, List<long[]> holds, boolean hasAudio, JobContext ctx) {
+        return pass(video, "held.mp4", holdsGraph(holds, hasAudio), hasAudio, ctx);
+    }
+
+    /**
+     * The clip cut at each hold, the piece before each one ending in that many seconds of its last frame (and
+     * silence), then joined again — the same as freezeGraph, for any number of holds.
+     */
+    static String holdsGraph(List<long[]> holds, boolean hasAudio) {
+        java.util.function.LongFunction<String> sec = ms -> String.format(java.util.Locale.ROOT, "%.3f", ms / 1000.0);
+        int n = holds.size() + 1;
+        StringBuilder g = new StringBuilder("[0:v]split=" + n);
+        for (int i = 0; i < n; i++) {
+            g.append("[vs").append(i).append(']');
+        }
+        if (hasAudio) {
+            g.append(";[0:a]asplit=").append(n);
+            for (int i = 0; i < n; i++) {
+                g.append("[as").append(i).append(']');
+            }
+        }
+        StringBuilder concat = new StringBuilder();
+        long from = 0;
+        for (int i = 0; i < n; i++) {
+            Long to = i < holds.size() ? holds.get(i)[0] : null;
+            String range = "start=" + sec.apply(from) + (to != null ? ":end=" + sec.apply(to) : "");
+            g.append(";[vs").append(i).append("]trim=").append(range).append(",setpts=PTS-STARTPTS");
+            if (to != null) {
+                g.append(",tpad=stop_mode=clone:stop_duration=").append(sec.apply(holds.get(i)[1]));
+            }
+            g.append("[v").append(i).append(']');
+            concat.append("[v").append(i).append(']');
+            if (hasAudio) {
+                g.append(";[as").append(i).append("]atrim=").append(range).append(",asetpts=PTS-STARTPTS");
+                if (to != null) {
+                    g.append(",apad=pad_dur=").append(sec.apply(holds.get(i)[1]));
+                }
+                g.append("[a").append(i).append(']');
+                concat.append("[a").append(i).append(']');
+            }
+            if (to != null) {
+                from = to;
+            }
+        }
+        g.append(';')
+                .append(concat)
+                .append("concat=n=")
+                .append(n)
+                .append(":v=1:a=")
+                .append(hasAudio ? 1 : 0)
+                .append("[v]");
+        if (hasAudio) {
+            g.append("[a]");
+        }
+        return g.toString();
+    }
+
     static String freezeGraph(long atMs, long durationMs, boolean hasAudio) {
         String at = String.format(java.util.Locale.ROOT, "%.3f", atMs / 1000.0);
         String hold = String.format(java.util.Locale.ROOT, "%.3f", durationMs / 1000.0);
@@ -731,6 +830,26 @@ public class MediaTools {
             VideoEditRules.Fade fade,
             List<VideoEditRules.BlurBox> blurs,
             JobContext ctx) {
+        return trim(video, startMs, endMs, crop, scale, rotate, flipH, flipV, padMs, look, effect, fade, blurs, null, ctx);
+    }
+
+    /** Same, and a colour grade (a .cube file, null = none) after the look. */
+    public Path trim(
+            String video,
+            long startMs,
+            Long endMs,
+            CropRect crop,
+            ScaleSize scale,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            long padMs,
+            VideoEditRules.Look look,
+            String effect,
+            VideoEditRules.Fade fade,
+            List<VideoEditRules.BlurBox> blurs,
+            Path lut,
+            JobContext ctx) {
         Path out = ctx.workDir().resolve("trim-" + startMs + "-" + (endMs == null ? "end" : endMs) + ".mp4");
         // -ss before -i jumps to the start instead of decoding everything before it; still exact to the frame, as
         // the clip is re-encoded. The clip's clock then starts at 0, and -t is its length.
@@ -741,15 +860,27 @@ public class MediaTools {
         }
         boolean zoom = "ZOOM_IN".equals(effect) || "ZOOM_OUT".equals(effect);
         boolean fading = fade != null && !fade.isNone();
-        Probe info = padMs > 0 || zoom || fading ? probe(video, ctx.workDir()) : null;
+        // The source's size is needed too for a resize without a crop, to tell an upscale (which gets sharpened).
+        Probe info =
+                padMs > 0 || zoom || fading || (scale != null && crop == null) ? probe(video, ctx.workDir()) : null;
         // Filters run on the clip's clock, which starts at 0.
         long clipMs = endMs != null
                 ? endMs - startMs
                 : info != null && info.durationMs() != null ? Math.max(0, info.durationMs() - startMs) : 0;
 
         List<String> filters = new ArrayList<>(blurFilters(blurs));
-        filters.addAll(videoFilters(crop, rotate, flipH, flipV, scale));
+        filters.addAll(videoFilters(
+                crop,
+                rotate,
+                flipH,
+                flipV,
+                scale,
+                info != null ? info.width() : null,
+                info != null ? info.height() : null));
         filters.addAll(lookFilters(look));
+        if (lut != null) {
+            filters.add(lutFilter(lut));
+        }
         filters.addAll(effectFilters(effect));
         if (padMs > 0) {
             filters.add(padFilter(padMs));
@@ -957,6 +1088,25 @@ public class MediaTools {
 
     /** The -vf filters for a crop, a turn and flips, then a resize — in that order. Empty when none is asked for. */
     static List<String> videoFilters(CropRect crop, Integer rotate, boolean flipH, boolean flipV, ScaleSize scale) {
+        return videoFilters(crop, rotate, flipH, flipV, scale, null, null);
+    }
+
+    /** An upscale this much bigger (in area) or more is sharpened a little after the resize. */
+    static final double SHARPEN_UPSCALE = 1.1;
+
+    /**
+     * Same, knowing the source's size (null = unknown): the resize uses lanczos, which keeps edges cleaner than the
+     * default, and an upscale (e.g. 720p to 1080p) gets a light unsharp — it can't add detail that isn't there, but it
+     * keeps the picture from looking soft.
+     */
+    static List<String> videoFilters(
+            CropRect crop,
+            Integer rotate,
+            boolean flipH,
+            boolean flipV,
+            ScaleSize scale,
+            Integer sourceWidth,
+            Integer sourceHeight) {
         List<String> filters = new ArrayList<>();
         if (crop != null) {
             filters.add("crop=" + crop.w() + ":" + crop.h() + ":" + crop.x() + ":" + crop.y());
@@ -976,7 +1126,11 @@ public class MediaTools {
             filters.add("vflip");
         }
         if (scale != null) {
-            filters.add("scale=" + scale.w() + ":" + scale.h());
+            filters.add("scale=" + scale.w() + ":" + scale.h() + ":flags=lanczos");
+            int[] before = outputSize(crop, rotate, null, sourceWidth, sourceHeight);
+            if (before != null && (double) scale.w() * scale.h() >= (double) before[0] * before[1] * SHARPEN_UPSCALE) {
+                filters.add("unsharp=5:5:0.5:5:5:0");
+            }
         }
         return filters;
     }
@@ -1501,6 +1655,97 @@ public class MediaTools {
                 "ffmpeg",
                 durationMs);
         return out;
+    }
+
+    /** Same, with a title image per usable chapter shown at its start (AudioToVideoRules.command). */
+    public Path audioToVideo(
+            AudioToVideoRules.Spec spec,
+            Path audio,
+            List<Path> covers,
+            Path titlePng,
+            Path stripPng,
+            Path logo,
+            List<Path> chapterPngs,
+            AudioToVideoRules.Size frame,
+            long durationMs,
+            JobContext ctx) {
+        Path out = ctx.workDir().resolve("audio-video.mp4");
+        run(
+                AudioToVideoRules.command(
+                        props.ffmpeg(),
+                        spec,
+                        audio,
+                        covers,
+                        titlePng,
+                        stripPng,
+                        logo,
+                        chapterPngs,
+                        frame,
+                        durationMs,
+                        out),
+                Duration.ofMinutes(120),
+                ctx,
+                "ffmpeg",
+                durationMs);
+        return out;
+    }
+
+    /** One still made from a picture by a filter graph ending in [v] (e.g. the blurred backdrop), as a PNG. */
+    public Path still(Path picture, String graph, String name, JobContext ctx) {
+        Path out = ctx.workDir().resolve(name + ".png");
+        run(
+                List.of(
+                        props.ffmpeg(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        picture.toString(),
+                        "-filter_complex",
+                        graph,
+                        "-map",
+                        "[v]",
+                        "-frames:v",
+                        "1",
+                        out.toString()),
+                Duration.ofMinutes(2),
+                ctx,
+                "ffmpeg");
+        return out;
+    }
+
+    /** The sound's RMS level in each second (dB; -∞ for silence), for picking a highlight. */
+    public List<Double> levels(Path audio, Path workDir) {
+        Path log = workDir.resolve("levels.log");
+        try {
+            Process process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-nostats",
+                            "-i",
+                            audio.toString(),
+                            "-vn",
+                            "-af",
+                            "aresample=8000,asetnsamples=n=8000,astats=metadata=1:reset=1,"
+                                    + "ametadata=print:key=lavfi.astats.Overall.RMS_level",
+                            "-f",
+                            "null",
+                            "-")
+                    .redirectErrorStream(true)
+                    .redirectOutput(log.toFile())
+                    .start();
+            if (!process.waitFor(10, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new JobFailure("Measuring the sound took too long");
+            }
+            return HighlightRules.parseLevels(Files.readString(log, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't measure the sound: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new JobFailure("Interrupted while measuring the sound");
+        }
     }
 
     /**

@@ -33,8 +33,29 @@ class MediaToolsFiltersTest {
     @Test
     void cropThenTurnAndFlipThenResize() {
         assertEquals(
-                List.of("crop=640:360:10:20", "transpose=1", "hflip", "scale=1080:1920"),
+                List.of(
+                        "crop=640:360:10:20",
+                        "transpose=1",
+                        "hflip",
+                        "scale=1080:1920:flags=lanczos",
+                        "unsharp=5:5:0.5:5:5:0"),
                 MediaTools.videoFilters(CROP, 90, true, false, SCALE));
+    }
+
+    @Test
+    void anUpscaleIsSharpenedAndADownscaleIsNot() {
+        MediaTools.ScaleSize hd = new MediaTools.ScaleSize(1920, 1080);
+        assertEquals(
+                List.of("scale=1920:1080:flags=lanczos", "unsharp=5:5:0.5:5:5:0"),
+                MediaTools.videoFilters(null, null, false, false, hd, 1280, 720));
+        assertEquals(
+                List.of("scale=1280:720:flags=lanczos"),
+                MediaTools.videoFilters(null, null, false, false, new MediaTools.ScaleSize(1280, 720), 1920, 1080));
+        // The same size, or a size not known: no sharpening.
+        assertEquals(
+                List.of("scale=1920:1080:flags=lanczos"),
+                MediaTools.videoFilters(null, null, false, false, hd, 1920, 1080));
+        assertEquals(List.of("scale=1920:1080:flags=lanczos"), MediaTools.videoFilters(null, null, false, false, hd));
     }
 
     @Test

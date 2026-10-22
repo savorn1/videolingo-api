@@ -11,10 +11,20 @@ import org.springframework.data.repository.query.Param;
 
 public interface VideoRepository extends JpaRepository<Video, Long>, JpaSpecificationExecutor<Video> {
 
-    /** Disabled, live videos whose scheduled publish time has come. */
+    /** Each video's own file: [id, title, bytes, deletedAt], for the storage report. */
+    @org.springframework.data.jpa.repository.Query(
+            "select v.id, v.title, coalesce(v.fileSize, 0), v.deletedAt from Video v")
+    java.util.List<Object[]> fileSizes();
+
+    /** Disabled, live videos whose scheduled publish time has come — not while a job is still making or changing one. */
     @org.springframework.data.jpa.repository.Query("""
             select v from Video v
             where v.publishAt is not null and v.publishAt <= :now and v.enabled = false and v.deletedAt is null
+              and not exists (
+                select j from ProcessingJob j
+                where j.videoId = v.id
+                  and j.status in (com.example.videolingo.entity.ProcessingJobStatus.QUEUED,
+                                   com.example.videolingo.entity.ProcessingJobStatus.RUNNING))
             """)
     java.util.List<Video> findDueToPublish(
             @org.springframework.data.repository.query.Param("now") java.time.LocalDateTime now);

@@ -2,6 +2,7 @@ package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.pipeline.AudioToVideoRules;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -67,7 +68,7 @@ public final class VideoIngestDtos {
     @Data
     public static class UploadRequest {
         @NotNull
-        @Pattern(regexp = "VIDEO|THUMBNAIL|AUDIO|OVERLAY")
+        @Pattern(regexp = "VIDEO|THUMBNAIL|AUDIO|OVERLAY|LUT")
         private String kind;
 
         @NotBlank
@@ -275,10 +276,44 @@ public final class VideoIngestDtos {
         private BurnSubtitlesDto burnSubtitles;
         // The waveform's height, % of the picture (10–80); null = 25 % along the bottom, 40 % in the middle.
         private Integer waveHeightPct;
+        // The pictures on a blurred, darker copy of themselves instead of the plain colour.
+        private boolean blurBackdrop;
+        // A thin bar along the bottom that fills up as the recording plays.
+        private boolean progressBar;
+        // Chapters (times on the video): each title shown for a few seconds at its start, and kept as a chapter marker.
+        @Size(max = 30)
+        private List<@Valid ChapterDto> chapters;
+        // Title cards before and after (1–6 s, up to 120 characters), on the background colour, with the logo.
+        private TitleCardDto intro;
+        private TitleCardDto outro;
+        // Music under the recording (an AUDIO upload): its volume (0–1), looped to the end, quieter under speech.
+        private MusicDto music;
+        // The waveform shaded across to a second colour ("#rrggbb"), and a soft glow around it.
+        @Size(max = 7)
+        private String waveColor2;
+
+        private boolean waveGlow;
     }
 
-    /** style CLASSIC / BOX / YELLOW, position BOTTOM / TOP. */
-    public record BurnSubtitlesDto(String style, String position) {}
+    public record ChapterDto(
+            @Min(0) long startMs, @NotBlank @Size(max = 80) String title) {}
+
+    public record TitleCardDto(@Size(max = 120) String text, long durationMs) {}
+
+    public record MusicDto(@NotBlank @Size(max = 500) String key, double volume, boolean loop, boolean duck) {}
+
+    /**
+     * style CLASSIC / BOX / YELLOW / KARAOKE, position BOTTOM / TOP; secondLanguage = a translation made into that
+     * language and shown as a smaller second line.
+     */
+    public record BurnSubtitlesDto(String style, String position, String secondLanguage) {}
+
+    /** The liveliest stretch of a recording, about `seconds` long, for a highlight clip. */
+    public record HighlightRequest(
+            @NotBlank @Size(max = 500) String audioKey,
+            @Min(15) @Max(90) int seconds) {}
+
+    public record HighlightResponse(long totalMs, long startMs, long endMs) {}
 
     /** Where to cut a long recording into parts of about `partMinutes`. */
     public record ChaptersRequest(
@@ -307,6 +342,11 @@ public final class VideoIngestDtos {
         private boolean normalize;
         private boolean denoise;
         private Integer waveHeightPct;
+
+        @Size(max = 7)
+        private String waveColor2;
+
+        private boolean waveGlow;
     }
 
     public record AudioPreviewResponse(String url, long seconds) {}

@@ -129,9 +129,21 @@ public final class OverlayRules {
      * transcript (a translation) adds a smaller second line under each one. sizePct is the font size as % of the
      * video's height.
      */
-    public record Captions(Long transcriptId, Long secondTranscriptId, String style, String position, double sizePct) {}
+    public record Captions(
+            Long transcriptId,
+            Long secondTranscriptId,
+            String style,
+            String position,
+            double sizePct,
+            CaptionRules.Look look) {
 
-    public static final Set<String> CAPTION_STYLES = Set.of("CLASSIC", "BOX", "YELLOW");
+        /** As before subtitles could have a look of their own: the style's. */
+        public Captions(Long transcriptId, Long secondTranscriptId, String style, String position, double sizePct) {
+            this(transcriptId, secondTranscriptId, style, position, sizePct, null);
+        }
+    }
+
+    public static final Set<String> CAPTION_STYLES = Set.of("CLASSIC", "BOX", "YELLOW", "KARAOKE");
     public static final Set<String> CAPTION_POSITIONS = Set.of("BOTTOM", "TOP");
     public static final double MIN_CAPTION_PCT = 3;
     public static final double MAX_CAPTION_PCT = 10;
@@ -181,6 +193,10 @@ public final class OverlayRules {
         }
         if (c.transcriptId() == null) {
             return "Subtitles: pick a transcript";
+        }
+        String lookError = CaptionRules.validateLook(c.look());
+        if (lookError != null) {
+            return lookError;
         }
         if (c.transcriptId().equals(c.secondTranscriptId())) {
             return "Subtitles: the second line needs a different transcript";

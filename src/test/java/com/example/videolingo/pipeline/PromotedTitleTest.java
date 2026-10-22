@@ -61,4 +61,11 @@ class PromotedTitleTest {
         org.junit.jupiter.api.Assertions.assertFalse(
                 com.example.videolingo.entity.VideoClip.Operation.TRIM.downloadOnly());
     }
+
+    @Test
+    void aNamedSplitPartIsCalledByItsName() {
+        assertEquals("Lesson — Greetings", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 0, "  Greetings ", null));
+        assertEquals("Lesson — Part 2", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 1, "  ", null));
+        assertEquals("Mine", VideoEditService.promotedTitle("Lesson", Operation.SPLIT, 0, "Greetings", "Mine"));
+    }
 }

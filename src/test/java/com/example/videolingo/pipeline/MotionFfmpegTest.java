@@ -129,4 +129,57 @@ class MotionFfmpegTest {
                 new JobContext(mock(JobStore.class), 1, dir));
         assertSame3s(media, out, dir);
     }
+
+    @Test
+    void punchIn(@TempDir Path dir) {
+        assumeTrue(ffmpeg, "ffmpeg isn't installed");
+        MediaTools media = media();
+        Path out = media.punchIn(
+                clip(dir).toString(),
+                new VideoEditRules.PunchIn(
+                        1.15,
+                        List.of(new VideoEditRules.Segment(0, 1000L), new VideoEditRules.Segment(2000, 2800L))),
+                320,
+                180,
+                true,
+                new JobContext(mock(JobStore.class), 1, dir));
+        assertSame3s(media, out, dir);
+    }
+
+    @Test
+    void progressBar(@TempDir Path dir) {
+        assumeTrue(ffmpeg, "ffmpeg isn't installed");
+        MediaTools media = media();
+        Path out = media.progressBar(
+                clip(dir).toString(), "#ffcc00", 320, 180, 3000, true, new JobContext(mock(JobStore.class), 1, dir));
+        assertSame3s(media, out, dir);
+    }
+
+    @Test
+    void colourGrade(@TempDir Path dir) throws IOException {
+        assumeTrue(ffmpeg, "ffmpeg isn't installed");
+        MediaTools media = media();
+        // An identity 3D LUT (red changes fastest), in a folder whose name has a space.
+        Path folder = java.nio.file.Files.createDirectories(dir.resolve("my grades"));
+        Path cube = java.nio.file.Files.writeString(
+                folder.resolve("grade.cube"),
+                "TITLE \"identity\"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n");
+        Path out = media.trim(
+                clip(dir).toString(),
+                0,
+                null,
+                null,
+                null,
+                null,
+                false,
+                false,
+                0,
+                null,
+                null,
+                null,
+                List.of(),
+                cube,
+                new JobContext(mock(JobStore.class), 1, dir));
+        assertSame3s(media, out, dir);
+    }
 }

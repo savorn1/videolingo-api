@@ -130,6 +130,13 @@ public class VideoIngestController {
         return ResponseEntity.ok(ApiResponse.success(ingest.chaptersFromAudio(request)));
     }
 
+    // The liveliest stretch of a recording, for a short highlight clip (measured on the spot).
+    @PostMapping("/from-audio/highlight")
+    public ResponseEntity<ApiResponse<VideoIngestDtos.HighlightResponse>> highlightFromAudio(
+            @Valid @RequestBody VideoIngestDtos.HighlightRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(ingest.highlightFromAudio(request)));
+    }
+
     // Joins stored videos into one new video, in the order given. Queues a job; the video
     // stays disabled until an admin has looked at the result.
     @PostMapping("/merge")

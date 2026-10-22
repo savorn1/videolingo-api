@@ -5,10 +5,12 @@ import com.example.videolingo.entity.ProcessingJob;
 import com.example.videolingo.entity.ProcessingJobType;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoClip;
+import com.example.videolingo.entity.VideoMarker;
 import com.example.videolingo.entity.VideoSource;
 import com.example.videolingo.exception.AppException;
 import com.example.videolingo.repository.ProcessingJobRepository;
 import com.example.videolingo.repository.VideoClipRepository;
+import com.example.videolingo.repository.VideoMarkerRepository;
 import com.example.videolingo.repository.VideoRepository;
 import com.example.videolingo.service.ProcessingJobService;
 import com.example.videolingo.service.VideoVersionService;
@@ -69,7 +71,18 @@ public class VideoEditService {
             Boolean stabilize,
             VideoEditRules.ZoomTo zoomTo,
             VideoEditRules.GreenScreen greenScreen,
-            ReframeRules.Reframe reframe) {}
+            ReframeRules.Reframe reframe,
+            List<VideoEditRules.Freeze> holds,
+            /** More parts at another speed (besides `speed`): in time order, not overlapping. */
+            List<VideoEditRules.SpeedRange> speeds,
+            /** Quick zooms in, e.g. on every other sentence. */
+            VideoEditRules.PunchIn punchIn,
+            /** A progress bar along the bottom, in this colour (#RRGGBB). */
+            String progressBar,
+            /** A colour grade: an upload of kind LUT (.cube). */
+            String lutKey,
+            /** Only a test render (the first few seconds, small), to check the settings. */
+            Boolean sample) {}
 
     /** A GIF of a short range (endMs required); width 320/480/640, 480 when left out. */
     public record GifRequest(long startMs, long endMs, Integer width) {}
@@ -80,7 +93,13 @@ public class VideoEditService {
     /** Sound added to a trim, on the trimmed video's own timeline: an uploaded file to use instead of the video's sound and/or background music. */
     public record TrimAudio(String replaceKey, MusicInput music) {}
 
-    public record SplitRequest(List<SegmentRange> segments) {}
+    /**
+     * One part of a split. `label` (optional) names its new video ("Lesson — Greetings" instead of "— Part 1");
+     * `aspect` (optional, w/h) crops it to that shape, centred, like the trim's "pick a shape".
+     */
+    public record SplitSegment(long startMs, Long endMs, String label, Double aspect) {}
+
+    public record SplitRequest(List<SplitSegment> segments) {}
 
     /** Ranges to take out of the video (endMs null = to the end); what's left plays on as one video. */
     public record CutRequest(List<SegmentRange> cuts) {}
@@ -108,7 +127,14 @@ public class VideoEditService {
             String channels,
             MusicInput music,
             List<MusicInput> tracks,
-            Boolean keepSoundSpeed) {}
+            Boolean keepSoundSpeed,
+            /** Points of a volume curve on the video's timeline, in time order (level 0–2, linear between). */
+            List<PointInput> volumeCurve,
+            /** NONE, MORE_BASS, CLEARER_VOICE, PHONE or RADIO. */
+            String preset,
+            Boolean deEss) {}
+
+    public record PointInput(long atMs, double gain) {}
 
     // format: "MP3" (default) or "WAV".
     public record ExtractRequest(String format) {}
@@ -132,7 +158,9 @@ public class VideoEditService {
             String summary,
             LocalDateTime createdAt,
             LocalDateTime expiresAt,
-            Long durationMs) {}
+            Long durationMs,
+            /** SPLIT: the part's own name, if it was given one. */
+            String label) {}
 
     public record EditOverview(List<ClipResponse> clips, List<ProcessingJobResponse> jobs) {}
 
@@ -140,12 +168,14 @@ public class VideoEditService {
     public record ResultRow(Long videoId, String videoTitle, boolean videoDeleted, ClipResponse clip) {}
 
     // kind: "REPLACED" (TRIM promoted onto the video) or "NEW_VIDEO" (a split segment became its own video).
-    public record PromoteResult(String kind, Long newVideoId) {}
+    // markers: how many of the video's markers were moved along to the new timing (or copied to the new video).
+    public record PromoteResult(String kind, Long newVideoId, int markers) {}
 
     private final VideoRepository videoRepository;
     private final MediaUrls mediaUrls;
     private final VideoClipRepository clipRepository;
     private final ProcessingJobRepository jobRepository;
+    private final VideoMarkerRepository markerRepository;
     private final ProcessingJobService jobService;
     private final PipelineSteps steps;
     private final VideoVersionService versionService;
@@ -228,7 +258,7 @@ public class VideoEditService {
         Long clipMs = clipEnd != null ? clipEnd - request.startMs() : null;
         require(VideoEditRules.validateFreeze(request.freeze(), clipMs));
         require(VideoEditRules.validateBlurs(request.blurs(), video.getWidth(), video.getHeight()));
-        require(VideoEditRules.validateSpeedRange(request.speed(), clipMs));
+        require(VideoEditRules.validateSpeedParts(request.speed(), request.speeds(), clipMs));
         require(VideoEditRules.validatePip(request.pip()));
         if (request.pip() != null) {
             Video other = findVideo(request.pip().videoId());
@@ -242,6 +272,10 @@ public class VideoEditService {
         require(VideoEditRules.validateReverse(request.reverse(), clipMs));
         require(VideoEditRules.validateZoomTo(request.zoomTo()));
         require(VideoEditRules.validateGreenScreen(request.greenScreen()));
+        require(VideoEditRules.validateHolds(request.holds(), clipMs));
+        require(VideoEditRules.validatePunchIn(request.punchIn(), clipMs));
+        require(VideoEditRules.validateProgressBar(request.progressBar()));
+        require(VideoEditRules.validateLutKey(request.lutKey()));
         require(ReframeRules.validate(
                 request.reframe(), request.crop() != null, request.rotate() != null && request.rotate() != 0));
         AudioEditRules.Spec audio = null;
@@ -263,6 +297,9 @@ public class VideoEditService {
                     null,
                     null,
                     request.audio().music(),
+                    null,
+                    null,
+                    null,
                     null,
                     null));
             Long total = videoMs;
@@ -303,7 +340,16 @@ public class VideoEditService {
                 Boolean.TRUE.equals(request.stabilize()) ? true : null,
                 request.zoomTo(),
                 request.greenScreen(),
-                request.reframe());
+                request.reframe(),
+                request.holds() == null || request.holds().isEmpty() ? null : request.holds(),
+                request.speeds() == null || request.speeds().isEmpty() ? null : request.speeds(),
+                request.punchIn(),
+                request.progressBar(),
+                request.lutKey(),
+                null);
+        if (Boolean.TRUE.equals(request.sample())) {
+            params = VideoEditRules.sample(params, video.getWidth(), video.getHeight(), videoMs);
+        }
         ProcessingJob job = jobService.enqueue(
                 videoId, ProcessingJobType.EDIT, toJson(params), "Trim/crop requested by " + username);
         return jobService.getJob(job.getId());
@@ -343,18 +389,27 @@ public class VideoEditService {
     public ProcessingJobResponse startSplit(Long videoId, SplitRequest request, String username) {
         Video video = lockVideo(videoId);
         requireEditable(video);
-        List<SegmentRange> segments = request.segments() == null ? List.of() : request.segments();
+        List<SplitSegment> segments = request.segments() == null ? List.of() : request.segments();
         require(VideoEditRules.validateSegments(
                 segments.stream()
                         .map(s -> new VideoEditRules.Segment(s.startMs(), s.endMs()))
                         .toList(),
                 durationMs(video)));
+        for (int i = 0; i < segments.size(); i++) {
+            SplitSegment s = segments.get(i);
+            String err = VideoEditRules.validateSplitPart(s.label(), s.aspect(), video.getWidth(), video.getHeight());
+            require(err == null ? null : "Segment " + (i + 1) + ": " + err);
+        }
         requireNoActiveJob(videoId);
 
         EditJobParams.Split params = new EditJobParams.Split(
                 "SPLIT",
                 segments.stream()
-                        .map(seg -> new EditJobParams.Range(seg.startMs(), seg.endMs()))
+                        .map(seg -> new EditJobParams.SplitPart(
+                                seg.startMs(),
+                                seg.endMs(),
+                                seg.label() == null || seg.label().isBlank() ? null : seg.label().strip(),
+                                seg.aspect()))
                         .toList());
         ProcessingJob job = jobService.enqueue(
                 videoId,
@@ -511,6 +566,24 @@ public class VideoEditService {
             throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't create a temporary folder");
         } finally {
             deleteQuietly(dir);
+        }
+    }
+
+    /** Speaks a line for the video's audio edit and keeps it as an audio upload (NarrationRules). */
+    public PipelineSteps.Narration narrate(Long videoId, NarrationRules.Request request) {
+        requireEditable(findVideo(videoId));
+        String problem = NarrationRules.validate(
+                request,
+                TextToSpeechClient.voicesFor("en").stream()
+                        .map(TextToSpeechClient.Voice::id)
+                        .toList());
+        if (problem != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, problem);
+        }
+        try {
+            return steps.narrate(request.text(), request.voice(), request.speed());
+        } catch (JobFailure e) {
+            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
         }
     }
 
@@ -683,7 +756,14 @@ public class VideoEditService {
                 r.channels() == null ? "KEEP" : r.channels(),
                 music,
                 tracks,
-                Boolean.TRUE.equals(r.keepSoundSpeed()));
+                Boolean.TRUE.equals(r.keepSoundSpeed()),
+                r.volumeCurve() == null
+                        ? List.of()
+                        : r.volumeCurve().stream()
+                                .map(pt -> new AudioEditRules.Point(pt.atMs(), pt.gain()))
+                                .toList(),
+                r.preset() == null || r.preset().isBlank() ? "NONE" : r.preset(),
+                Boolean.TRUE.equals(r.deEss()));
     }
 
     private static AudioEditRules.Music toMusic(MusicInput m) {
@@ -712,7 +792,9 @@ public class VideoEditService {
                     HttpStatus.BAD_REQUEST,
                     (clip.getOperation() == VideoClip.Operation.EXTRACT
                                     ? "An extracted audio file"
-                                    : clip.getOperation() == VideoClip.Operation.GIF ? "A GIF" : "A picture")
+                                    : clip.getOperation() == VideoClip.Operation.GIF
+                                            ? "A GIF"
+                                            : clip.getOperation() == VideoClip.Operation.SAMPLE ? "A test render" : "A picture")
                             + " can't become a video — download it instead");
         }
         if (clip.getOperation().replacesVideo() && !asNew) {
@@ -745,13 +827,15 @@ public class VideoEditService {
                 video.setHeight(clip.getHeight());
             }
             videoRepository.save(video);
+            int markers = moveMarkers(videoId, timing(clip), clip.getDurationMs());
             clipRepository.delete(clip);
             log.info("Video #{} replaced with an edited clip by {}", videoId, username);
-            return new PromoteResult("REPLACED", null);
+            return new PromoteResult("REPLACED", null, markers);
         }
 
         Video source = findVideo(videoId);
-        String newTitle = promotedTitle(source.getTitle(), clip.getOperation(), clip.getSegmentIndex(), title);
+        String newTitle =
+                promotedTitle(source.getTitle(), clip.getOperation(), clip.getSegmentIndex(), clip.getLabel(), title);
         Video created = videoRepository.save(Video.builder()
                 .title(newTitle)
                 .ownerId(source.getOwnerId())
@@ -767,6 +851,7 @@ public class VideoEditService {
                 .mimeType("video/mp4")
                 .enabled(false)
                 .build());
+        int markers = copyMarkers(videoId, created.getId(), timing(clip), clip.getDurationMs(), username);
         clipRepository.delete(clip);
         log.info(
                 "Video #{} created from a {} result of video #{} by {}",
@@ -774,7 +859,72 @@ public class VideoEditService {
                 clip.getOperation(),
                 videoId,
                 username);
-        return new PromoteResult("NEW_VIDEO", created.getId());
+        return new PromoteResult("NEW_VIDEO", created.getId(), markers);
+    }
+
+    /** Where each moment of the video lands in this result, from the job that made it; null when that can't be told. */
+    java.util.function.LongFunction<Long> timing(VideoClip clip) {
+        if (clip.getJobId() == null) {
+            return null;
+        }
+        ProcessingJob job = jobRepository.findById(clip.getJobId()).orElse(null);
+        if (job == null || job.getParameters() == null) {
+            return null;
+        }
+        try {
+            return MarkerTiming.forJob(
+                    EditJobParams.reader(objectMapper).readTree(job.getParameters()),
+                    EditJobParams.reader(objectMapper),
+                    clip.getSegmentIndex(),
+                    clip.getDurationMs());
+        } catch (Exception e) {
+            log.warn("Couldn't read job #{}'s settings to move the markers: {}", job.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /** The video's markers moved to where their moments are in its new file; ones cut out are removed. Unknown timing leaves them. */
+    private int moveMarkers(Long videoId, java.util.function.LongFunction<Long> timing, Long lengthMs) {
+        if (timing == null) {
+            return 0;
+        }
+        int moved = 0;
+        for (VideoMarker m : markerRepository.findByVideoIdOrderByAtMsAsc(videoId)) {
+            Long at = MarkerTiming.within(timing.apply(m.getAtMs()), lengthMs);
+            if (at == null) {
+                markerRepository.delete(m);
+            } else {
+                m.setAtMs(at);
+                markerRepository.save(m);
+                moved++;
+            }
+        }
+        return moved;
+    }
+
+    /** The source's markers whose moments are in the result, copied to the new video at their new times. */
+    private int copyMarkers(
+            Long sourceId, Long newVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String username) {
+        if (timing == null) {
+            return 0;
+        }
+        int copied = 0;
+        for (VideoMarker m : markerRepository.findByVideoIdOrderByAtMsAsc(sourceId)) {
+            Long at = MarkerTiming.within(timing.apply(m.getAtMs()), lengthMs);
+            if (at == null) {
+                continue;
+            }
+            markerRepository.save(VideoMarker.builder()
+                    .videoId(newVideoId)
+                    .atMs(at)
+                    .label(m.getLabel())
+                    .color(m.getColor())
+                    .chapter(m.isChapter())
+                    .createdBy(username)
+                    .build());
+            copied++;
+        }
+        return copied;
     }
 
     /** Made from a file the video no longer has. Results made before the source was recorded aren't checked. */
@@ -791,12 +941,20 @@ public class VideoEditService {
      */
     static String promotedTitle(
             String sourceTitle, VideoClip.Operation operation, Integer segmentIndex, String custom) {
+        return promotedTitle(sourceTitle, operation, segmentIndex, null, custom);
+    }
+
+    /** Same, a split part named by its `label` ("… — Greetings") when it has one. */
+    static String promotedTitle(
+            String sourceTitle, VideoClip.Operation operation, Integer segmentIndex, String label, String custom) {
         if (custom != null && !custom.isBlank()) {
             String t = custom.strip();
             return t.length() > MAX_TITLE ? t.substring(0, MAX_TITLE) : t;
         }
         String suffix = switch (operation) {
-            case SPLIT -> " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
+            case SPLIT -> label != null && !label.isBlank()
+                    ? " — " + label.strip()
+                    : " — Part " + ((segmentIndex == null ? 0 : segmentIndex) + 1);
             case TRIM -> " (trimmed)";
             case AUDIO -> " (edited audio)";
             case OVERLAY -> " (with text & overlays)";
@@ -804,6 +962,7 @@ public class VideoEditService {
             // Never promoted (downloadOnly), but every result type needs a name.
             case GIF -> " (GIF)";
             case STILL -> " (picture)";
+            case SAMPLE -> " (test render)";
         };
         String base = sourceTitle == null ? "Video" : sourceTitle.strip();
         // The end of the title is the part that says what this is, so the original's is what gets shortened.
@@ -937,6 +1096,7 @@ public class VideoEditService {
                 c.getSummary(),
                 c.getCreatedAt(),
                 c.getExpiresAt(),
-                c.getDurationMs());
+                c.getDurationMs(),
+                c.getLabel());
     }
 }

@@ -34,6 +34,7 @@ import com.example.videolingo.pipeline.MergeRules;
 import com.example.videolingo.pipeline.OverlayRules;
 import com.example.videolingo.pipeline.PipelineSteps;
 import com.example.videolingo.pipeline.RemakeRules;
+import com.example.videolingo.pipeline.VideoEditRules;
 import com.example.videolingo.repository.LanguageRepository;
 import com.example.videolingo.repository.UserRepository;
 import com.example.videolingo.repository.VideoRepository;
@@ -105,6 +106,11 @@ public class VideoIngestService {
     static final Map<String, String> IMAGE_TYPES =
             Map.of("jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png", "webp", "image/webp");
     // Replacement sound and background music for audio edits (AudioEditRules.UPLOAD_PREFIX).
+    /** Colour grades (a 3D LUT as a .cube text file); stored as plain bytes. */
+    static final Map<String, String> LUT_TYPES = Map.of("cube", "application/octet-stream");
+
+    private static final long MAX_LUT_BYTES = 16L * 1024 * 1024;
+
     static final Map<String, String> AUDIO_TYPES = Map.of(
             "mp3",
             "audio/mpeg",
@@ -358,8 +364,9 @@ public class VideoIngestService {
         boolean video = r.getKind().equals("VIDEO");
         boolean audio = r.getKind().equals("AUDIO");
         boolean overlay = r.getKind().equals("OVERLAY");
+        boolean lut = r.getKind().equals("LUT");
         String ext = extension(r.getFileName());
-        Map<String, String> types = video ? VIDEO_TYPES : audio ? AUDIO_TYPES : IMAGE_TYPES;
+        Map<String, String> types = video ? VIDEO_TYPES : audio ? AUDIO_TYPES : lut ? LUT_TYPES : IMAGE_TYPES;
         String declared = r.getContentType() == null
                 ? ""
                 : r.getContentType().split(";")[0].strip().toLowerCase(Locale.ROOT);
@@ -371,7 +378,7 @@ public class VideoIngestService {
             case "audio/x-flac" -> "audio/flac";
             default -> declared;
         };
-        String contentType = types.containsValue(declared) ? declared : types.get(ext);
+        String contentType = lut ? types.get(ext) : types.containsValue(declared) ? declared : types.get(ext);
         if (contentType == null) {
             throw new AppException(
                     HttpStatus.BAD_REQUEST,
@@ -379,15 +386,19 @@ public class VideoIngestService {
                             ? "That file type isn't supported — upload MP4, WebM, MOV, M4V, OGV or MKV"
                             : audio
                                     ? "That audio type isn't supported — upload MP3, M4A, AAC, WAV, OGG, Opus or FLAC"
-                                    : overlay
+                                    : lut
+                                            ? "Colour grades must be .cube files"
+                                            : overlay
                                             ? "Overlay images must be PNG, JPEG or WebP"
                                             : "Thumbnails must be JPEG, PNG or WebP images");
         }
-        long max = video || audio ? settings.video().maxVideoUploadMb() * 1024L * 1024L : MAX_THUMBNAIL_BYTES;
+        long max = video || audio
+                ? settings.video().maxVideoUploadMb() * 1024L * 1024L
+                : lut ? MAX_LUT_BYTES : MAX_THUMBNAIL_BYTES;
         if (r.getSize() > max) {
             throw new AppException(
                     HttpStatus.BAD_REQUEST,
-                    (video ? "Videos" : audio ? "Audio files" : "Thumbnails") + " can be at most "
+                    (video ? "Videos" : audio ? "Audio files" : lut ? "Colour grades" : "Thumbnails") + " can be at most "
                             + (max / (1024 * 1024)) + " MB" + (video || audio ? " (Settings › Video)" : ""));
         }
         String fileExt = types.entrySet().stream()
@@ -402,7 +413,9 @@ public class VideoIngestService {
                         .orElseThrow());
         String key = (video
                         ? "videos/"
-                        : audio ? AudioEditRules.UPLOAD_PREFIX : overlay ? OverlayRules.UPLOAD_PREFIX : "thumbnails/")
+                        : audio
+                                ? AudioEditRules.UPLOAD_PREFIX
+                                : overlay ? OverlayRules.UPLOAD_PREFIX : lut ? VideoEditRules.LUT_PREFIX : "thumbnails/")
                 + UUID.randomUUID() + "." + fileExt;
         return new UploadTarget(key, contentType);
     }
@@ -485,8 +498,35 @@ public class VideoIngestService {
                 r.isCrossfade(),
                 blankToNull(r.getStripText()),
                 blankToNull(r.getLogoKey()),
-                r.getWaveHeightPct());
+                r.getWaveHeightPct(),
+                r.isBlurBackdrop(),
+                r.isProgressBar(),
+                r.getChapters() == null
+                        ? List.of()
+                        : r.getChapters().stream()
+                                .map(c -> new AudioToVideoRules.Chapter(
+                                        c.startMs(), c.title().strip()))
+                                .toList());
+        String background = spec.background() != null ? spec.background() : AudioToVideoRules.DEFAULT_BACKGROUND;
+        VideoEditRules.Cards cards = r.getIntro() == null && r.getOutro() == null
+                ? null
+                : new VideoEditRules.Cards(
+                        toCard(r.getIntro()),
+                        toCard(r.getOutro()),
+                        background,
+                        AudioToVideoRules.contrastColor(background),
+                        spec.logoKey());
         String problem = AudioToVideoRules.validate(spec);
+        if (problem == null) {
+            problem = VideoEditRules.validateCards(cards);
+        }
+        if (problem == null && r.getMusic() != null) {
+            if (!AudioEditRules.isUploadKey(r.getMusic().key())) {
+                problem = "The music must be an audio file uploaded here";
+            } else if (r.getMusic().volume() < 0 || r.getMusic().volume() > 1) {
+                problem = "The music's volume is between 0% and 100%";
+            }
+        }
         if (problem == null) {
             problem = AudioToVideoRules.validateRange(r.getAudioStartMs(), r.getAudioEndMs());
         }
@@ -501,6 +541,9 @@ public class VideoIngestService {
                     && !OverlayRules.CAPTION_POSITIONS.contains(
                             r.getBurnSubtitles().position())) {
                 problem = "Subtitles: unknown position";
+            } else if (blankToNull(r.getBurnSubtitles().secondLanguage()) != null
+                    && r.getBurnSubtitles().secondLanguage().equalsIgnoreCase(String.valueOf(r.getLanguage()))) {
+                problem = "Subtitles: the second language must differ from the spoken one";
             }
         }
         if (problem != null) {
@@ -508,6 +551,9 @@ public class VideoIngestService {
         }
         if (spec.logoKey() != null && head(spec.logoKey()) == null) {
             throw new AppException(HttpStatus.BAD_REQUEST, "The logo wasn't found — the upload may not have finished");
+        }
+        if (r.getMusic() != null && head(r.getMusic().key()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The music wasn't found — the upload may not have finished");
         }
         if (head(spec.audioKey()) == null) {
             throw new AppException(
@@ -601,6 +647,31 @@ public class VideoIngestService {
         if (r.isTrimSilence()) {
             params.put("trimSilence", true);
         }
+        if (spec.blursBackdrop()) {
+            params.put("blurBackdrop", true);
+        }
+        if (spec.progressBar()) {
+            params.put("progressBar", true);
+        }
+        if (!spec.chapters().isEmpty()) {
+            params.put(
+                    "chapters",
+                    spec.chapters().stream()
+                            .map(c -> Map.of("startMs", c.startMs(), "title", c.title()))
+                            .toList());
+        }
+        if (cards != null) {
+            params.put("cards", cards);
+        }
+        if (r.getMusic() != null) {
+            params.put(
+                    "music",
+                    Map.of(
+                            "key", r.getMusic().key(),
+                            "volume", r.getMusic().volume(),
+                            "loop", r.getMusic().loop(),
+                            "duck", r.getMusic().duck()));
+        }
         if (r.getAudioStartMs() != null) {
             params.put("audioStartMs", r.getAudioStartMs());
         }
@@ -619,6 +690,10 @@ public class VideoIngestService {
                     r.getBurnSubtitles().position() == null
                             ? "BOTTOM"
                             : r.getBurnSubtitles().position());
+            String second = blankToNull(r.getBurnSubtitles().secondLanguage());
+            if (second != null) {
+                burn.put("secondLanguage", languageService.resolve(second, false));
+            }
             params.put("burnSubtitles", burn);
         }
         if (r.isTranscribe()) {
@@ -640,6 +715,26 @@ public class VideoIngestService {
                 json,
                 AudioToVideoRules.describe(spec) + " requested by " + actor);
         return new AudioToVideoResponse(videoService.getVideo(saved.getId()), jobService.getJob(job.getId()));
+    }
+
+    private static VideoEditRules.Card toCard(com.example.videolingo.dto.VideoIngestDtos.TitleCardDto c) {
+        return c == null || c.text() == null || c.text().isBlank()
+                ? null
+                : new VideoEditRules.Card(c.text().strip(), c.durationMs());
+    }
+
+    /** The liveliest stretch of a recording, about `seconds` long, for a highlight clip (found on the spot). */
+    public com.example.videolingo.dto.VideoIngestDtos.HighlightResponse highlightFromAudio(
+            com.example.videolingo.dto.VideoIngestDtos.HighlightRequest r) {
+        requireStorage();
+        if (!AudioEditRules.isUploadKey(r.audioKey()) || head(r.audioKey()) == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Upload the audio file first");
+        }
+        try {
+            return steps.highlight(r.audioKey(), r.seconds());
+        } catch (com.example.videolingo.pipeline.JobFailure e) {
+            throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     // ── Make again ─────────────────────────────────────────────────────────

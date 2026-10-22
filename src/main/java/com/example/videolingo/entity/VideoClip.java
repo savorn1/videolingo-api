@@ -31,7 +31,9 @@ public class VideoClip {
         EXTRACT,
         OVERLAY,
         GIF,
-        STILL;
+        STILL,
+        // A short, small test render of a trim's settings.
+        SAMPLE;
 
         /** Promoting it swaps the video's own file. */
         public boolean replacesVideo() {
@@ -40,7 +42,7 @@ public class VideoClip {
 
         /** A file to download (audio, a GIF, a picture) — it can't become or replace a video. */
         public boolean downloadOnly() {
-            return this == EXTRACT || this == GIF || this == STILL;
+            return this == EXTRACT || this == GIF || this == STILL || this == SAMPLE;
         }
     }
 
@@ -61,6 +63,10 @@ public class VideoClip {
     // Null for TRIM; 0..n-1 for SPLIT (this segment's place among the job's outputs).
     @Column(name = "segment_index")
     private Integer segmentIndex;
+
+    // SPLIT: the part's own name, used in its new video's title; null = "— Part N".
+    @Column(length = 80)
+    private String label;
 
     @Column(name = "start_ms", nullable = false)
     private long startMs;

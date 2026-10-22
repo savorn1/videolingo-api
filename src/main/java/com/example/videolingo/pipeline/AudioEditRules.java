@@ -42,6 +42,15 @@ public final class AudioEditRules {
 
     public record Music(String key, double volume, boolean loop, boolean duck, long startMs) {}
 
+    /** A point of the volume curve: the level (0–MAX_CURVE_GAIN) at a moment of the video; linear in between. */
+    public record Point(long atMs, double gain) {}
+
+    public static final int MAX_CURVE_POINTS = 30;
+    public static final double MAX_CURVE_GAIN = 2;
+
+    /** Ready-made sound shapes for the main sound. */
+    public static final Set<String> PRESETS = Set.of("NONE", "MORE_BASS", "CLEARER_VOICE", "PHONE", "RADIO");
+
     /**
      * A complete edit, with defaults filled in. clips empty = the source sound
      * as-is, from 0. Times are on the video's own (1×) timeline; speed then
@@ -64,7 +73,10 @@ public final class AudioEditRules {
             String channels,
             Music music,
             List<Music> tracks,
-            boolean keepSoundSpeed) {
+            boolean keepSoundSpeed,
+            List<Point> volumeCurve,
+            String preset,
+            boolean deEss) {
 
         public Spec {
             clips = clips == null ? List.of() : List.copyOf(clips);
@@ -72,6 +84,48 @@ public final class AudioEditRules {
             denoise = denoise == null ? "OFF" : denoise;
             channels = channels == null ? "KEEP" : channels;
             tracks = tracks == null ? List.of() : List.copyOf(tracks);
+            volumeCurve = volumeCurve == null ? List.of() : List.copyOf(volumeCurve);
+            preset = preset == null ? "NONE" : preset;
+        }
+
+        /** As before the volume curve, presets and de-esser. */
+        public Spec(
+                String replaceKey,
+                List<Clip> clips,
+                List<Range> mutes,
+                double volume,
+                long fadeInMs,
+                long fadeOutMs,
+                boolean normalize,
+                String denoise,
+                boolean enhanceVoice,
+                double speed,
+                double pitchSemitones,
+                double balance,
+                String channels,
+                Music music,
+                List<Music> tracks,
+                boolean keepSoundSpeed) {
+            this(
+                    replaceKey,
+                    clips,
+                    mutes,
+                    volume,
+                    fadeInMs,
+                    fadeOutMs,
+                    normalize,
+                    denoise,
+                    enhanceVoice,
+                    speed,
+                    pitchSemitones,
+                    balance,
+                    channels,
+                    music,
+                    tracks,
+                    keepSoundSpeed,
+                    List.of(),
+                    "NONE",
+                    false);
         }
 
         /** As before there were extra tracks: the sound follows the speed. */
@@ -154,7 +208,10 @@ public final class AudioEditRules {
                     && balance == 0
                     && "KEEP".equals(channels)
                     && music == null
-                    && tracks.isEmpty();
+                    && tracks.isEmpty()
+                    && volumeCurve.isEmpty()
+                    && "NONE".equals(preset)
+                    && !deEss;
         }
     }
 
@@ -203,6 +260,21 @@ public final class AudioEditRules {
             if (r.startMs() < 0 || r.endMs() <= r.startMs()) {
                 return "Muted range " + (i + 1) + ": the end must be after the start";
             }
+        }
+        if (s.volumeCurve().size() > MAX_CURVE_POINTS) {
+            return "At most " + MAX_CURVE_POINTS + " points on the volume curve";
+        }
+        for (int i = 0; i < s.volumeCurve().size(); i++) {
+            Point p = s.volumeCurve().get(i);
+            if (p.atMs() < 0 || (i > 0 && p.atMs() <= s.volumeCurve().get(i - 1).atMs())) {
+                return "Volume curve: the points must be in time order";
+            }
+            if (p.gain() < 0 || p.gain() > MAX_CURVE_GAIN) {
+                return "Volume curve: each point is between 0% and " + (int) (MAX_CURVE_GAIN * 100) + "%";
+            }
+        }
+        if (!PRESETS.contains(s.preset())) {
+            return "Unknown sound preset";
         }
         if (s.volume() < 0 || s.volume() > MAX_GAIN) {
             return "Volume must be between 0% and " + (int) (MAX_GAIN * 100) + "%";
@@ -297,6 +369,21 @@ public final class AudioEditRules {
         if (s.enhanceVoice()) {
             parts.add("voice enhanced");
         }
+        if (!s.volumeCurve().isEmpty()) {
+            parts.add("volume curve");
+        }
+        if (!"NONE".equals(s.preset())) {
+            parts.add(
+                    switch (s.preset()) {
+                        case "MORE_BASS" -> "more bass";
+                        case "CLEARER_VOICE" -> "clearer voice";
+                        case "PHONE" -> "phone call sound";
+                        default -> "radio sound";
+                    });
+        }
+        if (s.deEss()) {
+            parts.add("de-essed");
+        }
         if (s.music() != null) {
             parts.add("background music " + Math.round(s.music().volume() * 100) + "%"
                     + (s.music().duck() ? " (ducked)" : ""));
@@ -387,6 +474,9 @@ public final class AudioEditRules {
         for (Range r : s.mutes()) {
             main.add("volume=0:enable='between(t," + sec(r.startMs()) + "," + sec(r.endMs()) + ")'");
         }
+        if (!s.volumeCurve().isEmpty()) {
+            main.add("volume=eval=frame:volume='" + curveExpr(s.volumeCurve()) + "'");
+        }
         if (s.volume() != 1) {
             main.add("volume=" + num(s.volume()));
         }
@@ -401,6 +491,11 @@ public final class AudioEditRules {
             main.add("lowpass=f=12000");
             main.add("equalizer=f=3000:t=q:w=1:g=3");
             main.add("acompressor=threshold=0.125:ratio=3:attack=5:release=100:makeup=1.5");
+        }
+        main.addAll(presetFilters(s.preset()));
+        if (s.deEss()) {
+            // Tames harsh "s" sounds, which a voice boost or a bright mic makes worse.
+            main.add("deesser=i=0.5:m=0.5:f=0.5");
         }
         if (main.isEmpty()) {
             main.add("anull");
@@ -491,6 +586,45 @@ public final class AudioEditRules {
             graph.add("[0:v]setpts=PTS/" + num(s.speed()) + "[vout]");
         }
         return new Graph(String.join(";", graph), s.changesPicture());
+    }
+
+    /**
+     * The volume curve as an ffmpeg expression of t: the first point's level before it, the last one's after it,
+     * and a straight line between each two.
+     */
+    static String curveExpr(List<Point> points) {
+        Point last = points.get(points.size() - 1);
+        String expr = num(last.gain());
+        for (int i = points.size() - 2; i >= 0; i--) {
+            Point a = points.get(i);
+            Point b = points.get(i + 1);
+            String ta = sec(a.atMs());
+            String line =
+                    num(a.gain()) + "+(" + num(b.gain() - a.gain()) + ")*(t-" + ta + ")/" + sec(b.atMs() - a.atMs());
+            expr = "if(lt(t," + sec(b.atMs()) + ")," + line + "," + expr + ")";
+        }
+        return "if(lt(t," + sec(points.get(0).atMs()) + ")," + num(points.get(0).gain()) + "," + expr + ")";
+    }
+
+    /** The filters of each sound preset. */
+    static List<String> presetFilters(String preset) {
+        return switch (preset) {
+            case "MORE_BASS" -> List.of("bass=g=6:f=110:w=0.6");
+            case "CLEARER_VOICE" ->
+                List.of("highpass=f=100", "equalizer=f=250:t=q:w=1:g=-3", "equalizer=f=3500:t=q:w=1.2:g=4");
+            case "PHONE" ->
+                List.of(
+                        "highpass=f=300",
+                        "lowpass=f=3400",
+                        "acompressor=threshold=0.1:ratio=4:attack=5:release=80:makeup=2");
+            case "RADIO" ->
+                List.of(
+                        "highpass=f=150",
+                        "lowpass=f=6000",
+                        "equalizer=f=1500:t=q:w=1:g=3",
+                        "acompressor=threshold=0.08:ratio=6:attack=5:release=100:makeup=2");
+            default -> List.of();
+        };
     }
 
     /** atempo only takes 0.5–2 per instance; chain as many as needed. Empty for 1×. */

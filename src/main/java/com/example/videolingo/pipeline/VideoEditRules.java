@@ -270,6 +270,61 @@ public final class VideoEditRules {
         return null;
     }
 
+    /** At most this many held frames in one trim (e.g. a pause after every sentence). */
+    public static final int MAX_HOLDS = 60;
+
+    /**
+     * The freeze and the pauses as one list for the render: in time order, leaving out any within 0.5 s of the one
+     * kept before it (a freeze placed on a sentence's end), which would leave an empty piece between them.
+     */
+    public static java.util.List<long[]> spacedHolds(java.util.List<long[]> holds) {
+        java.util.List<long[]> sorted = holds.stream()
+                .sorted(java.util.Comparator.comparingLong(h -> h[0]))
+                .toList();
+        java.util.List<long[]> out = new java.util.ArrayList<>();
+        for (long[] h : sorted) {
+            if (out.isEmpty() || h[0] - out.get(out.size() - 1)[0] >= MIN_FREEZE_MS) {
+                out.add(h);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Several held frames ("pause after each sentence"): each like a freeze, in time order on the trimmed clip, at
+     * least half a second apart. Null = valid (or none).
+     */
+    public static String validateHolds(java.util.List<Freeze> holds, Long clipMs) {
+        if (holds == null || holds.isEmpty()) {
+            return null;
+        }
+        if (holds.size() > MAX_HOLDS) {
+            return "At most " + MAX_HOLDS + " pauses in one trim";
+        }
+        long last = 0;
+        for (int i = 0; i < holds.size(); i++) {
+            Freeze h = holds.get(i);
+            String err = validateFreeze(h, clipMs);
+            if (err != null) {
+                return "Pause " + (i + 1) + ": " + Character.toLowerCase(err.charAt(0)) + err.substring(1);
+            }
+            if (i > 0 && h.atMs() - last < 500) {
+                return "Pause " + (i + 1) + ": pauses must be at least half a second apart, in order";
+            }
+            last = h.atMs();
+        }
+        return null;
+    }
+
+    /** "5 pauses of 2 s"; null for none. */
+    public static String describeHolds(java.util.List<Freeze> holds) {
+        if (holds == null || holds.isEmpty()) {
+            return null;
+        }
+        return holds.size() + (holds.size() == 1 ? " pause" : " pauses") + " of "
+                + seconds(holds.get(0).durationMs());
+    }
+
     /** "frame held 2 s"; null for none. */
     public static String describeFreeze(Freeze freeze) {
         return freeze == null ? null : "frame held " + seconds(freeze.durationMs());
@@ -358,12 +413,61 @@ public final class VideoEditRules {
 
     /** Where a moment of the trimmed clip ends up once the range plays at its speed. */
     public static long rampedMs(long ms, SpeedRange r) {
-        if (r == null || ms <= r.startMs()) {
-            return ms;
+        return rampedAcross(ms, r == null ? List.of() : List.of(r));
+    }
+
+    /** At most this many parts at another speed in one trim. */
+    public static final int MAX_SPEED_PARTS = 10;
+
+    /** The single part (`speed`, older requests) and the list (`speeds`) as one list in time order. */
+    public static List<SpeedRange> speedParts(SpeedRange one, List<SpeedRange> more) {
+        List<SpeedRange> all = new java.util.ArrayList<>();
+        if (one != null) {
+            all.add(one);
         }
-        long inside = Math.min(ms, r.endMs()) - r.startMs();
-        long after = Math.max(0, ms - r.endMs());
-        return r.startMs() + Math.round(inside / r.speed()) + after;
+        if (more != null) {
+            all.addAll(more);
+        }
+        all.sort(java.util.Comparator.comparingLong(SpeedRange::startMs));
+        return all;
+    }
+
+    /** Each part valid on its own, at most MAX_SPEED_PARTS, and none overlapping another. */
+    public static String validateSpeedParts(SpeedRange one, List<SpeedRange> more, Long clipMs) {
+        List<SpeedRange> all = speedParts(one, more);
+        if (all.size() > MAX_SPEED_PARTS) {
+            return "At most " + MAX_SPEED_PARTS + " parts at another speed";
+        }
+        for (int i = 0; i < all.size(); i++) {
+            String err = validateSpeedRange(all.get(i), clipMs);
+            if (err != null) {
+                return all.size() == 1 ? err : "Speed part " + (i + 1) + ": " + err;
+            }
+            if (i > 0 && all.get(i).startMs() < all.get(i - 1).endMs()) {
+                return "The parts at another speed overlap — move one so they don't";
+            }
+        }
+        return null;
+    }
+
+    /** Where a moment of the trimmed clip ends up once each part (in time order, apart) plays at its speed. */
+    public static long rampedAcross(long ms, List<SpeedRange> parts) {
+        double shift = 0;
+        for (SpeedRange r : parts) {
+            if (ms <= r.startMs()) {
+                break;
+            }
+            long inside = Math.min(ms, r.endMs()) - r.startMs();
+            shift += inside / r.speed() - inside;
+        }
+        return ms + Math.round(shift);
+    }
+
+    public static String describeSpeedParts(List<SpeedRange> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return null;
+        }
+        return parts.size() == 1 ? describeSpeedRange(parts.get(0)) : parts.size() + " parts at another speed";
     }
 
     public static String describeSpeedRange(SpeedRange r) {
@@ -673,5 +777,242 @@ public final class VideoEditRules {
             }
         }
         return null;
+    }
+
+    /** The longest name a split part may have (it ends its new video's title). */
+    public static final int MAX_PART_LABEL = 80;
+
+    /** What is wrong with a split part's name and shape (both optional), or null. */
+    public static String validateSplitPart(String label, Double aspect, Integer width, Integer height) {
+        if (label != null && label.strip().length() > MAX_PART_LABEL) {
+            return "The name is longer than " + MAX_PART_LABEL + " characters";
+        }
+        if (aspect == null) {
+            return null;
+        }
+        if (!(aspect >= ReframeRules.MIN_ASPECT && aspect <= ReframeRules.MAX_ASPECT)) {
+            return "The shape must be between 1:4 and 4:1";
+        }
+        if (width == null || height == null || width <= 0 || height <= 0) {
+            return "The video's size isn't known yet, so it can't be cropped to a shape";
+        }
+        return null;
+    }
+
+    /**
+     * A split part's crop for its shape: the largest box of `aspect` (w/h) in the frame, centred, with even
+     * sides (the encoder needs them). Null when there's no shape, the size isn't known, or it is the frame's own shape.
+     */
+    public static MediaTools.CropRect splitCrop(Double aspect, Integer width, Integer height) {
+        if (aspect == null || width == null || height == null || width <= 0 || height <= 0) {
+            return null;
+        }
+        AutoCropRules.CropRect box = AutoCropRules.suggestCrop(aspect, width, height, 0.5, 0.5);
+        int w = Math.max(2, box.w() / 2 * 2);
+        int h = Math.max(2, box.h() / 2 * 2);
+        if (w >= width - 1 && h >= height - 1) {
+            return null;
+        }
+        return new MediaTools.CropRect((width - w) / 2, (height - h) / 2, w, h);
+    }
+
+    // ── Punch-in zooms ───────────────────────────────────────────────────────
+    /** A quick zoom in to `scale` (e.g. 1.12) for each moment (times on the trimmed clip), back to the whole picture between. */
+    public record PunchIn(double scale, List<Segment> ranges) {}
+
+    public static final double MIN_PUNCH = 1.05;
+    public static final double MAX_PUNCH = 1.5;
+    public static final int MAX_PUNCH_RANGES = 60;
+    public static final long MIN_PUNCH_MS = 300;
+
+    public static String validatePunchIn(PunchIn p, Long clipMs) {
+        if (p == null) {
+            return null;
+        }
+        if (!(p.scale() >= MIN_PUNCH && p.scale() <= MAX_PUNCH)) {
+            return "Punch-in: the zoom is between 105% and 150%";
+        }
+        if (p.ranges() == null || p.ranges().isEmpty()) {
+            return "Punch-in: there are no moments to zoom in on";
+        }
+        if (p.ranges().size() > MAX_PUNCH_RANGES) {
+            return "Punch-in: at most " + MAX_PUNCH_RANGES + " moments";
+        }
+        long previousEnd = 0;
+        for (int i = 0; i < p.ranges().size(); i++) {
+            Segment r = p.ranges().get(i);
+            if (r.endMs() == null || r.startMs() < 0 || r.endMs() - r.startMs() < MIN_PUNCH_MS) {
+                return "Punch-in " + (i + 1) + ": a moment is at least " + MIN_PUNCH_MS / 1000.0 + " s long";
+            }
+            if (clipMs != null && r.endMs() > clipMs) {
+                return "Punch-in " + (i + 1) + ": it runs past the end of the clip";
+            }
+            if (r.startMs() < previousEnd) {
+                return "Punch-in moments must be in time order and not overlap";
+            }
+            previousEnd = r.endMs();
+        }
+        return null;
+    }
+
+    /** The zoom over time, an expression of t (seconds): `scale` inside the moments, 1 between them. */
+    public static String punchFactor(PunchIn p) {
+        String inside = p.ranges().stream()
+                .map(r -> String.format(
+                        java.util.Locale.ROOT, "between(t,%.3f,%.3f)", r.startMs() / 1000.0, r.endMs() / 1000.0))
+                .collect(java.util.stream.Collectors.joining("+"));
+        return String.format(java.util.Locale.ROOT, "(1+%.4f*min(1,%s))", p.scale() - 1, inside);
+    }
+
+    // ── Progress bar ─────────────────────────────────────────────────────────
+    private static final java.util.regex.Pattern HEX_COLOR = java.util.regex.Pattern.compile("^#[0-9a-fA-F]{6}$");
+
+    public static String validateProgressBar(String color) {
+        return color == null || HEX_COLOR.matcher(color).matches() ? null : "Progress bar: pick a colour";
+    }
+
+    /** The bar's height: about 1.2% of the picture, at least 4 px, even. */
+    static int progressBarHeight(int height) {
+        return Math.max(4, (int) Math.round(height * 0.012)) / 2 * 2;
+    }
+
+    /**
+     * A faint track along the bottom edge and a bar of `color` sliding in over it as the clip plays (the same
+     * drawing as a video made from audio); the sound passes through.
+     */
+    public static String progressBarGraph(int width, int height, String color, long clipMs, boolean hasAudio) {
+        int h = progressBarHeight(height);
+        double seconds = Math.max(0.001, clipMs / 1000.0);
+        String col = "0x" + color.substring(1).toLowerCase(java.util.Locale.ROOT);
+        return String.format(
+                        java.util.Locale.ROOT,
+                        "color=c=%s:s=%dx%d:d=%.3f[bar];[0:v]drawbox=x=0:y=ih-%d:w=iw:h=%d:color=%s@0.25:t=fill[track];"
+                                + "[track][bar]overlay=x='-w+w*t/%.3f':y=H-h:eval=frame[v]",
+                        col,
+                        width,
+                        h,
+                        seconds,
+                        h,
+                        h,
+                        col,
+                        seconds)
+                + (hasAudio ? ";[0:a]anull[a]" : "");
+    }
+
+    // ── Colour grade (.cube LUT) ─────────────────────────────────────────────
+    public static final String LUT_PREFIX = "luts/";
+    private static final java.util.regex.Pattern LUT_KEY =
+            java.util.regex.Pattern.compile("^luts/[0-9a-f-]{36}\\.cube$");
+
+    public static String validateLutKey(String key) {
+        return key == null || LUT_KEY.matcher(key).matches() ? null : "The colour grade isn't an upload this server made";
+    }
+
+    // ── Test render ──────────────────────────────────────────────────────────
+    /** A test render is the clip's first SAMPLE_MS, with its short side at most SAMPLE_SIDE. */
+    public static final long SAMPLE_MS = 8000;
+
+    public static final int SAMPLE_SIDE = 360;
+    public static final String SAMPLE_SUMMARY = "Test render: the first " + SAMPLE_MS / 1000 + " s, small";
+
+    /**
+     * A test render of a trim: the same settings on the clip's first SAMPLE_MS (timed settings past it left out
+     * or cut short) at a small size, to check what the preview can't show before rendering it all.
+     */
+    public static EditJobParams.Trim sample(EditJobParams.Trim t, Integer videoW, Integer videoH, Long videoMs) {
+        long start = t.startMs();
+        Long fullEnd = t.endMs() != null ? t.endMs() : videoMs;
+        long end = fullEnd == null ? start + SAMPLE_MS : Math.min(fullEnd, start + SAMPLE_MS);
+        long clipMs = end - start;
+        long pad = videoMs != null ? Math.max(0, end - videoMs) : 0;
+        Fade fade = t.fade();
+        if (fade != null && fade.inMs() + fade.outMs() > clipMs) {
+            fade = new Fade(Math.min(fade.inMs(), clipMs), 0, fade.color());
+        }
+        Freeze freeze = t.freeze() != null && t.freeze().atMs() < clipMs ? t.freeze() : null;
+        List<Freeze> holds = t.holds() == null
+                ? List.of()
+                : t.holds().stream().filter(h -> h.atMs() < clipMs).toList();
+        List<SpeedRange> speeds = speedParts(t.speed(), t.speeds()).stream()
+                .filter(r -> r.startMs() < clipMs)
+                .map(r -> new SpeedRange(r.startMs(), Math.min(r.endMs(), clipMs), r.speed()))
+                .filter(r -> r.endMs() - r.startMs() >= MIN_RAMP_MS)
+                .toList();
+        PunchIn punch = null;
+        if (t.punchIn() != null) {
+            List<Segment> ranges = t.punchIn().ranges().stream()
+                    .filter(r -> r.startMs() < clipMs)
+                    .map(r -> new Segment(r.startMs(), Math.min(r.endMs(), clipMs)))
+                    .filter(r -> r.endMs() - r.startMs() >= MIN_PUNCH_MS)
+                    .toList();
+            punch = ranges.isEmpty() ? null : new PunchIn(t.punchIn().scale(), ranges);
+        }
+        return new EditJobParams.Trim(
+                "TRIM",
+                start,
+                end,
+                t.crop(),
+                sampleScale(t, videoW, videoH),
+                t.rotate(),
+                t.flipH(),
+                t.flipV(),
+                t.audio(),
+                pad > 0 ? pad : null,
+                t.look(),
+                t.effect(),
+                fade,
+                freeze,
+                t.blurs(),
+                null,
+                t.pip(),
+                t.cards(),
+                t.reverse(),
+                t.stabilize(),
+                t.zoomTo(),
+                t.greenScreen(),
+                t.reframe(),
+                holds.isEmpty() ? null : holds,
+                speeds.isEmpty() ? null : speeds,
+                punch,
+                t.progressBar(),
+                t.lutKey(),
+                true);
+    }
+
+    /** The test render's size: the trim's own size shrunk (keeping its shape) until its short side is SAMPLE_SIDE. */
+    static MediaTools.ScaleSize sampleScale(EditJobParams.Trim t, Integer videoW, Integer videoH) {
+        int w;
+        int h;
+        if (t.scale() != null) {
+            w = t.scale().w();
+            h = t.scale().h();
+        } else {
+            if (videoW == null || videoH == null) {
+                return null;
+            }
+            if (t.reframe() != null) {
+                AutoCropRules.CropRect box = AutoCropRules.suggestCrop(t.reframe().aspect(), videoW, videoH, 0.5, 0.5);
+                w = box.w();
+                h = box.h();
+            } else if (t.crop() != null) {
+                w = t.crop().w();
+                h = t.crop().h();
+            } else {
+                w = videoW;
+                h = videoH;
+            }
+            if (swapsSides(t.rotate())) {
+                int side = w;
+                w = h;
+                h = side;
+            }
+        }
+        int shortSide = Math.min(w, h);
+        if (shortSide <= SAMPLE_SIDE) {
+            return t.scale();
+        }
+        double f = (double) SAMPLE_SIDE / shortSide;
+        return new MediaTools.ScaleSize(
+                Math.max(2, (int) Math.round(w * f / 2) * 2), Math.max(2, (int) Math.round(h * f / 2) * 2));
     }
 }

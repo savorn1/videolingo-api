@@ -42,7 +42,13 @@ class EditJobParamsTest {
                 true,
                 new VideoEditRules.ZoomTo(0.3, 0.6, 0.5),
                 new VideoEditRules.GreenScreen(null, 0.3, "#112233"),
-                new ReframeRules.Reframe(0.5625));
+                new ReframeRules.Reframe(0.5625),
+                java.util.List.of(new VideoEditRules.Freeze(3000, 1000)),
+                java.util.List.of(new VideoEditRules.SpeedRange(5000, 6000, 2.0)),
+                new VideoEditRules.PunchIn(1.12, java.util.List.of(new VideoEditRules.Segment(500, 1500L))),
+                "#ffcc00",
+                "luts/0b0c0d0e-0000-4000-8000-000000000000.cube",
+                null);
         String json = writer.writeValueAsString(trim);
         assertFalse(json.contains("flipV"), "unused settings are left out");
         assertFalse(json.contains("plain") || json.contains("\"none\""), "derived flags aren't stored");
@@ -109,5 +115,22 @@ class EditJobParamsTest {
         assertTrue(name.endsWith(".MP4"));
         assertFalse(name.contains("/") || name.contains(" "));
         assertEquals(name, SourceFileCache.fileName("edits/uploads/../my clip.MP4"));
+    }
+
+    @Test
+    void aSplitQueuedBeforePartsHadNamesStillRuns() throws Exception {
+        String json = """
+                {"operation":"SPLIT","segments":[{"startMs":0,"endMs":5000},{"startMs":5000,"endMs":null}]}
+                """;
+        EditJobParams.Split split = reader.readValue(json, EditJobParams.Split.class);
+        assertEquals(new EditJobParams.SplitPart(0, 5000L, null, null), split.segments().get(0));
+        assertEquals(new EditJobParams.SplitPart(5000, null, null, null), split.segments().get(1));
+    }
+
+    @Test
+    void aNamedShapedSplitSurvivesTheRoundTrip() throws Exception {
+        EditJobParams.Split split = new EditJobParams.Split(
+                "SPLIT", List.of(new EditJobParams.SplitPart(0, 5000L, "Greetings", 0.5625), new EditJobParams.SplitPart(5000, null, null, null)));
+        assertEquals(split, reader.readValue(writer.writeValueAsString(split), EditJobParams.Split.class));
     }
 }
