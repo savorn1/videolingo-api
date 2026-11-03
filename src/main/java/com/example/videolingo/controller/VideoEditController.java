@@ -136,6 +136,13 @@ public class VideoEditController {
         return ResponseEntity.ok(ApiResponse.success(editService.pauses(videoId, noiseDb)));
     }
 
+    // "Split at scene changes": where the picture changes a lot (sensitivity LOW, MEDIUM or HIGH).
+    @GetMapping("/scenes")
+    public ResponseEntity<ApiResponse<VideoEditService.Scenes>> scenes(
+            @PathVariable Long videoId, @RequestParam(defaultValue = "MEDIUM") String sensitivity) {
+        return ResponseEntity.ok(ApiResponse.success(editService.scenes(videoId, sensitivity)));
+    }
+
     @GetMapping("/waveform")
     public ResponseEntity<ApiResponse<VideoEditService.Waveform>> waveform(
             @PathVariable Long videoId,

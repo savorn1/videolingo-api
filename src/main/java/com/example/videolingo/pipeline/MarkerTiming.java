@@ -4,12 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
+import com.example.videolingo.dto.TranscriptWord;
 import java.util.function.LongFunction;
 
 // Where a moment of a video lands in a result made from it, worked out from the job's settings — so its
 // markers (and chapters) can move along when the result replaces the video or becomes a new one. Null = the
 // moment isn't in the result. Pure, so tested.
-final class MarkerTiming {
+public final class MarkerTiming {
 
     private MarkerTiming() {}
 
@@ -121,7 +122,69 @@ final class MarkerTiming {
     }
 
     /** The time if it is inside a result `lengthMs` long (unknown = any), else null. */
-    static Long within(Long atMs, Long lengthMs) {
+    public static Long within(Long atMs, Long lengthMs) {
         return atMs == null || atMs < 0 || (lengthMs != null && atMs >= lengthMs) ? null : atMs;
+    }
+
+    /** A line of a transcript, with its words' timings when known. */
+    public record TimedLine(long startMs, long endMs, String text, String speaker, List<TranscriptWord> words) {}
+
+    /** How finely a line is sampled to find what of it is left in the result. */
+    static final long SAMPLE_STEP_MS = 50;
+
+    /** A line left shorter than this in the result is dropped. */
+    static final long MIN_LINE_MS = 200;
+
+    /**
+     * A transcript's lines on the result's timeline: each line spans what is left of it (sampled, so a line crossing a
+     * cut or the trim's edge keeps only its part inside), its words moved the same way (ones cut out dropped), in
+     * time order; lines with almost nothing left are dropped. Null when the result runs backwards — its lines
+     * wouldn't make sense.
+     */
+    public static List<TimedLine> retime(List<TimedLine> lines, LongFunction<Long> timing, Long lengthMs) {
+        List<TimedLine> out = new ArrayList<>();
+        for (TimedLine line : lines) {
+            Long from = null;
+            Long to = null;
+            Long first = null;
+            Long last = null;
+            for (long t = line.startMs(); ; t = Math.min(t + SAMPLE_STEP_MS, line.endMs())) {
+                Long at = within(timing.apply(t), lengthMs);
+                if (at != null) {
+                    if (first == null) {
+                        first = at;
+                    }
+                    last = at;
+                    from = from == null ? at : Math.min(from, at);
+                    to = to == null ? at : Math.max(to, at);
+                }
+                if (t >= line.endMs()) {
+                    break;
+                }
+            }
+            if (first == null || to - from < MIN_LINE_MS) {
+                continue;
+            }
+            if (last < first) {
+                return null;
+            }
+            List<TranscriptWord> words = null;
+            if (line.words() != null) {
+                words = new ArrayList<>();
+                for (TranscriptWord w : line.words()) {
+                    Long ws = within(timing.apply(w.startMs()), lengthMs);
+                    Long we = within(timing.apply(Math.max(w.startMs(), w.endMs() - 1)), lengthMs);
+                    if (ws != null && we != null && we >= ws) {
+                        words.add(new TranscriptWord(ws, Math.max(ws + 1, we + 1), w.text()));
+                    }
+                }
+                if (words.isEmpty()) {
+                    words = null;
+                }
+            }
+            out.add(new TimedLine(from, to, line.text(), line.speaker(), words));
+        }
+        out.sort((a, b) -> Long.compare(a.startMs(), b.startMs()));
+        return out;
     }
 }

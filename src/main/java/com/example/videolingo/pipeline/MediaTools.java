@@ -1721,6 +1721,38 @@ public class MediaTools {
         return out;
     }
 
+    /** The moments the picture changes scene (SceneRules), in ms, in order; not yet tidied. */
+    public List<Long> sceneChanges(String input, double threshold, Path workDir) {
+        Path log = workDir.resolve("scenes.log");
+        try {
+            Process process = new ProcessBuilder(
+                            props.ffmpeg(),
+                            "-hide_banner",
+                            "-nostats",
+                            "-i",
+                            input,
+                            "-an",
+                            "-vf",
+                            SceneRules.filter(threshold),
+                            "-f",
+                            "null",
+                            "-")
+                    .redirectErrorStream(true)
+                    .redirectOutput(log.toFile())
+                    .start();
+            if (!process.waitFor(10, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new JobFailure("Looking for scene changes took too long");
+            }
+            return SceneRules.parse(Files.readString(log, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't look for scene changes: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new JobFailure("Interrupted while looking for scene changes");
+        }
+    }
+
     /** The sound's RMS level in each second (dB; -∞ for silence), for picking a highlight. */
     public List<Double> levels(Path audio, Path workDir) {
         Path log = workDir.resolve("levels.log");

@@ -168,14 +168,16 @@ public class VideoEditService {
     public record ResultRow(Long videoId, String videoTitle, boolean videoDeleted, ClipResponse clip) {}
 
     // kind: "REPLACED" (TRIM promoted onto the video) or "NEW_VIDEO" (a split segment became its own video).
-    // markers: how many of the video's markers were moved along to the new timing (or copied to the new video).
-    public record PromoteResult(String kind, Long newVideoId, int markers) {}
+    // markers / transcripts: how many of the video's markers and transcripts were moved along to the new timing (or
+    // copied to the new video).
+    public record PromoteResult(String kind, Long newVideoId, int markers, int transcripts) {}
 
     private final VideoRepository videoRepository;
     private final MediaUrls mediaUrls;
     private final VideoClipRepository clipRepository;
     private final ProcessingJobRepository jobRepository;
     private final VideoMarkerRepository markerRepository;
+    private final com.example.videolingo.service.TranscriptService transcriptService;
     private final ProcessingJobService jobService;
     private final PipelineSteps steps;
     private final VideoVersionService versionService;
@@ -592,6 +594,56 @@ public class VideoEditService {
     /** The pauses found in a video's sound, and how long the sound is. */
     public record Pauses(long durationMs, List<AudioToVideoRules.Silence> pauses) {}
 
+    /** The moments a video's picture changes scene (ms), and how long it is. */
+    public record Scenes(long durationMs, List<Long> cuts) {}
+
+    private final Map<String, Scenes> sceneCache =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Scenes> eldest) {
+                    return size() > 32;
+                }
+            });
+
+    /** Where the picture changes scene (SceneRules), for "Split at scene changes"; `sensitivity` LOW, MEDIUM or HIGH. */
+    public Scenes scenes(Long videoId, String sensitivity) {
+        Double threshold = SceneRules.threshold(sensitivity);
+        if (threshold == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "The sensitivity is LOW, MEDIUM or HIGH");
+        }
+        Video video = findVideo(videoId);
+        if (PipelineSteps.isLink(video.getSource())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Link videos have no file to look at");
+        }
+        String source = video.getStorageKey() != null ? video.getStorageKey() : video.getVideoUrl();
+        String cacheKey = source + "@" + threshold;
+        Scenes cached = sceneCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        Path dir = null;
+        try {
+            dir = Files.createTempDirectory(Path.of(pipelineProps.workDirectory()), "scenes-");
+            String input = video.getStorageKey() != null
+                    ? sourceFiles.get(video.getStorageKey()).toString()
+                    : video.getVideoUrl();
+            MediaTools.Probe probe = media.probe(input, dir);
+            if (!probe.hasVideo()) {
+                throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, "This file has no picture to look at");
+            }
+            long durationMs = probe.durationMs() == null ? 0 : probe.durationMs();
+            Scenes result = new Scenes(durationMs, SceneRules.tidy(media.sceneChanges(input, threshold, dir), durationMs));
+            sceneCache.put(cacheKey, result);
+            return result;
+        } catch (JobFailure e) {
+            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't create a temporary folder");
+        } finally {
+            deleteQuietly(dir);
+        }
+    }
+
     private final Map<String, Pauses> pauseCache =
             java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(16, 0.75f, true) {
                 @Override
@@ -831,10 +883,13 @@ public class VideoEditService {
                 video.setHeight(clip.getHeight());
             }
             videoRepository.save(video);
-            int markers = moveMarkers(videoId, timing(clip), clip.getDurationMs());
+            java.util.function.LongFunction<Long> timing = timing(clip);
+            int markers = moveMarkers(videoId, timing, clip.getDurationMs());
+            int transcripts =
+                    timing == null ? 0 : transcriptService.carryAlong(videoId, videoId, timing, clip.getDurationMs(), username);
             clipRepository.delete(clip);
             log.info("Video #{} replaced with an edited clip by {}", videoId, username);
-            return new PromoteResult("REPLACED", null, markers);
+            return new PromoteResult("REPLACED", null, markers, transcripts);
         }
 
         Video source = findVideo(videoId);
@@ -855,7 +910,11 @@ public class VideoEditService {
                 .mimeType("video/mp4")
                 .enabled(false)
                 .build());
-        int markers = copyMarkers(videoId, created.getId(), timing(clip), clip.getDurationMs(), username);
+        java.util.function.LongFunction<Long> timing = timing(clip);
+        int markers = copyMarkers(videoId, created.getId(), timing, clip.getDurationMs(), username);
+        int transcripts = timing == null
+                ? 0
+                : transcriptService.carryAlong(videoId, created.getId(), timing, clip.getDurationMs(), username);
         clipRepository.delete(clip);
         log.info(
                 "Video #{} created from a {} result of video #{} by {}",
@@ -863,7 +922,7 @@ public class VideoEditService {
                 clip.getOperation(),
                 videoId,
                 username);
-        return new PromoteResult("NEW_VIDEO", created.getId(), markers);
+        return new PromoteResult("NEW_VIDEO", created.getId(), markers, transcripts);
     }
 
     /** Where each moment of the video lands in this result, from the job that made it; null when that can't be told. */

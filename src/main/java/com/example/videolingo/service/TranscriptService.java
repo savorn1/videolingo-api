@@ -46,4 +46,12 @@ public interface TranscriptService {
     TranscriptResponse restoreRevision(Long id, Long revisionId, Long version, String actingUsername);
 
     record ExportedFile(String filename, String contentType, byte[] content) {}
+
+    /**
+     * After an edit result is promoted: each transcript of video `fromVideoId` moved to the result's timing
+     * (MarkerTiming.retime). Onto `toVideoId` as a copy (a language it already has is left alone), or — the same
+     * video, when the result replaced its file — in place, a revision kept first so the old timing can be restored.
+     * Returns how many transcripts were moved or copied.
+     */
+    int carryAlong(Long fromVideoId, Long toVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String actor);
 }

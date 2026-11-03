@@ -503,6 +503,76 @@ public class TranscriptServiceImpl implements TranscriptService {
                 actor);
     }
 
+    @Override
+    @Transactional
+    public int carryAlong(
+            Long fromVideoId, Long toVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String actor) {
+        int done = 0;
+        boolean inPlace = fromVideoId.equals(toVideoId);
+        for (Transcript t : transcriptRepository.findByVideoId(fromVideoId)) {
+            if (!inPlace && transcriptRepository.existsByVideoIdAndLanguage(toVideoId, t.getLanguage())) {
+                continue;
+            }
+            List<com.example.videolingo.pipeline.MarkerTiming.TimedLine> lines =
+                    segmentRepository.findByTranscriptIdOrderByPositionAsc(t.getId()).stream()
+                            .map(s -> new com.example.videolingo.pipeline.MarkerTiming.TimedLine(
+                                    s.getStartMs(), s.getEndMs(), s.getText(), s.getSpeaker(), readWords(s.getWords())))
+                            .toList();
+            List<com.example.videolingo.pipeline.MarkerTiming.TimedLine> moved =
+                    com.example.videolingo.pipeline.MarkerTiming.retime(lines, timing, lengthMs);
+            if (moved == null) {
+                continue;
+            }
+            Transcript target = t;
+            if (inPlace) {
+                snapshot(t, "Before it was moved to the edited video's timing", actor);
+                segmentRepository.deleteByTranscriptId(t.getId());
+            } else {
+                target = transcriptRepository.save(Transcript.builder()
+                        .videoId(toVideoId)
+                        .language(t.getLanguage())
+                        .source(t.getSource())
+                        .createdBy(actor)
+                        .updatedBy(actor)
+                        .build());
+            }
+            List<TranscriptSegment> rows = new ArrayList<>(moved.size());
+            int words = 0;
+            long end = 0;
+            for (int i = 0; i < moved.size(); i++) {
+                var line = moved.get(i);
+                String wordsJson = null;
+                if (line.words() != null) {
+                    try {
+                        wordsJson = objectMapper.writeValueAsString(line.words());
+                    } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                        wordsJson = null;
+                    }
+                }
+                rows.add(TranscriptSegment.builder()
+                        .transcriptId(target.getId())
+                        .position(i)
+                        .startMs(line.startMs())
+                        .endMs(line.endMs())
+                        .text(line.text())
+                        .speaker(line.speaker())
+                        .words(wordsJson)
+                        .build());
+                words += countWords(line.text());
+                end = Math.max(end, line.endMs());
+            }
+            segmentRepository.saveAll(rows);
+            target.setSegmentCount(rows.size());
+            target.setWordCount(words);
+            target.setDurationMs(end);
+            target.setUpdatedBy(actor);
+            target.setUpdatedAt(LocalDateTime.now());
+            transcriptRepository.save(target);
+            done++;
+        }
+        return done;
+    }
+
     static int countWords(String text) {
         Matcher m = WORD.matcher(text);
         int n = 0;
