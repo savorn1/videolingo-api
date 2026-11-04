@@ -1,6 +1,7 @@
 package com.example.videolingo.entity;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -60,6 +61,11 @@ public class VideoCollection {
     @Builder.Default
     @Column(name = "video_count", nullable = false)
     private int videoCount = 0;
+
+    // Settings as a series on the public streaming site (off unless enabled).
+    @Embedded
+    @Builder.Default
+    private StreamingSeries streaming = new StreamingSeries();
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

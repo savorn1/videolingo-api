@@ -6,7 +6,9 @@ import com.example.videolingo.dto.CollectionRequest;
 import com.example.videolingo.dto.CollectionResponse;
 import com.example.videolingo.dto.CollectionVideoResponse;
 import com.example.videolingo.dto.PageResponse;
+import com.example.videolingo.dto.StreamingSettingsDto;
 import com.example.videolingo.entity.CollectionItem;
+import com.example.videolingo.entity.StreamingSeries;
 import com.example.videolingo.entity.User;
 import com.example.videolingo.entity.Video;
 import com.example.videolingo.entity.VideoCollection;
@@ -156,6 +158,7 @@ public class CollectionServiceImpl implements CollectionService {
                 .coverUrl(blankToNull(request.getCoverUrl()))
                 .visibility(request.getVisibility())
                 .ownerId(ownerId)
+                .streaming(streamingFrom(request.getStreaming()))
                 .build());
         if (request.getVideoIds() != null && !request.getVideoIds().isEmpty()) {
             append(collection, request.getVideoIds(), actingUsername);
@@ -177,6 +180,12 @@ public class CollectionServiceImpl implements CollectionService {
         collection.setVisibility(request.getVisibility());
         if (request.getOwnerId() != null) {
             collection.setOwnerId(requireUser(request.getOwnerId()));
+        }
+        if (request.getStreaming() != null) {
+            if (collection.getStreaming() == null) {
+                collection.setStreaming(new StreamingSeries());
+            }
+            request.getStreaming().applyTo(collection.getStreaming());
         }
         collectionRepository.save(collection);
         return get(id);
@@ -330,6 +339,8 @@ public class CollectionServiceImpl implements CollectionService {
                 .coverUrl(source.getCoverUrl())
                 .visibility(source.getVisibility())
                 .ownerId(ownerId)
+                // Same settings, but a copy never goes on the public site by itself.
+                .streaming(copyStreaming(source.getStreaming()))
                 .build());
         List<CollectionItem> items = itemRepository.findByCollectionIdOrderByPositionAsc(id);
         List<CollectionItem> copies = items.stream()
@@ -441,7 +452,22 @@ public class CollectionServiceImpl implements CollectionService {
                 .videoCount(c.getVideoCount())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
+                .streaming(StreamingSettingsDto.from(c.getStreaming()))
                 .build();
+    }
+
+    private static StreamingSeries copyStreaming(StreamingSeries source) {
+        StreamingSeries copy = streamingFrom(StreamingSettingsDto.from(source));
+        copy.setEnabled(false);
+        return copy;
+    }
+
+    private static StreamingSeries streamingFrom(StreamingSettingsDto settings) {
+        StreamingSeries s = new StreamingSeries();
+        if (settings != null) {
+            settings.applyTo(s);
+        }
+        return s;
     }
 
     private static String blankToNull(String value) {
