@@ -1,6 +1,7 @@
 package com.example.videolingo.dto;
 
 import com.example.videolingo.entity.CollectionVisibility;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -29,6 +30,10 @@ public class CollectionRequest {
 
     // Defaults to the creating admin. Must be an existing user.
     private Long ownerId;
+
+    // Settings as a series on the public streaming site; null keeps the current ones (off on create).
+    @Valid
+    private StreamingSettingsDto streaming;
 
     // Create only: initial videos, in order. Ignored on update (use the /videos endpoints).
     @Size(max = 500)

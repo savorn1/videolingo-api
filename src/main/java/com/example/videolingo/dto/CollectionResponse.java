@@ -25,6 +25,8 @@ public class CollectionResponse {
     private int videoCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    // Settings as a series on the public streaming site (RuengFlix).
+    private StreamingSettingsDto streaming;
     // Detail only: total length of its live videos, and how many of its
     // videos learners can't currently watch.
     private Long totalDurationSeconds;
