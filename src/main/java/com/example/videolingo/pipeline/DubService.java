@@ -147,6 +147,71 @@ public class DubService {
         return jobService.getJob(job.getId());
     }
 
+    /** Audio types an uploaded voice track may be */
+    private static final java.util.Set<String> AUDIO_TYPES = java.util.Set.of(
+            "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/wav", "audio/x-wav", "audio/ogg");
+
+    private static final long MAX_UPLOAD_BYTES = 300L * 1024 * 1024;
+
+    /**
+     * A voice track made outside VideoLingo (a voice artist, another tool): stored as this video's dub
+     * in `language` (Khmer by default), replacing any track there. It must be as long as the video,
+     * give or take a few seconds, or it would drift out of step with the picture.
+     */
+    @Transactional
+    public DubResponse upload(
+            Long videoId, String language, org.springframework.web.multipart.MultipartFile file, String username) {
+        Video video = findVideo(videoId);
+        if (video.isDeleted()) {
+            throw new AppException(HttpStatus.CONFLICT, "Restore the video before adding a voice track");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Choose an audio file");
+        }
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
+            throw new AppException(HttpStatus.PAYLOAD_TOO_LARGE, "Audio files can be up to 300 MB");
+        }
+        String mime = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+        if (!AUDIO_TYPES.contains(mime)) {
+            throw new AppException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Upload an MP3, M4A, AAC, WAV or OGG file");
+        }
+        String lang = languageService.resolve(language == null || language.isBlank() ? "km" : language, false);
+        java.nio.file.Path dir = null;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("dub-upload-");
+            java.nio.file.Path tmp = dir.resolve("track");
+            file.transferTo(tmp);
+            VideoDub saved = steps.storeUploadedDub(videoId, lang, tmp, mime, username);
+            return toResponse(saved);
+        } catch (JobFailure e) {
+            throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't read the upload: " + e.getMessage());
+        } finally {
+            if (dir != null) {
+                try (var files = java.nio.file.Files.walk(dir)) {
+                    files.sorted(java.util.Comparator.reverseOrder())
+                            .forEach(f -> f.toFile().delete());
+                } catch (java.io.IOException ignored) {
+                    // Temp files: the OS cleans them eventually
+                }
+            }
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Integer videoSeconds(Long videoId) {
+        return findVideo(videoId).getDurationSeconds();
+    }
+
+    /** Whether an uploaded track's length is off from the video's by more than a few seconds */
+    public static boolean lengthMismatch(Integer videoSeconds, long trackMs) {
+        return videoSeconds != null
+                && videoSeconds > 0
+                && trackMs > 0
+                && Math.abs(trackMs / 1000.0 - videoSeconds) > Math.max(5, videoSeconds * 0.05);
+    }
+
     @Transactional
     public void delete(Long videoId, Long dubId) {
         VideoDub dub = findDub(videoId, dubId);
@@ -188,11 +253,13 @@ public class DubService {
     }
 
     private DubResponse toResponse(VideoDub d) {
-        String voiceName = TextToSpeechClient.voicesFor(d.getLanguage()).stream()
-                .filter(v -> v.id().equals(d.getVoice()))
-                .map(TextToSpeechClient.Voice::name)
-                .findFirst()
-                .orElse(d.getVoice());
+        String voiceName = PipelineSteps.UPLOADED_VOICE.equals(d.getVoice())
+                ? "Uploaded track"
+                : TextToSpeechClient.voicesFor(d.getLanguage()).stream()
+                        .filter(v -> v.id().equals(d.getVoice()))
+                        .map(TextToSpeechClient.Voice::name)
+                        .findFirst()
+                        .orElse(d.getVoice());
         return new DubResponse(
                 d.getId(),
                 d.getVideoId(),

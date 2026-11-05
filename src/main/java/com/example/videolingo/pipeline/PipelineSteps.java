@@ -1931,6 +1931,69 @@ public class PipelineSteps {
 
     // ── storage ───────────────────────────────────────────────────────────
 
+    /**
+     * A voice track recorded outside VideoLingo (a voice artist, another tool), uploaded by an admin:
+     * stored like a generated dub and replacing any track in that language. Returns the saved row.
+     */
+    public VideoDub storeUploadedDub(Long videoId, String language, Path file, String mime, String createdBy) {
+        requireBucket();
+        long size;
+        try {
+            size = Files.size(file);
+        } catch (IOException e) {
+            throw new JobFailure("Couldn't read the audio file: " + e.getMessage(), e);
+        }
+        MediaTools.Probe probe = media.probe(file.toString(), file.getParent());
+        if (!probe.hasAudio()) {
+            throw new JobFailure("That file has no audio track");
+        }
+        String ext = mime.equals("audio/mpeg")
+                ? "mp3"
+                : mime.equals("audio/mp4") || mime.equals("audio/x-m4a")
+                        ? "m4a"
+                        : mime.equals("audio/wav") || mime.equals("audio/x-wav")
+                                ? "wav"
+                                : mime.equals("audio/ogg") ? "ogg" : "audio";
+        String key = "dubs/" + videoId + "/" + language + "-upload-" + System.currentTimeMillis() + "." + ext;
+        upload(key, file, mime, null);
+        VideoDub dub = dubRepository.findByVideoIdAndLanguage(videoId, language).orElse(null);
+        String oldKey = dub != null ? dub.getStorageKey() : null;
+        if (dub == null) {
+            dub = VideoDub.builder().videoId(videoId).language(language).build();
+        }
+        dub.setVoice(UPLOADED_VOICE);
+        dub.setTranscriptId(null);
+        dub.setJobId(null);
+        dub.setStorageKey(key);
+        dub.setAudioUrl(publicUrl(key));
+        dub.setMimeType(mime);
+        dub.setDurationMs(probe.durationMs() == null ? 0 : probe.durationMs());
+        dub.setSizeBytes(size);
+        dub.setCreatedBy(createdBy);
+        VideoDub saved = dubRepository.save(dub);
+        if (oldKey != null && !oldKey.equals(key)) {
+            deleteObject(oldKey);
+        }
+        return saved;
+    }
+
+    /** The "voice" of a track an admin uploaded instead of generating it */
+    public static final String UPLOADED_VOICE = "uploaded";
+
+    /** Uploads a finished file (clips, their posters) and returns its public address. */
+    public String uploadPublic(String key, Path file, String contentType) {
+        requireBucket();
+        upload(key, file, contentType, null);
+        return publicUrl(key);
+    }
+
+    /** Removes one stored object (best effort). */
+    public void deleteStored(String key) {
+        if (key != null && !key.isBlank()) {
+            deleteObject(key);
+        }
+    }
+
     private void requireBucket() {
         if (bucket == null || bucket.isBlank()) {
             throw new JobFailure("File storage isn't configured (S3_BUCKET)");

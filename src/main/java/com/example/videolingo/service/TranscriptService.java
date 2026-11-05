@@ -53,5 +53,10 @@ public interface TranscriptService {
      * video, when the result replaced its file — in place, a revision kept first so the old timing can be restored.
      * Returns how many transcripts were moved or copied.
      */
-    int carryAlong(Long fromVideoId, Long toVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String actor);
+    int carryAlong(
+            Long fromVideoId,
+            Long toVideoId,
+            java.util.function.LongFunction<Long> timing,
+            Long lengthMs,
+            String actor);
 }

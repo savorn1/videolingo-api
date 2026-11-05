@@ -459,6 +459,7 @@ public class CollectionServiceImpl implements CollectionService {
     private static StreamingSeries copyStreaming(StreamingSeries source) {
         StreamingSeries copy = streamingFrom(StreamingSettingsDto.from(source));
         copy.setEnabled(false);
+        copy.setFeaturedRank(null);
         return copy;
     }
 

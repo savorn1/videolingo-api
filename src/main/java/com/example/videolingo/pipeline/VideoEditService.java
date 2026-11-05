@@ -632,7 +632,8 @@ public class VideoEditService {
                 throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, "This file has no picture to look at");
             }
             long durationMs = probe.durationMs() == null ? 0 : probe.durationMs();
-            Scenes result = new Scenes(durationMs, SceneRules.tidy(media.sceneChanges(input, threshold, dir), durationMs));
+            Scenes result =
+                    new Scenes(durationMs, SceneRules.tidy(media.sceneChanges(input, threshold, dir), durationMs));
             sceneCache.put(cacheKey, result);
             return result;
         } catch (JobFailure e) {
@@ -885,8 +886,9 @@ public class VideoEditService {
             videoRepository.save(video);
             java.util.function.LongFunction<Long> timing = timing(clip);
             int markers = moveMarkers(videoId, timing, clip.getDurationMs());
-            int transcripts =
-                    timing == null ? 0 : transcriptService.carryAlong(videoId, videoId, timing, clip.getDurationMs(), username);
+            int transcripts = timing == null
+                    ? 0
+                    : transcriptService.carryAlong(videoId, videoId, timing, clip.getDurationMs(), username);
             clipRepository.delete(clip);
             log.info("Video #{} replaced with an edited clip by {}", videoId, username);
             return new PromoteResult("REPLACED", null, markers, transcripts);

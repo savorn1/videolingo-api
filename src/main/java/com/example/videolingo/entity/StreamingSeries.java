@@ -68,4 +68,8 @@ public class StreamingSeries {
     // 9:16 artwork for the vertical Shorts feed.
     @Column(name = "vertical_url", length = 1000)
     private String verticalUrl;
+
+    // Place in the home page's hero slider (1 first); null = not a hero pick.
+    @Column(name = "featured_rank")
+    private Integer featuredRank;
 }

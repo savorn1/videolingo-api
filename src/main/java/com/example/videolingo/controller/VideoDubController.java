@@ -34,6 +34,22 @@ public class VideoDubController {
                         "Voice-over queued", dubService.create(videoId, request, requireUsername(authentication))));
     }
 
+    /** A voice track recorded elsewhere (multipart "file"; "language" defaults to Khmer) */
+    @PostMapping(value = "/upload", consumes = "multipart/form-data")
+    public ResponseEntity<ApiResponse<DubService.DubResponse>> upload(
+            @PathVariable Long videoId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "language", required = false) String language,
+            Authentication authentication) {
+        DubService.DubResponse dub = dubService.upload(videoId, language, file, requireUsername(authentication));
+        Integer videoSeconds = dubService.videoSeconds(videoId);
+        String message = DubService.lengthMismatch(videoSeconds, dub.durationMs())
+                ? "Voice track saved, but it is " + (dub.durationMs() / 1000) + " s long and the video is "
+                        + videoSeconds + " s: it will drift out of step"
+                : "Voice track saved";
+        return ResponseEntity.ok(ApiResponse.success(message, dub));
+    }
+
     @DeleteMapping("/{dubId}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long videoId, @PathVariable Long dubId) {
         dubService.delete(videoId, dubId);

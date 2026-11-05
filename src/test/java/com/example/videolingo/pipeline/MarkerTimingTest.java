@@ -96,7 +96,11 @@ class MarkerTimingTest {
     void transcriptLinesFollowATrimKeepingOnlyWhatIsInside() throws Exception {
         LongFunction<Long> t = timing("{\"operation\":\"TRIM\",\"startMs\":2000,\"endMs\":8000}", null, 6000L);
         List<MarkerTiming.TimedLine> out = MarkerTiming.retime(
-                List.of(line(0, 1500, "Before"), line(1000, 3000, "Across the start"), line(4000, 5000, "Inside"), line(7900, 9000, "Too little left")),
+                List.of(
+                        line(0, 1500, "Before"),
+                        line(1000, 3000, "Across the start"),
+                        line(4000, 5000, "Inside"),
+                        line(7900, 9000, "Too little left")),
                 t,
                 6000L);
         assertEquals(List.of(line(0, 1000, "Across the start"), line(2000, 3000, "Inside")), out);
@@ -104,23 +108,30 @@ class MarkerTimingTest {
 
     @Test
     void transcriptLinesCloseUpACutAndMoveTheirWords() throws Exception {
-        LongFunction<Long> t = timing("{\"operation\":\"CUT\",\"cuts\":[{\"startMs\":2000,\"endMs\":4000}]}", null, null);
+        LongFunction<Long> t =
+                timing("{\"operation\":\"CUT\",\"cuts\":[{\"startMs\":2000,\"endMs\":4000}]}", null, null);
         var words = List.of(
                 new com.example.videolingo.dto.TranscriptWord(1000, 1500, "one"),
                 new com.example.videolingo.dto.TranscriptWord(2500, 3000, "cut"),
                 new com.example.videolingo.dto.TranscriptWord(4500, 5000, "two"));
-        var out = MarkerTiming.retime(List.of(new MarkerTiming.TimedLine(1000, 5000, "one cut two", "A", words)), t, null);
+        var out = MarkerTiming.retime(
+                List.of(new MarkerTiming.TimedLine(1000, 5000, "one cut two", "A", words)), t, null);
         assertEquals(1, out.size());
         assertEquals(1000, out.get(0).startMs());
         assertEquals(3000, out.get(0).endMs());
         assertEquals("A", out.get(0).speaker());
-        assertEquals(List.of("one", "two"), out.get(0).words().stream().map(com.example.videolingo.dto.TranscriptWord::text).toList());
+        assertEquals(
+                List.of("one", "two"),
+                out.get(0).words().stream()
+                        .map(com.example.videolingo.dto.TranscriptWord::text)
+                        .toList());
         assertEquals(2500, out.get(0).words().get(1).startMs());
     }
 
     @Test
     void aBackwardsResultHasNoTranscript() throws Exception {
-        LongFunction<Long> t = timing("{\"operation\":\"TRIM\",\"startMs\":0,\"endMs\":10000,\"reverse\":true}", null, 10_000L);
+        LongFunction<Long> t =
+                timing("{\"operation\":\"TRIM\",\"startMs\":0,\"endMs\":10000,\"reverse\":true}", null, 10_000L);
         assertNull(MarkerTiming.retime(List.of(line(1000, 3000, "Hello")), t, 10_000L));
     }
 }

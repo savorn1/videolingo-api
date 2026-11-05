@@ -106,6 +106,12 @@ public class SettingsController {
         return saved(settings.update(Section.STORAGE, values, version, username(auth)));
     }
 
+    @PutMapping("/streaming")
+    public ResponseEntity<ApiResponse<SectionView>> streaming(
+            @RequestBody Settings.Streaming values, @RequestParam(required = false) Long version, Authentication auth) {
+        return saved(settings.update(Section.STREAMING, values, version, username(auth)));
+    }
+
     /** Restore a section's built-in defaults. */
     @DeleteMapping("/{section}")
     public ResponseEntity<ApiResponse<SectionView>> reset(@PathVariable String section) {

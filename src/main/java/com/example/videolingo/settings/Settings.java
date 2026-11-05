@@ -119,4 +119,45 @@ public final class Settings {
             @Min(1) @Max(1024) int maxSubtitleUploadMb,
             // Shown against stored bytes in Analytics; null = no quota.
             @DecimalMin("0.1") @DecimalMax("1000000.0") Double storageQuotaGb) {}
+
+    // RuengFlix prices in US dollars, shown on its VIP page and unlock wall. Payments aren't connected
+    // yet, so these are display prices only.
+    public record Streaming(
+            @NotNull @DecimalMin("0.0") @DecimalMax("1000.0")
+            BigDecimal seriesUnlockPrice,
+
+            @NotNull @DecimalMin("0.0") @DecimalMax("1000.0")
+            BigDecimal vip1Month,
+
+            @NotNull @DecimalMin("0.0") @DecimalMax("1000.0")
+            BigDecimal vip3Months,
+
+            @NotNull @DecimalMin("0.0") @DecimalMax("1000.0")
+            BigDecimal vip6Months,
+
+            @NotNull @DecimalMin("0.0") @DecimalMax("1000.0")
+            BigDecimal vip12Months,
+
+            // Coins (V21). Optional so settings saved before them still load; movie-api uses its defaults
+            // for any left empty. Coin packs must cost something, or they'd hand out free coins.
+            @DecimalMin("0.01") @DecimalMax("1000.0") BigDecimal coinPack100,
+
+            @DecimalMin("0.01") @DecimalMax("1000.0") BigDecimal coinPack300,
+
+            @DecimalMin("0.01") @DecimalMax("1000.0") BigDecimal coinPack1000,
+
+            // Coins to unlock one VIP episode
+            @Min(1) @Max(10000) Integer episodeUnlockCoins,
+
+            // Coins for the daily check-in (the 7th day in a row pays double)
+            @Min(1) @Max(1000) Integer dailyCheckInCoins,
+
+            // Extra coins, in percent, on a viewer's first coin pack (0 turns it off) (V22)
+            @Min(0) @Max(200) Integer firstTopUpBonusPercent,
+
+            // Seconds of the first VIP episode a viewer may watch before paying (0 turns previews off)
+            @Min(0) @Max(180) Integer previewSeconds,
+
+            // Episodes a viewer may unlock a day by watching a sponsor ad (0 turns ad unlocks off) (V24)
+            @Min(0) @Max(20) Integer adUnlocksPerDay) {}
 }

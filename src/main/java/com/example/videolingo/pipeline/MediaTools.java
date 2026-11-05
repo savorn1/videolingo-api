@@ -145,8 +145,12 @@ public class MediaTools {
                 props.ytDlp(),
                 "--no-playlist",
                 "--no-progress",
-                "--quiet",
+                // Not --quiet: a skipped video's reason ("does not pass filter", "larger than max-filesize") is only
+                // printed to the log, which downloadProblem reads.
                 "--no-warnings",
+                "--print-to-file",
+                "pre_process:%(duration)s",
+                ctx.workDir().resolve(DURATION_FILE).toString(),
                 // Prefer MP4/M4A (plays everywhere); else anything ≤ 720p, remuxed to MP4.
                 "-f",
                 "bv*[height<=" + h + "][ext=mp4]+ba[ext=m4a]/b[height<=" + h + "][ext=mp4]/bv*[height<=" + h
@@ -165,17 +169,138 @@ public class MediaTools {
             command.addAll(List.of("--ffmpeg-location", props.ffmpeg()));
         }
         command.add(video.getVideoUrl());
-        run(command, Duration.ofMinutes(60), ctx, "yt-dlp");
+        runYtDlp(command, Duration.ofMinutes(60), ctx, maxMb);
         try (Stream<Path> files = Files.list(ctx.workDir())) {
             return files.filter(p -> p.getFileName().toString().equals("video.mp4"))
                     .findFirst()
-                    .orElseThrow(() -> new JobFailure(
-                            "yt-dlp didn't produce a video — it may be private, removed, age-restricted, "
-                                    + "larger than " + maxMb + " MB, or longer than " + props.maxMinutes()
-                                    + " minutes"));
+                    .orElseThrow(() -> noDownload(ctx, maxMb));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the download: " + e.getMessage(), e);
         }
+    }
+
+    /** Where yt-dlp writes the video's length (seconds, or "NA"), so a too-long video's message can say how long. */
+    private static final String DURATION_FILE = "yt-dlp-duration.txt";
+
+    // yt-dlp, with a failure it explains in its log ("Private video", "Sign in to confirm your age"…) put in plain
+    // words.
+    private void runYtDlp(List<String> command, Duration timeout, JobContext ctx, Long maxMb) {
+        try {
+            run(command, timeout, ctx, "yt-dlp");
+        } catch (JobFailure e) {
+            String problem = downloadProblem(
+                    readQuietly(ctx.workDir().resolve("yt-dlp.log")), maxMb, props.maxMinutes(), downloadSeconds(ctx));
+            if (problem == null) {
+                throw e;
+            }
+            throw new JobFailure(problem, e);
+        }
+    }
+
+    // yt-dlp finished without a file: it skipped the video, and its log says why.
+    private JobFailure noDownload(JobContext ctx, Long maxMb) {
+        String problem = downloadProblem(
+                readQuietly(ctx.workDir().resolve("yt-dlp.log")), maxMb, props.maxMinutes(), downloadSeconds(ctx));
+        return new JobFailure(
+                problem != null
+                        ? problem
+                        : "The site didn't hand over a video, and didn't say why. Check that the link opens in a browser "
+                                + "without signing in, or download it yourself and upload the file.");
+    }
+
+    private Long downloadSeconds(JobContext ctx) {
+        return parseSeconds(readQuietly(ctx.workDir().resolve(DURATION_FILE)));
+    }
+
+    /** The first number in yt-dlp's printed duration ("1234.5", or "NA" when the site doesn't say), in whole seconds. */
+    static Long parseSeconds(String printed) {
+        for (String line : printed.split("\n")) {
+            try {
+                double d = Double.parseDouble(line.strip());
+                if (d > 0) {
+                    return Math.round(d);
+                }
+            } catch (NumberFormatException ignored) {
+                // "NA"
+            }
+        }
+        return null;
+    }
+
+    private static String readQuietly(Path file) {
+        try {
+            return Files.exists(file) ? Files.readString(file) : "";
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    /**
+     * Why yt-dlp gave no video, in words an admin can act on, from what it wrote to its log; null when the log
+     * doesn't say. maxMb is the size limit passed to it (null when there was none), seconds the video's length
+     * when known.
+     */
+    static String downloadProblem(String log, Long maxMb, int maxMinutes, Long seconds) {
+        String all = log.toLowerCase(java.util.Locale.ROOT);
+        // The rest only from yt-dlp's ERROR lines, so words in other output can't be taken for a reason.
+        String t = all.lines().filter(l -> l.contains("error:")).collect(java.util.stream.Collectors.joining("\n"));
+        String upload = " Download it yourself and upload the file instead.";
+        if (all.contains("does not pass filter") && all.contains("duration")) {
+            return "The video is " + (seconds != null ? hoursMinutes(seconds) + " long, " : "") + "longer than the "
+                    + maxMinutes + "-minute limit. Raise PIPELINE_MAX_MEDIA_MINUTES on the server, or cut it shorter"
+                    + " and upload the file.";
+        }
+        if (all.contains("larger than max-filesize")) {
+            return "The video is larger than the " + (maxMb != null ? maxMb + " MB " : "") + "limit, even at "
+                    + MAX_HEIGHT + "p. Raise \"Largest video upload\" in Settings → Video, or upload a smaller file.";
+        }
+        if (t.contains("private video") || t.contains("this video is private")) {
+            return "The video is private. Make it public or unlisted on the site, then try again." + upload;
+        }
+        if (t.contains("confirm your age")
+                || t.contains("age-restricted")
+                || t.contains("age restricted")
+                || t.contains("inappropriate for some users")) {
+            return "The video is age-restricted, and the site only shows it to signed-in viewers." + upload;
+        }
+        if (t.contains("not a bot")) {
+            return "The site is blocking downloads from this server for now (it asked to confirm it's not a bot)."
+                    + " Try again later." + upload;
+        }
+        if (t.contains("members-only")
+                || t.contains("join this channel")
+                || t.contains("requires payment")
+                || t.contains("purchase")) {
+            return "The video is only for paying members or subscribers." + upload;
+        }
+        if (t.contains("not available in your country")
+                || t.contains("geo restrict")
+                || t.contains("in your country")) {
+            return "The site doesn't offer this video in the server's country." + upload;
+        }
+        if (t.contains("live event will begin") || t.contains("premieres in")) {
+            return "The video is a live stream or premiere that hasn't started yet. Try again once it's over.";
+        }
+        if (t.contains("video unavailable")
+                || t.contains("has been removed")
+                || t.contains("no longer available")
+                || t.contains("http error 404")
+                || t.contains("does not exist")) {
+            return "The video isn't on the site any more — it was removed, or the link is wrong. Check the link.";
+        }
+        if (t.contains("unsupported url")) {
+            return "That link isn't a video page the downloader knows. Use the video's own page link.";
+        }
+        if (t.contains("requested format is not available")) {
+            return "The site didn't offer a version of the video that can be downloaded." + upload;
+        }
+        if (t.contains("unable to download webpage")
+                || t.contains("timed out")
+                || t.contains("name or service not known")
+                || t.contains("nodename nor servname")) {
+            return "The server couldn't reach the site. Check its internet connection, then try again.";
+        }
+        return null;
     }
 
     /** The video (file or URL) with `audio` as its only sound track. The picture is copied, not re-encoded. */
@@ -1936,13 +2061,15 @@ public class MediaTools {
     private Path download(Video video, JobContext ctx) {
         ctx.progress(5, "Downloading audio from " + label(video.getSource()));
         String template = ctx.workDir().resolve("source.%(ext)s").toString();
-        run(
+        runYtDlp(
                 List.of(
                         props.ytDlp(),
                         "--no-playlist",
                         "--no-progress",
-                        "--quiet",
                         "--no-warnings",
+                        "--print-to-file",
+                        "pre_process:%(duration)s",
+                        ctx.workDir().resolve(DURATION_FILE).toString(),
                         "-f",
                         "bestaudio/best",
                         "--match-filter",
@@ -1952,13 +2079,11 @@ public class MediaTools {
                         video.getVideoUrl()),
                 Duration.ofMinutes(30),
                 ctx,
-                "yt-dlp");
+                null);
         try (Stream<Path> files = Files.list(ctx.workDir())) {
             return files.filter(p -> p.getFileName().toString().startsWith("source."))
                     .findFirst()
-                    .orElseThrow(
-                            () -> new JobFailure("yt-dlp didn't download anything — the video may be private, removed, "
-                                    + "age-restricted, or longer than " + props.maxMinutes() + " minutes"));
+                    .orElseThrow(() -> noDownload(ctx, null));
         } catch (IOException e) {
             throw new JobFailure("Couldn't read the download: " + e.getMessage(), e);
         }
@@ -2077,6 +2202,12 @@ public class MediaTools {
 
     private static String describe(Duration d) {
         return d.toMinutes() >= 1 ? d.toMinutes() + " minutes" : d.toSeconds() + " seconds";
+    }
+
+    /** "4 h 12 min", "52 min" — a length in words for a message. */
+    static String hoursMinutes(long seconds) {
+        long m = Math.round(seconds / 60.0);
+        return m >= 60 ? m / 60 + " h" + (m % 60 > 0 ? " " + m % 60 + " min" : "") : Math.max(1, m) + " min";
     }
 
     private static String clock(long ms) {

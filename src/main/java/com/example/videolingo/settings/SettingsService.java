@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,7 +44,8 @@ public class SettingsService {
         VIDEO(Settings.Video.class),
         TRANSLATION(Settings.Translation.class),
         AI(Settings.Ai.class),
-        STORAGE(Settings.Storage.class);
+        STORAGE(Settings.Storage.class),
+        STREAMING(Settings.Streaming.class);
 
         final Class<?> type;
 
@@ -124,6 +126,10 @@ public class SettingsService {
         return (Settings.Ai) current(Section.AI);
     }
 
+    public Settings.Streaming streaming() {
+        return (Settings.Streaming) current(Section.STREAMING);
+    }
+
     public Settings.Storage storage() {
         return (Settings.Storage) current(Section.STORAGE);
     }
@@ -181,6 +187,22 @@ public class SettingsService {
                         8);
             case STORAGE ->
                 new Settings.Storage((int) multipartLimitMb(), List.of(), (int) Math.min(5, multipartLimitMb()), null);
+            // The prices RuengFlix showed before they were editable
+            case STREAMING ->
+                new Settings.Streaming(
+                        new BigDecimal("0.49"),
+                        new BigDecimal("1.99"),
+                        new BigDecimal("4.99"),
+                        new BigDecimal("8.99"),
+                        new BigDecimal("14.99"),
+                        new BigDecimal("0.99"),
+                        new BigDecimal("2.49"),
+                        new BigDecimal("6.99"),
+                        20,
+                        5,
+                        50,
+                        45,
+                        3);
         };
     }
 

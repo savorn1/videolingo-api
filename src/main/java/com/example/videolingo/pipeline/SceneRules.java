@@ -7,7 +7,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 // "Split at scene changes": where the picture changes a lot from one frame to the next (ffmpeg's scene score), read
-// from the showinfo lines of a small, fast decode; then tidied so no two cuts are closer than MIN_GAP_MS. Pure, so tested.
+// from the showinfo lines of a small, fast decode; then tidied so no two cuts are closer than MIN_GAP_MS. Pure, so
+// tested.
 public final class SceneRules {
 
     private SceneRules() {}

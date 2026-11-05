@@ -56,6 +56,11 @@ public class StreamingSettingsDto {
     @Size(max = 1000)
     private String verticalUrl;
 
+    // Place in RuengFlix's hero slider (1 first); null = not a hero pick.
+    @Min(1)
+    @Max(99)
+    private Integer featuredRank;
+
     public static StreamingSettingsDto from(StreamingSeries s) {
         StreamingSeries v = s != null ? s : new StreamingSeries();
         return StreamingSettingsDto.builder()
@@ -71,6 +76,7 @@ public class StreamingSettingsDto {
                 .genres(splitGenres(v.getGenres()))
                 .bannerUrl(v.getBannerUrl())
                 .verticalUrl(v.getVerticalUrl())
+                .featuredRank(v.getFeaturedRank())
                 .build();
     }
 
@@ -88,6 +94,7 @@ public class StreamingSettingsDto {
         s.setGenres(joinGenres(genres));
         s.setBannerUrl(blankToNull(bannerUrl));
         s.setVerticalUrl(blankToNull(verticalUrl));
+        s.setFeaturedRank(featuredRank);
     }
 
     public static List<String> splitGenres(String stored) {

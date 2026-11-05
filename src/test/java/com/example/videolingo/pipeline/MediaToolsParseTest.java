@@ -50,4 +50,56 @@ class MediaToolsParseTest {
         assertArrayEquals(new float[] {0.3f}, MediaTools.downsample(List.of(0.3f), 10));
         assertEquals(0, MediaTools.downsample(List.of(), 5).length);
     }
+
+    @Test
+    void downloadProblemSaysWhyYtDlpGaveNoVideo() {
+        String tooLong =
+                "[youtube] abc: Downloading webpage\n[download] Talk does not pass filter (duration < 10800), skipping ..\n";
+        assertEquals(
+                "The video is 4 h 12 min long, longer than the 180-minute limit. Raise PIPELINE_MAX_MEDIA_MINUTES on the"
+                        + " server, or cut it shorter and upload the file.",
+                MediaTools.downloadProblem(tooLong, 2048L, 180, 15_120L));
+        assertTrue(MediaTools.downloadProblem(tooLong, 2048L, 180, null)
+                .startsWith("The video is longer than the 180-minute"));
+
+        String tooBig =
+                "\r[download] File is larger than max-filesize (3000000000 bytes > 2147483648 bytes). Aborting.";
+        assertTrue(MediaTools.downloadProblem(tooBig, 2048L, 180, null)
+                .startsWith("The video is larger than the 2048 MB limit"));
+
+        assertTrue(MediaTools.downloadProblem(
+                        "ERROR: [youtube] abc: Private video. Sign in if you've been granted access", 2048L, 180, null)
+                .startsWith("The video is private"));
+        assertTrue(MediaTools.downloadProblem(
+                        "ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate",
+                        null,
+                        180,
+                        null)
+                .startsWith("The video is age-restricted"));
+        assertTrue(
+                MediaTools.downloadProblem("ERROR: [youtube] abc: Sign in to confirm you’re not a bot", null, 180, null)
+                        .contains("blocking downloads"));
+        assertTrue(MediaTools.downloadProblem(
+                        "ERROR: [youtube] abc: Video unavailable. This video has been removed", null, 180, null)
+                .contains("isn't on the site any more"));
+        assertTrue(MediaTools.downloadProblem("ERROR: Unsupported URL: https://example.com/", null, 180, null)
+                .contains("isn't a video page"));
+    }
+
+    @Test
+    void downloadProblemReadsOnlyErrorLinesForTheSitesReasons() {
+        // A title that happens to say "private video" isn't a reason.
+        assertNull(MediaTools.downloadProblem("[download] Destination: My private video tips\n", null, 180, null));
+        assertNull(MediaTools.downloadProblem("", 2048L, 180, null));
+    }
+
+    @Test
+    void readsTheDownloadsLength() {
+        assertEquals(1235L, MediaTools.parseSeconds("1234.6\n"));
+        assertNull(MediaTools.parseSeconds("NA\n"));
+        assertNull(MediaTools.parseSeconds(""));
+        assertEquals("4 h 12 min", MediaTools.hoursMinutes(15_120));
+        assertEquals("3 h", MediaTools.hoursMinutes(10_800));
+        assertEquals("52 min", MediaTools.hoursMinutes(3_120));
+    }
 }

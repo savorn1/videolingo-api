@@ -1,10 +1,10 @@
 package com.example.videolingo.pipeline;
 
+import com.example.videolingo.dto.TranscriptWord;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
-import com.example.videolingo.dto.TranscriptWord;
 import java.util.function.LongFunction;
 
 // Where a moment of a video lands in a result made from it, worked out from the job's settings — so its

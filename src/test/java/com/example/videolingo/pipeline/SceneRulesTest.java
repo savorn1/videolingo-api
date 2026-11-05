@@ -2,8 +2,8 @@ package com.example.videolingo.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -41,11 +41,28 @@ class SceneRulesTest {
         assumeTrue(ffmpeg, "ffmpeg isn't installed");
         Path clip = dir.resolve("two-scenes.mp4");
         Process p = new ProcessBuilder(
-                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=2",
-                        "-f", "lavfi", "-i", "color=c=blue:size=320x180:rate=25:duration=2",
-                        "-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]",
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", clip.toString())
+                        "ffmpeg",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "testsrc=size=320x180:rate=25:duration=2",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "color=c=blue:size=320x180:rate=25:duration=2",
+                        "-filter_complex",
+                        "[0:v][1:v]concat=n=2:v=1[v]",
+                        "-map",
+                        "[v]",
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        clip.toString())
                 .inheritIO()
                 .start();
         assertEquals(0, p.waitFor());

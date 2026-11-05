@@ -506,7 +506,11 @@ public class TranscriptServiceImpl implements TranscriptService {
     @Override
     @Transactional
     public int carryAlong(
-            Long fromVideoId, Long toVideoId, java.util.function.LongFunction<Long> timing, Long lengthMs, String actor) {
+            Long fromVideoId,
+            Long toVideoId,
+            java.util.function.LongFunction<Long> timing,
+            Long lengthMs,
+            String actor) {
         int done = 0;
         boolean inPlace = fromVideoId.equals(toVideoId);
         for (Transcript t : transcriptRepository.findByVideoId(fromVideoId)) {
